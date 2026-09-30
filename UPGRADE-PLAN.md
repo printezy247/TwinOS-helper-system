@@ -1,114 +1,245 @@
-# Jack’s Channel Growth Tool Upgrade Plan
+# EzyMap TwinOS — Master Plan
 
-**For:** Jack / EzyMap  
-**Prepared:** 1 October 2026  
-**Purpose:** Reduce Jack’s manual work across Telegram, TikTok and social-media repurposing.
+**Status:** Draft · **Owner:** Jack · **Scope:** EzyMap only · **Supersedes:** previous UPGRADE-PLAN.md (generic tool list)
 
-## 1. Recommendation
+---
 
-Keep the existing EzyMap systems as the centre of the workflow. Jack’s plans already include a sales bot, a Telegram post manager, a content log, a public results board and a weekly TikTok content plan. New tools should fill a specific gap rather than create duplicate shops, schedulers or analytics systems.
+## 1. Objective
 
-### Lean starter stack
+Consolidate EzyMap's scattered tooling into **one system with one database** that acts as the operational mind, cutting Jack's non-creative workload by up to 70%.
 
-| Job | Start with | Why |
+Jack retains the irreducible 30%: **his face on camera, market judgment, and partner relationships.** Everything else is fair game.
+
+**Success metric:** Jack's weekly operational hours on EzyMap (scheduling, cross-posting, reporting, monitoring, admin), excluding content recording and trade decisions. Target ≥60% reduction by end of Phase 3, ≥70% by Phase 4.
+
+---
+
+## 2. Scope & non-goals
+
+**In scope:** All EzyMap operations — content publishing, Telegram/TikTok distribution, sales/entitlements, signals distribution, analytics, health monitoring, community triage.
+
+**Explicitly out of scope:** Sambang Gold, Aish Capital, 20 Pips Lab. No multi-tenant design and no per-owner permissions. This removes significant complexity — do not reintroduce it.
+
+**Non-goal:** Rewriting the signal engine. EzyAi's analysis is an asset, not debt.
+
+---
+
+## 3. Current state (verified)
+
+| System | Role | Stack | Hosting |
+|---|---|---|---|
+| **EzyAi** (`tradernonymous/EzyAi`, private) | Signals, outcomes, health alerts | Py 3.13, ptb 21.6+, 328 tests | Fly.io `ezyai` (ams) |
+| **ASAP-TeleBot** (private) = `@EzyRegisterBot` | Sales, payments, MT5 licensing, post store, attribution | Py 3.11, ptb 22.8, EN/BM | **PythonAnywhere free** |
+| **tg-ezy-chatbot** / **tg_ezy_ai_os** | Funnel automation, "marketing OS" | Node/Python | unverified |
+| **wsapi** / **wsapi-dashboard** | WhatsApp campaigns | — | unverified |
+| **printezy** | EzyMap brand site | Lovable | Lovable |
+| **stripe_payment_gateway**, **TG-database** | Payments, client data | — | — |
+| **TwinOS-helper-system** | This repo — the target | — | GitHub |
+
+**Key findings driving this plan:**
+
+- `@EzyRegisterBot` already contains `channel_posts_store.py`, `dashboard.py`, `ad_attribution.py` — **the seeds of the content + dashboard + attribution layer already exist.** Extend, don't rebuild.
+- EzyAi has **health beats and admin alerting already built** — reuse that pattern for monitoring.
+- EzyAi stores state in JSON on a Fly volume; it has **no database**. Fine for signals, wrong for a content queue.
+- The revenue bot sits on **PythonAnywhere free tier** — fragile under increased write load.
+
+**The core problem is not missing features. It's fragmentation.** Eight systems doing pieces means the cost is context-switching, not capability.
+
+---
+
+## 4. Target architecture
+
+```
+        Jack ── voice/chat ──▶ ABDUL ─────────┐
+        Jack ── browser   ──▶ Lovable UI ─────┤
+                                              │  same authenticated API
+                                       ┌──────▼───────┐
+                                       │  TwinOS API  │  ← business rules
+                                       └──────┬───────┘
+                                              │
+                                       ┌──────▼───────┐
+                                       │   SUPABASE   │  ← THE MIND
+                                       │   Postgres   │
+                                       └──────▲───────┘
+                                              │ writes
+                                       ┌──────┴───────┐
+                                       │    EzyAi     │  ← muscle
+                                       │   Fly.io     │
+                                       └──────────────┘
+```
+
+| Layer | Role | Tool |
 |---|---|---|
-| Find TikTok topics | [TikTok Creator Search Insights](https://support.tiktok.com/en/using-tiktok/growing-your-audience/creator-search-insights) and [Creative Center](https://ads.tiktok.com/business/creativecenter/) | Free, native topic and trend research |
-| Edit shorts | [CapCut](https://www.capcut.com/) | Fits the existing chart-recording, caption and end-card workflow |
-| Schedule TikTok | [TikTok Studio](https://support.tiktok.com/en/using-tiktok/creating-videos/creator-tools-on-tiktok) | Native creator tools and analytics |
-| Repost to Meta | [Meta Business Suite](https://www.facebook.com/business/tools/meta-business-suite) | Native Facebook and Instagram publishing |
-| Publish YouTube Shorts | [YouTube Studio](https://studio.youtube.com/) | Native upload and publishing route |
-| Schedule Telegram | Existing `@EzyRegisterBot` post manager and Telegram’s built-in scheduler | Already part of the plan |
-| Measure growth | Existing Google Sheet, bot `/stats` tags and distinct invite links | No need to migrate Jack’s content log |
+| **Mind** | Single source of truth | Supabase Postgres |
+| **Rules** | Business logic, approval gate, audit | TwinOS API (Supabase Edge Functions or FastAPI) |
+| **Face** | Jack's dashboard & approval inbox | Lovable → React |
+| **Voice** | Conversational control | ABDUL via MCP |
+| **Muscle** | Heavy signal computation | EzyAi, Python on Fly.io |
 
-**Paid-tool test:** Try [Metricool](https://metricool.com/) if Jack’s main problem is managing calendars and analytics across platforms. Try [Repurpose.io](https://repurpose.io/) if the main problem is reposting finished videos. They solve different jobs; start with one.
+**Critical:** Supabase Edge Functions are Deno/TypeScript, built for short request/response. They cannot host EzyAi's technical analysis. **The signal engine stays Python on Fly.io and pushes into Supabase.** Do not attempt to port it.
 
-## 2. Telegram tools
+---
 
-### Posting and community
+## 5. Six principles
 
-- **Telegram native scheduling** — Simple, free scheduling for individual posts.
-- **`@EzyRegisterBot`** — Keep as the main post-management route if its existing scheduling, media and button support is enough.
-- **[Controller Bot](https://www.controller.bot/)** — Consider for scheduled and rich posts or basic channel statistics if the current post manager has a specific gap.
-- **[TelepostBot](https://t.me/telepostbot)** — Another channel-posting option to evaluate. Check permissions and data handling before connecting it.
-- **[Combot](https://combot.org/)** — Optional moderation and analytics if the discussion group becomes busy. Sarah already handles routine FAQs, so Combot would be for community moderation rather than sales.
+1. **Strangle, don't rewrite.** Move seams first, revenue last. A big-bang rewrite of a live Stripe/MT5 pipeline is the highest-risk move available.
+2. **One writer per concern.** Every action goes through the API. No direct client→table writes from Lovable, no raw DB access for ABDUL. Otherwise rules diverge.
+3. **Approval gate is non-negotiable.** Nothing containing a price, trade, or offer publishes without Jack's explicit tap — regardless of whether Jack, ABDUL, or a cron initiated it.
+4. **Execution is wake-independent.** ABDUL runs on Jack's laptop, which sleeps. Scheduling and publishing must execute server-side. ABDUL *commands*; TwinOS *executes*.
+5. **Secrets in keyring, never in files.** Service-role keys never reach the frontend or the repo.
+6. **Numbers counted from code.** No unverified claims; "verified" only when the check ran.
 
-### Analytics, channel discovery and attribution
+---
 
-- **[Telechurn](https://telechurn.com/)** — Tracks channel joins and leaves by invite link and can show source-level churn.
-- **[TGStat](https://tgstat.com/)** — Research public channels, posting frequency, reach, mentions and potential placements.
-- **[Telemetrio](https://telemetr.io/)** — Channel discovery and audience/ad analysis; use it as another check when vetting potential partners.
-- **[Telegram channel statistics](https://core.telegram.org/api/stats)** — Native statistics for eligible channel admins.
-- **Named Telegram invite links** — Use a different link for each channel swap, live, creator or campaign so channel joins have a source.
-- **Bot deep links** — Keep `/start` tags such as `?start=tt_live` and `?start=ch_pin` to measure bot starts separately from channel joins.
-- **[TG.ME channel/ad catalogue](https://tg.me/ads)** — Additional channel discovery and public ad research.
+## 6. The mind — Supabase schema
 
-### Paid Telegram reach
+**Identity & revenue**
 
-- **[Telegram Ads](https://ads.telegram.org/)** — Official sponsored messages with channel targeting. The platform documentation says ads appear in public channels with at least 1,000 subscribers.
-- **[Telega.io](https://telega.io/)** — Managed option to find Telegram channel placements and handle campaign operations.
-- **Direct channel swaps** — No software required. Use TGStat or Telemetrio to shortlist relevant non-competing channels and a separate invite link to measure each swap.
+- `users` — telegram_id, username, language (EN/BM), tier, source_link_id, created_at
+- `payments` — user_id, provider (stripe/usdt/stars), amount, currency, status, provider_ref, created_at
+- `entitlements` — user_id, product_code, tier, granted_at, expires_at
+- `products` — code, name, tier, price, currency
 
-**Avoid buying members, views or reactions.** Those numbers do not show whether real people read posts, join the channel or stay, and they conflict with EzyMap’s transparency positioning.
+**Content operations (the main time sink)**
 
-## 3. TikTok, editing and repurposing
+- `content_queue` — id, platform, content_type, body, media_url, status (`draft`/`pending_approval`/`approved`/`published`/`failed`), scheduled_for, published_at, requires_approval(bool), created_by
+- `action_log` — id, **actor** (`jack`/`abdul`/`dashboard`/`cron`), action, target_type, target_id, payload, created_at ← *mandatory audit trail*
 
-### Research and creation
+**Signals** (fed by EzyAi)
 
-- **[Creator Search Insights](https://support.tiktok.com/en/using-tiktok/growing-your-audience/creator-search-insights)** — Search demand, topic suggestions and content gaps. Use it to find lesson questions, not as a promise of reach.
-- **[TikTok Creative Center](https://ads.tiktok.com/business/creativecenter/)** — Research hashtags, sounds, creators and top ads; keep the research within Jack’s trading-education niche.
-- **[TikTok Studio](https://support.tiktok.com/en/using-tiktok/creating-videos/creator-tools-on-tiktok)** — Native content management and analytics.
-- **[CapCut](https://www.capcut.com/)** — Daily chart shorts, captions, zooms and reusable EzyMap templates.
-- **[Canva](https://www.canva.com/)** — Scorecard graphics, lesson covers, channel-audit cards and end cards.
+- `signals` — id, pair, direction, entry, stop, targets, confidence, timeframe, created_at, status
+- `signal_outcomes` — signal_id, result, hit_at, r_multiple
 
-### Cross-posting and scheduling
+**Growth & attribution**
 
-- **[Meta Business Suite](https://www.facebook.com/business/tools/meta-business-suite)** — Native Instagram and Facebook content management and scheduling.
-- **[YouTube Studio](https://studio.youtube.com/)** — Native Shorts publishing and scheduling.
-- **[Metricool](https://metricool.com/)** — Multi-platform calendar, publishing and analytics. Check current plan limits and support for each format before subscribing.
-- **[Repurpose.io](https://repurpose.io/)** — Automated distribution workflows for finished videos.
-- **[Buffer](https://buffer.com/)** — Simpler scheduling queue to compare with Metricool.
-- **[Publer](https://publer.io/)** — Another option for bulk scheduling and cross-posting.
-- **[Adobe Express Content Scheduler](https://www.adobe.com/express/feature/content-scheduler/tiktok)** — Combines creative tools and scheduling.
-- **[Postiz](https://github.com/gitroomhq/postiz-app)** — Popular open-source social publisher; its GitHub page showed roughly 35,000 stars when checked. It advertises self-hosting and a broad set of social integrations. License: AGPL-3.0. Verify the exact integrations and publishing modes before adopting it.
-- **[Mixpost](https://github.com/inovector/mixpost)** — Open-source, self-hostable social-media management. Check current integrations and which features are available in its Lite versus commercial versions.
-- **[n8n](https://n8n.io/)** — Optional workflow automation if an existing webhook needs to connect to approvals, result updates or the content sheet. Add it only to solve a specific integration gap.
+- `source_links` — code, platform, campaign, invite_url, created_at
+- `member_sources` — user_id, source_link_id, joined_at, left_at, invite_source
 
-### Lives-to-content tools
+**Operations**
 
-- **[OpusClip](https://www.opus.pro/)** — Suggests clips from longer recordings. Review every clip manually for correct chart levels, context and risk wording.
-- **[Vizard](https://vizard.ai/)** — Another long-video-to-short-clip option to compare with OpusClip.
-- **[Descript](https://www.descript.com/)** — Transcribes lives and helps find sections to turn into clips or written lessons.
-- **[OBS Studio](https://obsproject.com/)** — Free desktop recording/streaming option for chart capture and reusable scenes.
-- **[TikTok LIVE Studio](https://www.tiktok.com/studio/download)** — Native live-production option, subject to account and regional eligibility.
-- **[StreamYard](https://streamyard.com/)** — Consider only if guest interviews or multi-platform broadcasts become part of the format.
+- `health_checks` — service, status, last_beat_at, detail, checked_at
 
-### Publishing note
+Enable **RLS** from day one. Define this schema **before** pointing Lovable at Supabase — otherwise Lovable generates direct table calls that you will immediately rewrite.
 
-Export a clean master for other platforms, then tailor each platform’s title, caption and call to action. Reddit discussions about schedulers note that scheduled cross-posting may not preserve platform-native audio features. Jack can use native platform tools for those cases.
+---
 
-## 4. Marketing research and measurement
+## 7. The rules — API surface
 
-- **TikTok Creator Search Insights** — Find search-led questions for lessons, Start Safe clips and chart explainers.
-- **TikTok Creative Center** — Check market-relevant trends and sounds before planning content.
-- **TGStat and Telemetrio** — Find relevant Telegram channels and screen potential swap or placement partners.
-- **Telechurn plus named invite links** — Compare joins, departures and retention by promotion source.
-- **Google Trends** — Check broader interest in gold and trading education as supporting context.
-- **Reddit listening** — Useful communities and threads include [r/SocialMediaMarketing](https://www.reddit.com/r/SocialMediaMarketing/), [r/TelegramBots](https://www.reddit.com/r/TelegramBots/) and [r/selfhosted](https://www.reddit.com/r/selfhosted/). Read for recurring problems and project feedback; follow each community’s rules and avoid link-dump promotion.
-- **Google Sheets** — Keep the current content log. Add campaign/source fields only when they answer a useful question.
-- **Looker Studio** — Optional dashboard over Sheets if the weekly reporting process later becomes cumbersome.
+Both Lovable and ABDUL call this. Same endpoints, same permissions.
 
-## 5. Rollout order
+| Endpoint | Purpose | Who may call |
+|---|---|---|
+| `POST /content/draft` | Create draft | jack, abdul |
+| `POST /content/{id}/approve` | **Publish gate** | **jack only** |
+| `POST /content/{id}/schedule` | Server-side job | jack, abdul |
+| `GET /content/inbox` | Pending approvals | all |
+| `GET /analytics/posts` | Performance | all |
+| `GET /analytics/sources` | Attribution | all |
+| `POST /source_links` | Tracked invite link | jack, abdul |
+| `GET /health` | Service status | all |
+| `POST /signals/ingest` | EzyAi → Supabase | cron (scoped key) |
 
-1. **This week:** Set up Creator Search Insights, Creative Center and a reusable CapCut template. Create unique invite/deep links for each campaign and partner.
-2. **After two weeks:** Compare content pillars using watch time, completion, profile views, bot starts, channel joins and retention.
-3. **Then:** Trial either Metricool or Repurpose.io, based on the main remaining bottleneck. Keep it only if it measurably saves time.
-4. **When lives produce useful recordings:** Trial OpusClip or Vizard for clip suggestions; have Jack or Abdul verify every market detail before publishing.
-5. **When Telegram source tests increase:** Add Telechurn and use TGStat/Telemetrio to vet partners.
-6. **Only if the current bot workflow has a gap:** Consider n8n, Postiz or Mixpost rather than replacing working systems.
+---
 
-## 6. Approval and compliance notes
+## 8. The voice — ABDUL control layer
 
-- AI and schedulers can draft, format and queue posts. Jack should approve anything containing a trade, price, result or offer.
-- Match result posts to the board; keep losses visible and include the required risk language.
-- The [Securities Commission Malaysia’s revised advertising guidance](https://www.sc.com.my/resources/media/media-release/sc-issues-revised-guidelines-on-advertising-for-capital-market-products-and-related-services) addresses social media and financial influencers.
-- TikTok’s [financial-services ad policy](https://ads.tiktok.com/help/article/tiktok-ads-policy-financial-services?lang=en) has market-specific requirements, including for Malaysia. Confirm eligibility and local requirements before paid ads or creator promotions.
+ABDUL becomes a **client of the API**, not a database client. Implement a thin **MCP server** (`apps/mcp/`) exposing typed tools, so ABDUL and any future agent control TwinOS without guessing endpoints. Supabase ships an official MCP server — do **not** point ABDUL at raw tables; that bypasses the rules.
+
+**Capabilities:**
+
+| ABDUL command | Result |
+|---|---|
+| "Draft tomorrow's XAUUSD post" | Draft → approval inbox, waits |
+| "Approve the last draft" | Publishes — **explicit instruction only** |
+| "Schedule two TikTok reposts" | Server-side jobs |
+| "How did yesterday's post do?" | Reads analytics |
+| "Anything broken?" | Reads health — kills Z3-feed babysitting |
+| "Which source brought members?" | Reads attribution |
+
+**Guardrail:** ABDUL may **create drafts and read everything**. It publishes **only on explicit Jack instruction**. Regulators hold Jack accountable regardless of who drafted it — so the tap stays human.
+
+---
+
+## 9. Roadmap
+
+| Phase | Weeks | Deliverable | Exit criteria |
+|---|---|---|---|
+| **0 — Mind** | 1 | Supabase project, full schema, RLS, `action_log` | Tables queryable, empty |
+| **1 — Face** | 2–3 | Lovable dashboard: approval inbox, calendar, health | Jack approves a real post from the dashboard |
+| **2 — Voice** | 4 | TwinOS API + MCP; ABDUL commands live | ABDUL drafts + reads successfully |
+| **3 — Pipeline** | 5–6 | EzyAi→Supabase ingest, auto-drafts, cross-post, weekly digest | ≥60% hours cut |
+| **4 — Pocket** | 7+ | PWA push approvals | ≥70% hours cut |
+
+**Do not skip Phase 0.** Lovable built against an undefined schema generates throwaway code.
+
+---
+
+## 10. Lovable build order (use the Pro month)
+
+Build in this sequence — each is independently useful:
+
+1. **Approval Inbox** — highest value: drafts queue + tap-to-approve
+2. **Content Calendar** — drag-drop scheduling
+3. **Health / status page** — replaces manual feed checks
+4. **Analytics + attribution** — which sources produce retained members
+5. **Signal board** — read-only view of EzyAi output
+
+Connect Lovable's **GitHub sync** to this repo so generated code lands in one place.
+
+---
+
+## 11. Migration — strictly risk-ascending
+
+| Order | Move | Risk |
+|---|---|---|
+| 1 | Content & publishing → Supabase | Low |
+| 2 | Health monitoring & alerting | Low |
+| 3 | Analytics & attribution | Low |
+| 4 | (Optional) Funnel bots consolidate | Medium |
+| 5 | **`@EzyRegisterBot` revenue core** | **High — LAST, payments parallel-running** |
+
+Never move payments first. Retire old repos only after the destination carries live traffic.
+
+---
+
+## 12. Compliance & guardrails
+
+- **SC Malaysia** revised advertising guidance covers social media and finfluencers — including creators not formally engaged. Even unpaid promotion of capital-market products can fall in scope.
+- **TikTok financial-services policy** has Malaysia-specific requirements (CBM / SC registration) and restricts high-risk/forex trading promotions in many markets.
+- Enforce: every post carries required risk language; losses stay visible; results matched to the board before posting. Automate the disclaimer block so it cannot be omitted.
+
+---
+
+## 13. Risks
+
+| Risk | Mitigation |
+|---|---|
+| Stripe/MT5 regression during migration | Move last, parallel-run, keep old bot live until proven |
+| PythonAnywhere free tier buckles | Migrate revenue bot early in the sequence, ahead of volume growth |
+| EzyAi Z3 feed instability persists | Ship Phase 2 health monitoring early — visibility before repair |
+| Lovable output diverges from schema | Schema-first; regenerate screens rather than hand-patching |
+| Scope creep back to 4 brands | Explicit non-goal; revisit only after Phase 4 |
+
+---
+
+## 14. Open decisions
+
+1. **Supabase:** new project or reuse existing EzyMap one?
+2. **Repo structure:** monorepo holding everything, or orchestration + dashboard only while the sales core stays in ASAP-TeleBot until migrated? *(Recommendation: monorepo, importing sales code last.)*
+3. **API runtime:** Supabase Edge Functions (Deno/TS) vs FastAPI on Fly.io *(Recommendation: Edge Functions if logic stays light; FastAPI if you port significant existing Python.)*
+4. **PWA vs native Android:** recommend PWA first.
+
+---
+
+## 15. Appendix — tool shortlist
+
+Retained from the earlier survey; only the parts still relevant to a single-brand EzyMap:
+
+- **Topic research:** TikTok Creator Search Insights, TikTok Creative Center — free, native
+- **Editing:** CapCut (templates), Canva (graphics)
+- **Native publishing:** TikTok Studio, Meta Business Suite, YouTube Studio
+- **Scheduling (pick one):** Metricool (analytics-led) or Repurpose.io (video distribution-led)
+- **Telegram analytics/attribution:** Telechurn (invite-link retention), TGStat (discovery), named invite links
+- **Community:** retain Sarah bot for FAQs; Combot only if moderation load grows
+- **Clip extraction:** OpusClip or Vizard, always human-reviewed for financial accuracy
+- **Avoid:** purchased members/views/reactions — they corrupt exactly the metrics this plan depends on
