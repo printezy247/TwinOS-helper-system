@@ -12,7 +12,7 @@
 begin;
 
 -- act as Jack for the whole test
-select set_config('request.jwt.claims', '{"twinos_role":"jack","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"twinos_role":"jack","role":"authenticated"}', false);
 
 -- ---------------------------------------------------------------------------
 -- 1. strict win rate: W / (W + L), break-even excluded
@@ -30,6 +30,16 @@ begin
   assert public.outcome_class('open', null) = 'open';
   raise notice 'ok: strict win rate functions';
 end $$;
+
+-- clean slate, so the file can be re-run against a database that already has
+-- the seed (and against one where a previous run was left half-applied)
+delete from public.signals where external_id like 'smoke-%';
+delete from public.content_items where title like 'smoke %';
+delete from public.settings where key = 'smoke_test';
+delete from public.member_events where user_id in (42, 777);
+delete from public.memberships where user_id in (42, 777);
+delete from public.invite_links where name = 'tt-live-2610';
+delete from public.api_keys where name like 'smoke%';
 
 insert into public.signals (external_id, source, pair, style, mode, direction, entry, stop_loss, tp1, tp2, rr_target, confidence, status, r_multiple, data_source, signal_at) values
   ('smoke-w1', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'tp2', 2.4, 'live', now() - interval '3 days'),
@@ -81,33 +91,46 @@ end $$;
 
 -- ---------------------------------------------------------------------------
 -- 3. content_variants guards
+--    Each check is its own block so a failure names itself.
 -- ---------------------------------------------------------------------------
+
+-- 3a. requires_approval is forced by a claim, and by the post type
 do $$
 declare
   v_lesson uuid;
   v_signal uuid;
   v_result uuid;
-  v_var uuid;
   v_req boolean;
+begin
+  insert into public.content_items (post_type, title) values ('lesson', 'smoke lesson') returning id into v_lesson;
+  insert into public.content_items (post_type, title) values ('signal_card', 'smoke signal') returning id into v_signal;
+  insert into public.content_items (post_type, title) values ('result_reply', 'smoke result') returning id into v_result;
+
+  insert into public.content_variants (item_id, body) values (v_lesson, 'Save this. #Lesson')
+    returning requires_approval into v_req;
+  assert v_req = false, 'a lesson without claims must not require approval';
+
+  insert into public.content_variants (item_id, body) values (v_signal, 'BUY | XAUUSD')
+    returning requires_approval into v_req;
+  assert v_req = true, 'a signal_card must be forced to requires_approval';
+
+  insert into public.content_variants (item_id, body, claim_flags) values (v_lesson, 'EzyMap Lite $49', '{price}'::text[])
+    returning requires_approval into v_req;
+  assert v_req = true, 'claim_flags must force requires_approval';
+  raise notice 'ok: requires_approval forced by claims and post type';
+end $$;
+
+-- 3b. only Jack may approve, and a non-jack decision is refused
+do $$
+declare
+  v_var uuid;
   v_caught boolean;
 begin
-  -- a lesson needs no approval; a signal is forced to requires_approval
-  insert into public.content_items (post_type, title) values ('lesson', 'smoke lesson') returning id into v_lesson;
-  insert into public.content_items (post_type, title) values ('signal', 'smoke signal') returning id into v_signal;
-  insert into public.content_items (post_type, title) values ('result', 'smoke result') returning id into v_result;
+  insert into public.content_variants (item_id, body, claim_flags)
+    select id, 'BUY | XAUUSD', '{level,signal_card}'::text[] from public.content_items where title = 'smoke signal'
+    returning id into v_var;
 
-  insert into public.content_variants (item_id, body) values (v_lesson, 'Save this. #Lesson') returning requires_approval into v_req;
-  assert v_req = false, 'lesson without claims must not require approval';
-
-  insert into public.content_variants (item_id, body) values (v_signal, 'BUY | XAUUSD') returning id, requires_approval into v_var, v_req;
-  assert v_req = true, 'signal must be forced to requires_approval';
-
-  -- a lesson with a price claim is forced too
-  insert into public.content_variants (item_id, body, claim_flags) values (v_lesson, 'EzyMap Lite $49', '{price}') returning requires_approval into v_req;
-  assert v_req = true, 'claim_flags must force requires_approval';
-
-  -- abdul may not approve, even with approved_by = jack
-  perform set_config('request.jwt.claims', '{"twinos_role":"abdul","role":"authenticated"}', true);
+  perform set_config('request.jwt.claims', '{"twinos_role":"abdul","role":"authenticated"}', false);
   v_caught := false;
   begin
     update public.content_variants set status = 'approved', approved_by = 'jack' where id = v_var;
@@ -115,9 +138,8 @@ begin
     v_caught := true;
   end;
   assert v_caught, 'abdul approving must be rejected';
-  perform set_config('request.jwt.claims', '{"twinos_role":"jack","role":"authenticated"}', true);
+  perform set_config('request.jwt.claims', '{"twinos_role":"jack","role":"authenticated"}', false);
 
-  -- jack with the wrong approved_by is rejected; with approved_by = jack it passes
   v_caught := false;
   begin
     update public.content_variants set status = 'approved', approved_by = 'abdul' where id = v_var;
@@ -126,22 +148,153 @@ begin
   end;
   assert v_caught, 'approved_by must be jack';
 
-  update public.content_variants set status = 'pending_approval' where id = v_var;
   update public.content_variants set status = 'approved', approved_by = 'jack' where id = v_var;
   assert (select approved_at is not null from public.content_variants where id = v_var), 'approved_at set by the guard';
+  raise notice 'ok: only jack approves';
+end $$;
 
-  -- [NEEDED] placeholders block scheduling
+-- 3c. returning to pending_approval clears the decision
+do $$
+declare
+  v_var uuid;
+begin
+  select id into v_var from public.content_variants where body = 'BUY | XAUUSD' limit 1;
+  update public.content_variants set status = 'pending_approval' where id = v_var;
+  assert (select approved_by is null and approved_at is null from public.content_variants where id = v_var),
+    'returning to pending_approval must clear the recorded decision';
+  update public.content_variants set status = 'approved', approved_by = 'jack' where id = v_var;
+  assert (select status = 'approved' from public.content_variants where id = v_var), 're-approving from a clean state works';
+  raise notice 'ok: approval is cleared on edit';
+end $$;
+
+-- 3d. the way the functions approve: an approvals row, then the item flips.
+--     No approved_by is written on the variant by the functions.
+do $$
+declare
+  v_jack uuid;
+  v_jvar uuid;
+begin
+  insert into public.content_items (post_type, title, status) values ('signal_card', 'smoke jack approves', 'draft')
+    returning id into v_jack;
+  insert into public.content_variants (item_id, body, claim_flags)
+    values (v_jack, 'BUY | XAUUSD 4590', '{level,signal_card}'::text[]) returning id into v_jvar;
+  insert into public.approvals (content_id, decision, by_actor, via) values (v_jack, 'approve', 'jack', 'telegram');
+  update public.content_items set status = 'approved' where id = v_jack;
+  assert (select status = 'approved' from public.content_variants where id = v_jvar),
+    'a jack approvals row must let the item and its variant reach approved';
+  assert (select approved_by from public.content_variants where id = v_jvar) = 'jack',
+    'the mirrored variant records who decided';
+  raise notice 'ok: approval via the approvals row';
+end $$;
+
+-- 3e. an approvals row from anyone but Jack is refused outright
+do $$
+declare
+  v_abd uuid;
+  v_caught boolean;
+begin
+  insert into public.content_items (post_type, title, status) values ('signal_card', 'smoke abdul tries', 'draft')
+    returning id into v_abd;
   v_caught := false;
   begin
-    update public.content_variants set status = 'scheduled', needed_fields = '{TP2}', scheduled_for = now() + interval '1 hour' where id = v_var;
+    insert into public.approvals (content_id, decision, by_actor, via) values (v_abd, 'approve', 'abdul', 'dashboard');
+  exception when insufficient_privilege then
+    v_caught := true;
+  end;
+  assert v_caught, 'an abdul approvals row must be refused';
+  raise notice 'ok: non-jack approvals refused';
+end $$;
+
+-- 3f. the board_rule exception (plan 9.N.107): a result_reply with no price and
+--     no offer may be approved by rule. Anything with money in it stays Jack's.
+do $$
+declare
+  v_ok uuid;
+  v_okv uuid;
+  v_no uuid;
+  v_nov uuid;
+  v_caught boolean;
+begin
+  insert into public.content_items (post_type, title, status) values ('result_reply', 'smoke board rule', 'draft')
+    returning id into v_ok;
+  insert into public.content_variants (item_id, body) values (v_ok, 'TP1 hit: +1.5R') returning id into v_okv;
+  insert into public.approvals (content_id, decision, by_actor, by_subject, via, note)
+    values (v_ok, 'approve', 'abdul', 'abdul-key', 'board_rule', 'result tp1 from the board');
+  update public.content_items set status = 'approved' where id = v_ok;
+  assert (select status = 'approved' from public.content_variants where id = v_okv),
+    'a board-sourced result reply may be approved by rule';
+
+  -- the same exception must not carry an offer. The approvals insert itself is
+  -- refused, because the guard sees the price claim on the variant.
+  insert into public.content_items (post_type, title, status) values ('result_reply', 'smoke board rule with a price', 'draft')
+    returning id into v_no;
+  insert into public.content_variants (item_id, body, claim_flags)
+    values (v_no, 'TP1 hit, EzyMap Pro $249', '{price,offer}'::text[]) returning id into v_nov;
+  v_caught := false;
+  begin
+    insert into public.approvals (content_id, decision, by_actor, by_subject, via)
+      values (v_no, 'approve', 'abdul', 'abdul-key', 'board_rule');
+  exception when insufficient_privilege then
+    v_caught := true;
+  end;
+  assert v_caught, 'board_rule must not approve a post carrying a price or offer';
+  raise notice 'ok: board_rule is narrow';
+end $$;
+
+-- 3g. an unapproved claim post cannot reach published
+do $$
+declare
+  v_un uuid;
+  v_caught boolean;
+begin
+  insert into public.content_items (post_type, title, status) values ('signal_card', 'smoke unapproved publish', 'draft')
+    returning id into v_un;
+  insert into public.content_variants (item_id, body, claim_flags)
+    values (v_un, 'BUY | XAUUSD 4590', '{level,signal_card}'::text[]);
+  v_caught := false;
+  begin
+    update public.content_items set status = 'published' where id = v_un;
+  exception
+    when insufficient_privilege then v_caught := true;
+    when check_violation then v_caught := true;
+  end;
+  assert v_caught, 'an unapproved claim post must not reach published';
+  raise notice 'ok: publishing needs approval';
+end $$;
+
+-- 3h. [NEEDED] placeholders block scheduling
+do $$
+declare
+  v_var uuid;
+  v_caught boolean;
+begin
+  select id into v_var from public.content_variants where body = 'BUY | XAUUSD' limit 1;
+  update public.content_variants set approved_by = 'jack', approved_at = now() where id = v_var;
+  v_caught := false;
+  begin
+    update public.content_variants
+       set status = 'scheduled', needed_fields = '{TP2}', scheduled_for = now() + interval '1 hour'
+     where id = v_var;
   exception when check_violation then
     v_caught := true;
   end;
   assert v_caught, 'needed_fields must block scheduling';
-  update public.content_variants set status = 'scheduled', scheduled_for = now() + interval '1 hour' where id = v_var;
+  update public.content_variants
+     set status = 'scheduled', needed_fields = '{}', scheduled_for = now() + interval '1 hour'
+   where id = v_var;
+  raise notice 'ok: [NEEDED] blocks scheduling';
+end $$;
 
-  -- a result post cannot be scheduled without board_refs
-  insert into public.content_variants (item_id, body, status, approved_by) values (v_result, 'TP1 hit: +1.5R', 'approved', 'jack') returning id into v_var;
+-- 3i. a result post needs board_refs, and the writes are logged
+do $$
+declare
+  v_result uuid;
+  v_var uuid;
+  v_caught boolean;
+begin
+  select id into v_result from public.content_items where title = 'smoke result';
+  insert into public.content_variants (item_id, body, status, approved_by)
+    values (v_result, 'TP1 hit: +1.5R', 'approved', 'jack') returning id into v_var;
   v_caught := false;
   begin
     update public.content_variants set status = 'scheduled' where id = v_var;
@@ -149,12 +302,14 @@ begin
     v_caught := true;
   end;
   assert v_caught, 'result without board_refs must be blocked';
-  update public.content_variants set board_refs = array[(select id from public.signals where external_id = 'smoke-w2')], status = 'scheduled' where id = v_var;
+  update public.content_variants
+     set board_refs = array[(select id from public.signals where external_id = 'smoke-w2')],
+         status = 'scheduled'
+   where id = v_var;
   assert (select status from public.content_variants where id = v_var) = 'scheduled';
-
-  -- the variant writes were logged
-  assert (select count(*) from public.action_log where target_table = 'content_variants') >= 8, 'content_variants changes are logged';
-  raise notice 'ok: approval and publish guards';
+  assert (select count(*) from public.action_log where target_table = 'content_variants') >= 8,
+    'content_variants changes are logged';
+  raise notice 'ok: result needs board_refs, and the audit trail is written';
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -208,7 +363,7 @@ begin
     raise notice 'skip: role authenticated not present (not a Supabase database)';
     return;
   end;
-  perform set_config('request.jwt.claims', '{"twinos_role":"ezyai","role":"authenticated"}', true);
+  perform set_config('request.jwt.claims', '{"twinos_role":"ezyai","role":"authenticated"}', false);
   begin
     insert into public.content_items (post_type, title) values ('lesson', 'ezyai must not write content');
   exception when insufficient_privilege then
@@ -216,7 +371,7 @@ begin
   end;
   assert v_caught, 'ezyai inserting content_items must be denied by RLS';
   assert (select count(*) from public.settings) = 0, 'ezyai must not read settings';
-  perform set_config('request.jwt.claims', '{"twinos_role":"abdul","role":"authenticated"}', true);
+  perform set_config('request.jwt.claims', '{"twinos_role":"abdul","role":"authenticated"}', false);
   assert (select count(*) from public.settings) > 0, 'abdul reads settings';
   v_caught := false;
   begin
@@ -228,7 +383,7 @@ begin
   -- the guard rejects abdul approving, and RLS would reject the new status anyway
   assert v_caught, 'abdul cannot approve through RLS either';
   execute 'reset role';
-  perform set_config('request.jwt.claims', '{"twinos_role":"jack","role":"authenticated"}', true);
+  perform set_config('request.jwt.claims', '{"twinos_role":"jack","role":"authenticated"}', false);
   raise notice 'ok: RLS sanity';
 end $$;
 

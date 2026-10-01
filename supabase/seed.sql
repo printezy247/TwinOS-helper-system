@@ -257,7 +257,7 @@ End with one line pointing to the macro bot. No predictions stated as certain.$t
    '["DATE", "LIST", "NOTES"]',
    '[{"label": "EXAMPLE", "lang": "en", "body": "*MACRO CHECK | Tue 14 Oct*\n\nToday''s key events (MYT)\n- 20:30 US Retail Sales (high impact)\n- 22:00 Fed speaker\n\nWhat it can mean for gold: a strong number usually lifts the dollar and pressures gold short term. A weak one does the opposite.\n\nFull heatmaps and Fed watch live in the macro bot."}]',
    '{}', 900, '#Macro', 'Automatic from the macro bot digest. No approval unless the claim detector flags a level or a certain prediction.', false, null),
-  ('signal', 3, 'Free signal card', 'When an EzyMap alert fires and Jack approves it (London/NY session, 1-2 per day).',
+  ('signal_card', 3, 'Free signal card', 'When an EzyMap alert fires and Jack approves it (London/NY session, 1-2 per day).',
    $t$Turn this EzyMap alert into a channel signal card.
 Alert text: {PASTE ALERT}
 TP1 and TP2 if different from alert: {TP1}, {TP2}
@@ -266,7 +266,7 @@ Keep the exact numbers. Add the management plan line and the risk line. Use the 
    '["ALERT", "TP1", "TP2", "N"]',
    '[{"label": "EXAMPLE", "lang": "en", "body": "[green circle] *BUY | XAUUSD | M15*\n\nEntry zone: *4,014 - 4,017*\nStop loss: *4,006*\nTP1: *4,030* (1.5R)\nTP2: *4,046*\nConfluences: 3\n\nPlan: half off at TP1, stop to entry, let the rest run.\nRisk 1% or less. Free signal #3 this week.\n\nResults get posted as a reply under this message."}]',
    '{risk,result_footer}', 900, '#Signal', 'Jack taps approve on every signal card. If the alert says COUNTER-TREND, keep that warning line in the post.', true, 'Built from the real alert fields: direction, symbol, timeframe, entry, TP, SL, confluences. Source: TradingView webhook or EzyAi (§9.D.22–23).'),
-  ('result', 4, 'Result update (reply under the signal)', 'On hit. Every signal gets one, posted as a reply to the original card.',
+  ('result_reply', 4, 'Result update (reply under the signal)', 'On hit. Every signal gets one, posted as a reply to the original card.',
    $t$Write a result reply for this EzyMap signal.
 Original signal: {PASTE CARD}
 Outcome: {TP1 / TP2 / BE / SL}
@@ -287,7 +287,7 @@ Under 600 characters. No selling.$t$,
    '["TOPIC", "TYPE", "LANGUAGE"]',
    '[{"label": "SKILL", "lang": "en", "body": "[books] *LESSON | Where your stop really goes*\n\nMost people put the stop a few pips under entry because it ''feels safe''. On gold that''s where the noise lives.\n\nPut it beyond the structure that proves you wrong, then size the lot so that distance equals 1% of your account.\n\nWide stop, small lot. Tight stop, bigger lot. Same risk.\n\nSave this. #Lesson"}, {"label": "START SAFE (BM)", "lang": "ms", "body": "[books] *START SAFE | 3 red flag channel signal*\n\n1. Tunjuk profit je, loss tak pernah ada\n2. Suruh deposit dulu baru dapat ''VIP''\n3. Admin DM korang dulu minta duit\n\nKalau jumpa tiga-tiga ni, lari.\nKat EzyMap, semua loss kekal dalam channel. #StartSafe"}]',
    '{}', 600, '#Lesson / #StartSafe', 'Drafted in the Wednesday batch, Jack reviews by number, ABDUL schedules. No selling, so no approval beyond the batch review.', false, 'Weekly batch: 5 skill + 2 Start Safe (§9.C.18).'),
-  ('audit', 6, 'Channel Audit', 'Wednesday. Takes apart a common pattern, never a named channel.',
+  ('channel_audit', 6, 'Channel Audit', 'Wednesday. Takes apart a common pattern, never a named channel.',
    $t$Write this week's Channel Audit post.
 Pattern to audit: {PATTERN}
 How it misleads people (Jack's notes): {NOTES}
@@ -345,7 +345,7 @@ Include the IB disclosure line for variant A. One call to action. Under 500 char
    '["MESSAGE", "PERMISSION"]',
    '[{"label": "EXAMPLE", "lang": "en", "body": "Shared with permission by a Premium member:\n\n\"Stopped chasing entries, waited for the zone. 3 trades this week, 2 wins, 1 loss, +2.8R on a $600 account.\"\n\nNot every week looks like this. What we like here is the process: fewer trades, planned stops."}]',
    '{permission,results_vary}', 900, null, 'No permission, no post. Never edit the member''s numbers. Written permission recorded; names and account numbers removed. Jack approves.', true, null),
-  ('holiday_milestone', 14, 'Market closed / holiday / milestone', 'Weekends, public holidays and member milestones.',
+  ('holiday', 14, 'Market closed / holiday / milestone', 'Weekends, public holidays and member milestones.',
    $t$Write a short {HOLIDAY NOTICE / MILESTONE} post. Details: {DETAILS}. Under 300 characters.$t$,
    '["KIND", "DETAILS"]',
    '[{"label": "HOLIDAY", "lang": "en", "body": "Markets are thin today for the Deepavali holiday. No map, no signals. Good day to review your journal. Back tomorrow at 8am."}, {"label": "MILESTONE", "lang": "en", "body": "We just passed *1,000 members*. Thank you for being here.\n\nSame promise as day one: daily map, every result posted, no hype. If EzyMap helped you, send the channel to one friend who trades."}]',
@@ -393,7 +393,7 @@ BRAND FACTS
 OUTPUT
 Give me the post ready to paste, then one alternative version, then nothing else.$t$,
    '{"note": "Prices in BRAND FACTS must match products; the drafting function substitutes them from the table before use."}', 'Posting Kit §03', 1),
-  ('weekly_batch_prompt', 'batch', 'en',
+  ('master_prompt', 'batch', 'en',
    $t$Batch for next week ({DATES}). Using the master rules, write:
 1. Seven lessons (Mon-Sun). Topics: {LIST OR "pick from the lesson topic list, 5 skill + 2 Start Safe"}. Mix EN and BM: {RATIO}.
 2. One Channel Audit on: {PATTERN}.
@@ -602,15 +602,15 @@ insert into public.calendar_slots (kind, dow, time_local, time_label, platform, 
   ('channel_daily', null, '08:00', null, 'telegram', 'gold_map', 'auto', 'Gold map, published after OK', 'Posting Kit §01 / Growth Plan §07'),
   ('channel_daily', null, '08:15', null, 'telegram', 'macro_card', 'auto', 'Macro card from the macro bot digest (template 2)', 'Posting Kit §01 / Growth Plan §07'),
   ('channel_daily', null, '13:00', null, 'telegram', 'lesson', 'auto', 'Lesson from the weekly batch', 'Posting Kit §01 / Growth Plan §07'),
-  ('channel_daily', null, null, 'London/NY', 'telegram', 'signal', 'jack+auto', 'Free signal card 1-2 from the EzyMap alert; Jack taps approve', 'Posting Kit §01 / Growth Plan §07'),
-  ('channel_daily', null, null, 'On hit', 'telegram', 'result', 'auto', 'Result reply under the original signal (template 4)', 'Posting Kit §01 / Growth Plan §07'),
+  ('channel_daily', null, null, 'London/NY', 'telegram', 'signal_card', 'jack+auto', 'Free signal card 1-2 from the EzyMap alert; Jack taps approve', 'Posting Kit §01 / Growth Plan §07'),
+  ('channel_daily', null, null, 'On hit', 'telegram', 'result_reply', 'auto', 'Result reply under the original signal (template 4)', 'Posting Kit §01 / Growth Plan §07'),
   ('channel_daily', null, null, '15-30 min before CPI/NFP/FOMC', 'telegram', 'news_alert', 'auto', 'News alert; approve if it names levels', 'Posting Kit §01 / Growth Plan §07'),
   ('channel_daily', null, '20:00', null, 'telegram', 'evening_wrap', 'jack+auto', 'Evening wrap from one line (template 11)', 'Posting Kit §01 / Growth Plan §07');
 
 -- Channel weekly extras
 insert into public.calendar_slots (kind, dow, time_local, platform, post_type, who, notes, source) values
   ('channel_weekly', 1, '09:00', 'telegram', 'poll', 'auto', 'Poll: what are you trading this week? (feeds TikTok topics)', 'Growth Plan §07 weekly'),
-  ('channel_weekly', 3, '13:00', 'telegram', 'audit', 'abdul', 'Channel Audit post, with a short TikTok version', 'Growth Plan §07 weekly'),
+  ('channel_weekly', 3, '13:00', 'telegram', 'channel_audit', 'abdul', 'Channel Audit post, with a short TikTok version', 'Growth Plan §07 weekly'),
   ('channel_weekly', 5, '18:00', 'telegram', 'scorecard', 'auto', 'Weekly scorecard image generated from the board: trades, strict win rate, total R', 'Growth Plan §07 weekly'),
   ('channel_weekly', 6, '12:00', 'telegram', 'offer', 'jack', 'Offer post (one per week): the ladder, a trial, or a member result with permission', 'Growth Plan §07 weekly'),
   ('channel_weekly', 7, '20:00', 'telegram', 'outlook', 'jack', 'Weekly outlook: gold levels and the big events ahead (about 45 min)', 'Growth Plan §07 weekly');
@@ -677,6 +677,18 @@ insert into public.mod_rules (key, kind, lang, patterns, params, action, applies
   ('repeat_question', 'repeat_question', 'both', array[]::text[],
    '{"window_days": 14, "min_similarity": 0.8}', 'flag', 'both', 'A question asked twice gets proposed for Sarah''s reply sheet (§9.I.75).')
 on conflict (key) do update set kind = excluded.kind, lang = excluded.lang, patterns = excluded.patterns, params = excluded.params, action = excluded.action, applies_to = excluded.applies_to, notes = excluded.notes;
+
+-- The ops bot matches one `pattern` per rule with new RegExp(pattern, "i"), so a
+-- keyword rule carries its phrases as an alternation. `patterns` keeps the
+-- readable list for the dashboard. link_block is matched by the bot on the
+-- message's entities, not by regex, so it has no pattern.
+update public.mod_rules
+   set pattern = case
+     when kind = 'keyword' then array_to_string(patterns, '|')
+     when kind = 'impersonation' then '\b(jack|ezymap|ezyregister|sarah|ezy map)\b'
+     else null
+   end
+ where kind in ('keyword', 'impersonation');
 
 -- ===========================================================================
 -- benchmarks — the five reference channels (decisions 5 and 12, §4.10).
