@@ -11,7 +11,7 @@ writes to printezy's database.
 
 ```
 supabase/
-  config.toml            minimal CLI config (project_id blank until linked)
+  config.toml            minimal CLI config (project_id is the local name "twinos")
   migrations/
     0001_core.sql        settings, brand_facts, products, personas, action_log, approvals,
                          health_checks, alerts, jobs, baseline_hours, time_saved, role helpers
@@ -76,7 +76,7 @@ empty project created in the Supabase dashboard (§16.3 decides which account).
 ```bash
 cd TwinOS-helper-system
 supabase login
-supabase link --project-ref <ref>        # writes project_id into config.toml
+supabase link --project-ref <ref>        # remembers the project ref (supabase/.temp)
 supabase db push                         # applies migrations/0001..0011 in order
 psql "$(supabase db url)" -v ON_ERROR_STOP=1 -f supabase/seed.sql   # or: supabase db reset --linked (migrations + seed)
 psql "$(supabase db url)" -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql

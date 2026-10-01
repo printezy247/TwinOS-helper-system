@@ -1,8 +1,9 @@
 # TwinOS Supabase project (Phase 0, "the mind").
-# project_id is filled in by `supabase link --project-ref <ref>` once Jack has
-# created the TwinOS project in his own Supabase account (UPGRADE-PLAN §8,
-# decision 10). It is deliberately left blank here: no project exists yet.
-project_id = ""
+# project_id is only the CLI's local name for this project (it labels the local
+# Docker stack); the real project ref lives in supabase/.temp after
+# `supabase link --project-ref <ref>`. It must be non-empty or every CLI command
+# fails with "Missing required field in config: project_id".
+project_id = "twinos"
 
 [api]
 enabled = true
@@ -13,7 +14,7 @@ max_rows = 1000
 
 [db]
 port = 54322
-major_version = 15
+major_version = 17
 
 [db.seed]
 enabled = true

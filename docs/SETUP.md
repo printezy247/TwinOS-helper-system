@@ -73,7 +73,7 @@ secret-tool store --label "TwinOS db url" service twinos key db_url   # session 
 cd ~/TwinOS-helper-system
 npm i -g supabase                          # or the .deb from supabase.com/docs/guides/cli
 supabase login                             # browser auth; paste the URL it prints
-supabase link --project-ref <ref>          # writes project_id into supabase/config.toml
+supabase link --project-ref <ref>          # remembers the project ref (supabase/.temp)
 supabase db push                           # applies supabase/migrations/0001…0011
 ```
 
