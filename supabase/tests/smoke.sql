@@ -387,5 +387,50 @@ begin
   raise notice 'ok: RLS sanity';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- 12. anon reads the public board and nothing behind it (0013)
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_caught boolean;
+  v_live integer := (select count(*) from public.signals
+                      where external_id like 'smoke-%' and data_source = 'live' and status <> 'shadow');
+  v_stats integer := (select signals from public.results_stats(now() - interval '30 days', now() + interval '1 hour'));
+begin
+  assert v_live > 0, 'the smoke fixtures must include live signals';
+  begin
+    execute 'set local role anon';
+  exception when undefined_object or invalid_parameter_value then
+    raise notice 'skip: role anon not present (not a Supabase database)';
+    return;
+  end;
+  assert (select count(*) from public.v_results_board where external_id like 'smoke-%') = v_live, 'anon sees every live board row';
+  assert (select count(*) from public.signals where external_id in ('smoke-demo', 'smoke-shadow')) = 0, 'anon must not see demo or shadow signals';
+  assert (select signals from public.results_stats(now() - interval '30 days', now() + interval '1 hour')) = v_stats, 'anon gets the same board numbers from results_stats';
+  v_caught := false;
+  begin
+    perform raw from public.signals limit 1;
+  exception when insufficient_privilege then
+    v_caught := true;
+  end;
+  assert v_caught, 'anon must not read signals.raw';
+  v_caught := false;
+  begin
+    perform chat_id from public.signal_posts limit 1;
+  exception when insufficient_privilege then
+    v_caught := true;
+  end;
+  assert v_caught, 'anon must not read signal_posts.chat_id';
+  v_caught := false;
+  begin
+    perform 1 from public.settings limit 1;
+  exception when insufficient_privilege then
+    v_caught := true;
+  end;
+  assert v_caught, 'anon must not read settings';
+  execute 'reset role';
+  raise notice 'ok: anon reads the public board only';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;

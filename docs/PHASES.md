@@ -7,7 +7,7 @@ Exit: schema reviewed; baseline logged.
 - [ ] Baseline week: hours by task logged (`baseline_hours`) — Jack
 - [x] Unified monthly-first price list decided (§16 Q2): catalog prices kept, TradingView Pro $29/mo; EzyAI founding price deferred to Q1 2027
 - [ ] Reference-channel handles given (§16 Q1) — Jack
-- [x] Schema written and reviewed (`supabase/migrations`, 0001–0012)
+- [x] Schema written and reviewed (`supabase/migrations`, 0001–0014)
 - [x] Schema verified against a real Postgres: migrations + seed + `tests/smoke.sql` load and pass, and CI repeats it on every push
 - [x] Schema reconciled with the Edge Functions (`0011_contract.sql`) — the two halves had drifted and nothing had ever run them together
 - [x] Seed: settings, brand_facts, products, personas, 15 templates, style_guide, hooks, calendar_slots, live_runsheets, mod_rules, benchmarks (`supabase/seed.sql`)

@@ -49,7 +49,7 @@ loaded because nothing had ever executed the two together. The first real
 column the earlier files use is still there. Where the two sides disagreed on a
 name, the migration keeps its own column and adds the function-side one, with a
 trigger or a generated view keeping them in step. It was verified on a real
-Postgres 17 by loading `0001`–`0012` + `seed.sql` and running `tests/smoke.sql`,
+Postgres 17 by loading `0001`–`0014` + `seed.sql` and running `tests/smoke.sql`,
 which CI now does on every push.
 
 Three decisions inside it are worth knowing:
@@ -77,7 +77,7 @@ empty project created in the Supabase dashboard (§16.3 decides which account).
 cd TwinOS-helper-system
 supabase login
 supabase link --project-ref <ref>        # remembers the project ref (supabase/.temp)
-supabase db push                         # applies migrations/0001..0012 in order
+supabase db push                         # applies migrations/0001..0014 in order
 psql "$(supabase db url)" -v ON_ERROR_STOP=1 -f supabase/seed.sql   # or: supabase db reset --linked (migrations + seed)
 psql "$(supabase db url)" -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql
 ```
@@ -130,7 +130,7 @@ Jack and the dashboard get the claim through a Supabase Auth hook
 | `ezyai` | insert / upsert `signals` and `signal_outcomes` only (plus health beats); use `ingest_signals(jsonb)` and `ingest_outcome(jsonb)` |
 | `pc_worker` | select/update `jobs`; insert `assets`, `post_metrics`, `telechurn_imports`, `queries`, `topic_clusters`; read `settings`, `assets`, research tables, `content_*`, `personas`, `benchmarks`, `exemplars` |
 | `dashboard` | read all; writes only through RPC / Edge Functions |
-| `anon` | `select` on `v_results_board` only |
+| `anon` | the public board: `v_results_board`, backed by column grants and an RLS policy on live, non-shadow `signals` only (0013) |
 
 Guards that no role can bypass (triggers, 0008 and 0011):
 
