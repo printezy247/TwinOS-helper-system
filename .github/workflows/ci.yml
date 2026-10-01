@@ -35,6 +35,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: cross-file consistency
+        run: python3 tests/check_consistency.py
       - name: workers/pc
         working-directory: workers/pc
         run: python3 -m unittest discover -v -p "test_*.py"
