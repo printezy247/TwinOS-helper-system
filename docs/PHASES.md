@@ -5,7 +5,7 @@ Tick as done. "Jack" items are in `docs/SETUP.md` with commands.
 ## Phase 0 — Plan and mind (1–7 Oct 2026)
 Exit: schema reviewed; baseline logged.
 - [ ] Baseline week: hours by task logged (`baseline_hours`) — Jack
-- [ ] Unified monthly-first price list decided (§16 Q2) — Jack
+- [x] Unified monthly-first price list decided (§16 Q2): catalog prices kept, TradingView Pro $29/mo; EzyAI founding price deferred to Q1 2027
 - [ ] Reference-channel handles given (§16 Q1) — Jack
 - [x] Schema written and reviewed (`supabase/migrations`, 0001–0012)
 - [x] Schema verified against a real Postgres: migrations + seed + `tests/smoke.sql` load and pass, and CI repeats it on every push
@@ -17,8 +17,8 @@ Exit: schema reviewed; baseline logged.
 - [x] Cross-file consistency checks (`tests/check_consistency.py`, 21 checks) in CI
 - [x] `deno check`/`deno lint`/`deno test` run locally against Deno 2.9.6 and are clean
 - [ ] Supabase project created in Jack's account, region Singapore; `db push`; seed applied; smoke test green — Jack (`docs/SETUP.md` step 0.2)
-- [ ] `pg_cron`, `pg_net` enabled; `assets` bucket created — Jack
-- [ ] Jack's login created with `twinos_role = jack` — Jack
+- [x] `pg_cron`, `pg_net` (in `extensions`), pgvector enabled; private `assets` bucket created (45 MB limit)
+- [x] Jack's login created with `twinos_role = jack`
 - [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / on the host — Jack
 - [ ] @EzyOps_bot created; token in keyring and function secrets — Jack
 - [ ] EzyMap Desk group created (Jack + bot); chat ids in `settings` — Jack
