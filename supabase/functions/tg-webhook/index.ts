@@ -14,7 +14,7 @@
  *   message in discussion group → moderation rules (mod_rules, moderation_events)
  *   message_reaction_count → post_snapshots (reactions)
  */
-import { serve, json } from "_shared/http.ts";
+import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
@@ -98,8 +98,14 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
   if (!parsed) { await tg.answerCallbackQuery(cq.id, "Unknown button."); return; }
 
   let content_id: string;
-  try { content_id = await resolveShort(parsed.short); } catch {
-    await tg.answerCallbackQuery(cq.id, "That draft is gone or already handled.", true);
+  try { content_id = await resolveShort(parsed.short); } catch (err) {
+    // Only a real "not found" is "gone". Anything else is a fault: say so and
+    // log it, instead of blaming the draft (a uuid LIKE error hid here once).
+    const gone = err instanceof HttpError && err.status === 404;
+    if (!gone) {
+      await logAction({ actor: ACTOR, action: "desk.callback_failed", payload: { verb: parsed.verb, short: parsed.short, error: String(err).slice(0, 300) } });
+    }
+    await tg.answerCallbackQuery(cq.id, gone ? "That draft is gone or already handled." : "Something broke on my side. Logged; try again in a minute.", true);
     return;
   }
   const chat = cq.message?.chat.id;

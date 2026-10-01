@@ -1,5 +1,15 @@
-import { assertEquals } from "std/assert/mod.ts";
-import { pickLines, render, requiredLineFacts } from "./content.ts";
+import { assertEquals, assertThrows } from "std/assert/mod.ts";
+import { pickLines, render, requiredLineFacts, shortIdRange } from "./content.ts";
+
+Deno.test("a Desk short id becomes a uuid range (Postgres has no LIKE on uuid)", () => {
+  assertEquals(shortIdRange("C0203593"), {
+    from: "c0203593-0000-0000-0000-000000000000",
+    to: "c0203593-ffff-ffff-ffff-ffffffffffff",
+  });
+  assertThrows(() => shortIdRange("c020359"));
+  assertThrows(() => shortIdRange("zz203593"));
+  assertThrows(() => shortIdRange("c0203593%"));
+});
 
 const tpl = (body: string, fields: string[] = [], lines: string[] = []) => ({ body, fields, required_lines: lines });
 
