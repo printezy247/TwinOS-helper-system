@@ -49,20 +49,42 @@ jobs:
         run: python3 -m compileall -q workers
 
   sql:
-    name: sql lint (skipped without a tool)
+    name: sql (migrations + seed + smoke against a real Postgres)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: twinos
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/twinos
     steps:
       - uses: actions/checkout@v4
-      - name: sqlfluff if available
+      - name: install psql client
         run: |
-          if command -v sqlfluff >/dev/null 2>&1; then
-            sqlfluff lint supabase/migrations --dialect postgres
-          elif [ -d supabase/migrations ]; then
-            echo "no sql linter installed; listing migrations only"
-            ls -1 supabase/migrations
-          else
-            echo "no migrations yet; skipping"
-          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      # The migrations create the anon / authenticated / service_role roles
+      # themselves when they are missing, so a plain Postgres works.
+      - name: apply migrations and seed, then run the smoke test
+        run: |
+          set -euo pipefail
+          for f in supabase/migrations/*.sql; do
+            echo "== $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          echo "== seed.sql"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
+          echo "== tests/smoke.sql"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/smoke.sql
+      - name: sqlfluff (advisory)
+        continue-on-error: true
+        run: |
+          pipx run sqlfluff lint supabase/migrations supabase/tests --dialect postgres || true
 
   secrets:
     name: no secrets in files
