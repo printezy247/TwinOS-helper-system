@@ -78,7 +78,8 @@ serve(async (req) => {
   const draft = await createDraft({
     post_type: "signal_card", lang: "en",
     fields: {
-      n, symbol, direction: (direction ?? "").toUpperCase(), timeframe: v.timeframe ?? "",
+      n, symbol, direction: (direction ?? "").toUpperCase(), direction_emoji: direction === "sell" ? "🔴" : "🟢",
+      timeframe: v.timeframe ?? "",
       entry: v.entry_low !== undefined && v.entry_high !== undefined && v.entry_low !== v.entry_high ? `${v.entry_low}–${v.entry_high}` : v.entry_low ?? "",
       sl: v.stop_price ?? "", tp1: v.tp1 ?? "", tp2: v.tp2 ?? "", setup: v.setup ?? "",
       counter_trend_line: counterTrend ? COUNTER_TREND_LINE : "",

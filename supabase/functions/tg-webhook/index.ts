@@ -262,7 +262,7 @@ async function onDeskMessage(m: Message): Promise<void> {
     draft = await createDraft({
       post_type,
       lang,
-      fields: { raw_notes: raw, date: new Date().toLocaleDateString("en-GB", { timeZone: tz }) },
+      fields: { raw_notes: raw, date: new Date().toLocaleDateString("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short" }) },
       allowed_numbers: numbers,
       media: photo ? [{ kind: "photo", file_id: photo }] : undefined,
       source: { via: "desk", message_id: m.message_id, chat_id: m.chat.id },

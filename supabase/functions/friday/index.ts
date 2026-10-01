@@ -102,8 +102,22 @@ serve(async (req) => {
     const missing = await missingInputs(week);
     const { data: sb } = await db.from("v_friday_scoreboard").select("*").eq("week_start", week).maybeSingle();
     if (!sb) throw bad("no scoreboard row for this week yet");
-    const fields: Record<string, unknown> = { week, ...sb };
-    const nums = Object.values(sb).map(Number).filter(Number.isFinite);
+    // The kit's scorecard quotes the week's results (v_results_weekly) and links the board.
+    const { data: wk } = await db.from("v_results_weekly")
+      .select("signals, wins, losses, break_even, strict_win_rate, total_r, best_trade, worst_trade")
+      .eq("week_start", week).maybeSingle();
+    const { data: boardRow } = await db.from("settings").select("value").eq("key", "board_url").maybeSingle();
+    const trade = (t: { pair?: string; direction?: string; r?: number } | null | undefined) =>
+      t ? `${t.pair ?? ""} ${t.direction ?? ""} ${Number(t.r) > 0 ? "+" : ""}${t.r}R`.replace(/\s+/g, " ").trim() : "";
+    const weekly = wk
+      ? {
+        signals: wk.signals, wins: wk.wins, losses: wk.losses, break_even: wk.break_even,
+        wl: Number(wk.wins) + Number(wk.losses), strict_win_rate: wk.strict_win_rate, total_r: wk.total_r,
+        best: trade(wk.best_trade), worst: trade(wk.worst_trade),
+      }
+      : {};
+    const fields: Record<string, unknown> = { week, ...sb, ...weekly, board_url: boardRow?.value ?? "" };
+    const nums = [...Object.values(sb), ...Object.values(weekly), wk?.best_trade?.r, wk?.worst_trade?.r].map(Number).filter(Number.isFinite);
     const draft = await createDraft({
       post_type: "scorecard", lang: "en", fields, allowed_numbers: nums,
       source: { via: "friday", week, missing }, actor: caller.actor,
