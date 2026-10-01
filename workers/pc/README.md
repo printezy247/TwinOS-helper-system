@@ -32,8 +32,7 @@ Assets over 45 MB are refused (plan §7 storage limit).
 
 ```bash
 # 1. Secrets in the keyring, never in files
-secret-tool store --label "TwinOS url"        service twinos key url          # https://<ref>.supabase.co
-secret-tool store --label "TwinOS worker key" service twinos key worker_key   # twk_pc_worker_… from mint_api_key()
+~/TwinOS-helper-system/scripts/mint-keys.sh    # stores url, apikey (anon) and worker_key; prints no secret
 secret-tool store --label "TwinOS db url"     service twinos key db_url       # postgresql://… (backups only; optional)
 
 # 2. Folders

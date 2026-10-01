@@ -13,7 +13,7 @@
  * enqueues a result reply through the results function.
  */
 import { serve, json, bad } from "_shared/http.ts";
-import { authenticate, fingerprint, bearer } from "_shared/auth.ts";
+import { apiKeyFrom, authenticate, bearer, fingerprint } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { admin } from "_shared/supabase.ts";
 import { upsertSignal, validate, type RowResult } from "_shared/signals.ts";
@@ -38,7 +38,7 @@ serve(async (req) => {
 
   if (req.method === "GET") {
     if (url.searchParams.get("diagnose") === "1") {
-      return json({ configured: true, role: caller.role, key: caller.keyName, presented_fingerprint: await fingerprint(bearer(req)) });
+      return json({ configured: true, role: caller.role, key: caller.keyName, presented_fingerprint: await fingerprint(apiKeyFrom(req) || bearer(req)) });
     }
     const { data } = await admin().from("signals")
       .select("external_id, symbol, direction, status, entry_low, entry_high, stop_price, tp1, tp2, rr, opened_at, updated_at")

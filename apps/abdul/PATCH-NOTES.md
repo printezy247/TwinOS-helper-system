@@ -16,11 +16,12 @@ its own service name so the two never mix:
 
 ```bash
 secret-tool store --label='TwinOS url'    service twinos key url      # paste: https://<project>.supabase.co
-secret-tool store --label='TwinOS apikey' service twinos key apikey   # paste: the key with the abdul role, nothing more
+~/TwinOS-helper-system/scripts/mint-keys.sh                          # stores apikey (public anon key) and abdul_key, prints neither
 secret-tool lookup service twinos key url                              # check
 ```
 
-The key carries the **abdul** role on the server (plan §9.B item 9). Never the service-role key, never Jack's own
+`abdul_key` goes on `X-TwinOS-Key`, behind the anon key on `Authorization` (the platform gateway only admits
+JWTs). The key carries the **abdul** role on the server (plan §9.B item 9). Never the service-role key, never Jack's own
 login. Rotating it is one `secret-tool store` again; nothing on disk changes.
 
 Env overrides for tests and one-offs: `TWINOS_URL`, `TWINOS_KEY`, `TWINOS_TIMEOUT` (seconds, default 20).

@@ -15,10 +15,10 @@ None. `python3 --version` should say 3.12 (this PC: 3.12.3).
 
 ```bash
 secret-tool store --label='TwinOS url'    service twinos key url      # https://<project>.supabase.co
-secret-tool store --label='TwinOS apikey' service twinos key apikey   # the key with the abdul role
+~/TwinOS-helper-system/scripts/mint-keys.sh                          # stores apikey (public anon key) and abdul_key, prints neither
 ```
 
-`TWINOS_URL` / `TWINOS_KEY` in the environment override the keyring (tests, one-offs). Non-localhost URLs must be
+`TWINOS_URL` / `TWINOS_KEY` / `TWINOS_ANON` in the environment override the keyring (tests, one-offs). Non-localhost URLs must be
 `https://`.
 
 ## Register

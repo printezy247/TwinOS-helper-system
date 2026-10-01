@@ -37,6 +37,45 @@ class KeyringTests(unittest.TestCase):
             self.assertEqual(w.keyring("nope", required=False), "")
 
 
+class ApiHeaderTests(unittest.TestCase):
+    """The gateway admits only JWTs: the anon key rides on Authorization, the worker key on X-TwinOS-Key."""
+
+    def sent_headers(self):
+        seen = {}
+
+        class Resp:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        def fake_urlopen(req, timeout=None):
+            seen.update({k.lower(): v for k, v in req.header_items()})
+            return Resp()
+
+        with mock.patch("urllib.request.urlopen", fake_urlopen):
+            w.Api().call("health/beat", {})
+        return seen
+
+    def test_anon_key_on_authorization_worker_key_on_its_own_header(self):
+        with mock.patch.dict(os.environ, {"TWINOS_APIKEY": "eyJhbGciOiJIUzI1NiJ9.e30.anon"}):
+            h = self.sent_headers()
+        self.assertEqual(h["authorization"], "Bearer eyJhbGciOiJIUzI1NiJ9.e30.anon")
+        self.assertEqual(h["x-twinos-key"], os.environ["TWINOS_WORKER_KEY"])
+
+    def test_without_anon_key_the_worker_key_is_the_bearer(self):
+        with mock.patch.dict(os.environ, {"TWINOS_APIKEY": ""}), \
+             mock.patch("subprocess.run", side_effect=OSError):
+            h = self.sent_headers()
+        self.assertEqual(h["authorization"], "Bearer " + os.environ["TWINOS_WORKER_KEY"])
+
+
 class TelechurnTests(unittest.TestCase):
     def test_csv_rows_posted(self):
         api = FakeApi()

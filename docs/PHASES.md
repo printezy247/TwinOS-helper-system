@@ -7,7 +7,7 @@ Exit: schema reviewed; baseline logged.
 - [ ] Baseline week: hours by task logged (`baseline_hours`) — Jack
 - [x] Unified monthly-first price list decided (§16 Q2): catalog prices kept, TradingView Pro $29/mo; EzyAI founding price deferred to Q1 2027
 - [ ] Reference-channel handles given (§16 Q1) — Jack
-- [x] Schema written and reviewed (`supabase/migrations`, 0001–0014)
+- [x] Schema written and reviewed (`supabase/migrations`, 0001–0015)
 - [x] Schema verified against a real Postgres: migrations + seed + `tests/smoke.sql` load and pass, and CI repeats it on every push
 - [x] Schema reconciled with the Edge Functions (`0011_contract.sql`) — the two halves had drifted and nothing had ever run them together
 - [x] Seed: settings, brand_facts, products, personas, 15 templates, style_guide, hooks, calendar_slots, live_runsheets, mod_rules, benchmarks (`supabase/seed.sql`)
@@ -19,7 +19,7 @@ Exit: schema reviewed; baseline logged.
 - [ ] Supabase project created in Jack's account, region Singapore; `db push`; seed applied; smoke test green — Jack (`docs/SETUP.md` step 0.2)
 - [x] `pg_cron`, `pg_net` (in `extensions`), pgvector enabled; private `assets` bucket created (45 MB limit)
 - [x] Jack's login created with `twinos_role = jack`
-- [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / on the host — Jack
+- [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / on the host — Jack: `./scripts/mint-keys.sh` (helper + `rotate_api_key()` shipped; keys ride on `X-TwinOS-Key`)
 - [x] @EzyOps_bot created; token in keyring and function secrets
 - [ ] EzyMap Desk group created (Jack + bot); chat ids in `settings` — Jack
 - [ ] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean — Jack
