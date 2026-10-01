@@ -1,0 +1,83 @@
+"""Unit tests for twinos_worker.py that need no network and no keyring."""
+
+from __future__ import annotations
+
+import csv
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+os.environ.setdefault("TWINOS_URL", "https://example.invalid")
+os.environ.setdefault("TWINOS_WORKER_KEY", "twk_pc_worker_" + "0" * 40)
+
+import twinos_worker as w  # noqa: E402
+
+
+class FakeApi:
+    def __init__(self, status=200, body=None):
+        self.calls = []
+        self.status, self.body = status, body or {"ok": True}
+
+    def call(self, path, body=None, method="POST", idempotency_key=None):
+        self.calls.append((path, body, idempotency_key))
+        return self.status, self.body
+
+    def result(self, job_id, ok, result=None, error=None):
+        self.calls.append(("jobs/result", {"job_id": job_id, "ok": ok, "result": result, "error": error}, None))
+
+
+class KeyringTests(unittest.TestCase):
+    def test_env_override_wins(self):
+        self.assertEqual(w.keyring("url"), "https://example.invalid")
+
+    def test_missing_optional_is_empty(self):
+        with mock.patch("subprocess.run", side_effect=OSError):
+            self.assertEqual(w.keyring("nope", required=False), "")
+
+
+class TelechurnTests(unittest.TestCase):
+    def test_csv_rows_posted(self):
+        api = FakeApi()
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "2026-10-05.csv"
+            with p.open("w", newline="") as f:
+                wr = csv.writer(f)
+                wr.writerow(["link_name", "joins", "leaves", "retained"])
+                wr.writerow(["tt-live-2610", "12", "3", "9"])
+            out = w.job_telechurn_import(api, {"week_start": "2026-10-05", "path": str(p)})
+        self.assertEqual(out["rows"], 1)
+        path, body, _ = api.calls[-1]
+        self.assertEqual(path, "jobs/telechurn")
+        self.assertEqual(body["rows"][0]["link_name"], "tt-live-2610")
+
+
+class RunOneTests(unittest.TestCase):
+    def test_unknown_kind_reports_failure(self):
+        api = FakeApi()
+        w.run_one(api, {"id": "abc", "kind": "nope", "payload": {}})
+        self.assertFalse(api.calls[-1][1]["ok"])
+
+    def test_handler_exception_is_reported_not_raised(self):
+        api = FakeApi()
+        w.run_one(api, {"id": "abc", "kind": "research_batch", "payload": {}})
+        self.assertFalse(api.calls[-1][1]["ok"])
+        self.assertIn("Phase 5", api.calls[-1][1]["error"])
+
+
+class DropFolderTests(unittest.TestCase):
+    def test_oversize_refused(self):
+        api = FakeApi()
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "big.mp4"
+            p.write_bytes(b"0")
+            with mock.patch.object(Path, "stat") as st:
+                st.return_value.st_size = w.MAX_ASSET_BYTES + 1
+                st.return_value.st_mtime = 0
+                with self.assertRaises(RuntimeError):
+                    w.signed_upload(api, p)
+
+
+if __name__ == "__main__":
+    unittest.main()

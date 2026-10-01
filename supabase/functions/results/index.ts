@@ -10,7 +10,7 @@
  * board-sourced results: ABDUL may post result replies that come straight
  * from the board, plan §9.N.107). Strict win rate = W / (W + L), BE excluded.
  */
-import { serve, json, readJson, routeOf, bad, notFound, optString, oneOf } from "_shared/http.ts";
+import { serve, json, readJson, routeOf, bad, notFound, optString, oneOf, HttpError } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
@@ -81,7 +81,7 @@ serve(async (req) => {
 
   // The original card in the channel
   const { data: card } = await db.from("signal_posts").select("chat_id, message_id").eq("signal_id", sig.id).eq("kind", "signal").limit(1).maybeSingle();
-  if (!card) throw new (await import("_shared/http.ts")).HttpError(409, "conflict", "signal card not posted yet; cannot reply under it");
+  if (!card) throw new HttpError(409, "conflict", "signal card not posted yet; cannot reply under it");
   const { data: already } = await db.from("signal_posts").select("message_id").eq("signal_id", sig.id).eq("kind", "result").eq("status_posted", status).limit(1).maybeSingle();
   if (already) return remember(idem, 200, { ok: true, duplicate: true, message_id: already.message_id });
 

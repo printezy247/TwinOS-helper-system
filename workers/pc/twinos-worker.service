@@ -1,0 +1,40 @@
+# TwinOS PC worker — systemd user unit (no root, no port).
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp workers/pc/twinos-worker.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now twinos-worker
+#   journalctl --user -u twinos-worker -f
+#   loginctl enable-linger jack        # keep it running when not logged in
+#
+# Secrets come from the keyring (secret-tool); the unit carries none.
+# The keyring must be unlocked for secret-tool to answer: with linger and no
+# desktop login, run `gnome-keyring-daemon --unlock` once per boot or keep a
+# logged-in XFCE session.
+
+[Unit]
+Description=TwinOS PC worker (drop folder, Telechurn import, backup, clips)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/TwinOS-helper-system/workers/pc
+ExecStart=/usr/bin/python3 %h/TwinOS-helper-system/workers/pc/twinos_worker.py
+Restart=on-failure
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+# Optional overrides (defaults shown):
+# Environment=TWINOS_DROP_DIR=%h/EzyMap/out
+# Environment=TWINOS_BACKUP_DIR=%h/EzyMap/backups
+# Environment=TWINOS_TELECHURN_DIR=%h/EzyMap/telechurn
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%h/EzyMap
+ProtectHome=read-only
+# The worker never listens; it only makes outbound HTTPS calls.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=default.target

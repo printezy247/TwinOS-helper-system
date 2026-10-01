@@ -1,0 +1,12 @@
+# twinos_worker.py itself needs only the Python 3.12 standard library.
+# Everything below is optional and imported lazily (guarded by ImportError).
+
+# studio/clipper.py — GPU transcription for live clipping (Phase 5)
+faster-whisper>=1.0 ; extra == "studio"
+
+# studio/scorecard.py — Friday scorecard image renderer (Phase 2, port of ASAP receipt.py)
+Pillow>=10 ; extra == "studio"
+
+# Install with:  pip install -r requirements.txt   (stdlib only, no-op)
+#            or:  pip install "faster-whisper>=1.0" "Pillow>=10"   (studio extras)
+# ffmpeg must be on PATH for clipping (apt install ffmpeg).

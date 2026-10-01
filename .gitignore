@@ -220,3 +220,25 @@ __marimo__/
 # local tool state
 .claude/
 .mcp.json
+
+# --- TwinOS ---------------------------------------------------------------
+# Secrets live in the keyring / Supabase function secrets, never in files.
+.env
+.env.*
+!.env.example
+*.session
+*.session-journal
+# Local Supabase CLI state and function build output
+supabase/.temp/
+supabase/.branches/
+.supabase/
+# Drop folder, backups, clip output if ever placed inside the repo
+out/
+backups/
+clips/
+# Deno
+.deno/
+deno.lock
+# Lovable / node
+node_modules/
+apps/dashboard/dist/

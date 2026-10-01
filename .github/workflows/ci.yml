@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  functions:
+    name: deno check (supabase/functions)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno check
+        run: deno check --config deno.json _shared/*.ts */index.ts
+      - name: deno lint
+        run: deno lint --config deno.json
+      - name: deno test (pure modules only)
+        run: deno test --config deno.json --allow-env _shared/
+
+  workers:
+    name: python unittest (workers/pc, apps/mcp)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: workers/pc
+        working-directory: workers/pc
+        run: python3 -m unittest discover -v -p "test_*.py"
+      - name: apps/mcp (skipped when absent)
+        run: |
+          if [ -d apps/mcp ]; then
+            cd apps/mcp && python3 -m unittest discover -v -p "test_*.py"
+          else
+            echo "apps/mcp not present yet; skipping"
+          fi
+      - name: byte-compile
+        run: python3 -m compileall -q workers
+
+  sql:
+    name: sql lint (skipped without a tool)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: sqlfluff if available
+        run: |
+          if command -v sqlfluff >/dev/null 2>&1; then
+            sqlfluff lint supabase/migrations --dialect postgres
+          elif [ -d supabase/migrations ]; then
+            echo "no sql linter installed; listing migrations only"
+            ls -1 supabase/migrations
+          else
+            echo "no migrations yet; skipping"
+          fi
+
+  secrets:
+    name: no secrets in files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: grep for token shapes
+        run: |
+          set -e
+          # Telegram bot tokens, Supabase service-role JWTs, TwinOS keys with a real body.
+          if grep -rEn --exclude-dir=.git --exclude-dir=node_modules \
+               -e '[0-9]{8,10}:AA[0-9A-Za-z_-]{30,}' \
+               -e 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{40,}' \
+               -e 'twk_(abdul|pc_worker|ezyai)_[0-9a-f]{40}' . ; then
+            echo "secret-shaped string found"; exit 1
+          fi
+          echo "clean"
