@@ -42,7 +42,7 @@ pgvector extensions, a real deployment, and the Telegram webhook.
 Exit: Jack approves the map and a signal from his phone; a result reply posts by itself.
 - [ ] Desk drafts with approve buttons working end to end (`tg-webhook` → `content` → `approve` → `publish`)
 - [ ] Telegram publisher and scheduler running every minute; backoff verified with a forced 429
-- [ ] Templates for all 15 post types seeded and rendering without `[NEEDED]` on the daily ones
+- [x] Templates for all 15 post types seeded and rendering without `[NEEDED]` on the daily ones (`templates.body`; `tests/check_templates.ts` renders all 15 through the compliance engine in CI)
 - [ ] TradingView alert → signal card draft (COUNTER-TREND line kept); alert JSON set in TradingView — Jack
 - [ ] The signal bot pushing to `signals-ingest` (key on its host) — Jack + signal bot repo
 - [ ] Result replies under signals from board status changes

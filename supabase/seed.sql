@@ -339,12 +339,12 @@ Include the IB disclosure line for variant A. One call to action. Under 500 char
    $t$Write a pre-news alert for {EVENT} at {TIME MYT}. Two practical rules, one line that we'll post the reaction after. Under 350 characters.$t$,
    '["EVENT", "TIME"]',
    '[{"label": "EXAMPLE", "lang": "en", "body": "[warning] *NEWS IN 30 MIN: US CPI (20:30)*\n\nSpreads widen and gold can jump 20-40 dollars in seconds.\n- Not in a trade? Wait for the first candle to close.\n- In a trade? Know where your stop is now, not after.\n\nWe post the reaction after the release."}]',
-   '{}', 350, null, 'Automatic from the economic calendar; approval only if it names levels (claim detector).', false, null),
+   '{education}', 350, null, 'Automatic from the economic calendar; approval only if it names levels (claim detector).', false, null),
   ('member_result', 13, 'Member result (with permission only)', 'When a member shares a result and agrees in writing to it being posted.',
    $t$Write a member result post from this message: {MESSAGE}. The member agreed to share: {YES}. Remove any name or account number. Add one line that results vary and one line praising the process, not the profit.$t$,
    '["MESSAGE", "PERMISSION"]',
    '[{"label": "EXAMPLE", "lang": "en", "body": "Shared with permission by a Premium member:\n\n\"Stopped chasing entries, waited for the zone. 3 trades this week, 2 wins, 1 loss, +2.8R on a $600 account.\"\n\nNot every week looks like this. What we like here is the process: fewer trades, planned stops."}]',
-   '{permission,results_vary}', 900, null, 'No permission, no post. Never edit the member''s numbers. Written permission recorded; names and account numbers removed. Jack approves.', true, null),
+   '{permission,results_vary,past_performance}', 900, null, 'No permission, no post. Never edit the member''s numbers. Written permission recorded; names and account numbers removed. Jack approves.', true, null),
   ('holiday', 14, 'Market closed / holiday / milestone', 'Weekends, public holidays and member milestones.',
    $t$Write a short {HOLIDAY NOTICE / MILESTONE} post. Details: {DETAILS}. Under 300 characters.$t$,
    '["KIND", "DETAILS"]',
@@ -365,6 +365,97 @@ on conflict (key) do update set
 -- EN↔BM glossary stub, disclaimers, trade card format, checklist (Posting Kit
 -- §03, §05; FYP §05, §07; printezy translations.ts; EzyAi message.py)
 -- ===========================================================================
+-- Post skeletons (UPGRADE-PLAN Phase 1). `body` is filled by _shared/content.ts render():
+-- {{field}} is required, {{?field}} is optional; `fields_list` names the required ones.
+-- required_lines (above) are brand_facts keys, appended as the locked line when missing.
+-- Verbatim kit wording lives in `examples`; these skeletons are what the Desk drafts from.
+update public.templates set fields_list = '{date,raw_notes}', body = $b$📍 *GOLD MAP | {{date}}*
+
+{{raw_notes}}$b$ where key = 'gold_map';
+update public.templates set fields_list = '{date,events,gold_read}', body = $b$*MACRO CHECK | {{date}}*
+
+Today's key events (MYT)
+{{events}}
+
+What it can mean for gold: {{gold_read}}
+
+Full heatmaps and Fed watch live in the macro bot.$b$ where key = 'macro_card';
+update public.templates set fields_list = '{n,symbol,direction,timeframe,entry,sl,tp1,tp2}', body = $b${{?direction_emoji}} *{{direction}} | {{symbol}} | {{timeframe}}*
+{{?counter_trend_line}}
+Entry zone: *{{entry}}*
+Stop loss: *{{sl}}*
+TP1: *{{tp1}}*
+TP2: *{{tp2}}*
+
+Plan: half off at TP1, stop to entry, let the rest run.
+Free signal #{{n}} this week.$b$ where key = 'signal_card';
+update public.templates set fields_list = '{outcome,result_r,symbol,direction}', body = $b${{outcome}}: *{{result_r}}R* ({{symbol}} {{direction}})
+{{?note}}
+Past performance is not indicative of future results.$b$ where key = 'result_reply';
+update public.templates set fields_list = '{label,title,text}', body = $b$📚 *{{label}} | {{title}}*
+
+{{text}}$b$ where key = 'lesson';
+update public.templates set fields_list = '{title,text,wins,losses,total_r}', body = $b$*CHANNEL AUDIT | {{title}}*
+
+{{text}}
+
+Last 4 weeks on EzyMap: *{{wins}} wins, {{losses}} losses, {{total_r}}R total.*
+
+#Audit$b$ where key = 'channel_audit';
+update public.templates set fields_list = '{week,signals,wins,losses,break_even,wl,strict_win_rate,total_r,board_url}', body = $b$*WEEKLY SCORECARD | week of {{week}}*
+
+Signals: {{signals}}
+Wins: {{wins}}  Losses: {{losses}}  Break-even: {{break_even}}
+Strict win rate: *{{strict_win_rate}}%* ({{wins}} of {{wl}}, BE excluded)
+Total: *{{total_r}}R*
+
+Top trade: {{?best}}
+Worst trade: {{?worst}}
+
+Every trade is on the board: {{board_url}}$b$ where key = 'scorecard';
+update public.templates set fields_list = '{dates,last_week,support,resistance,events,plan}', body = $b$*WEEKLY OUTLOOK | {{dates}}*
+
+{{last_week}}
+
+Levels I care about
+- Weekly support: {{support}}
+- Weekly resistance: {{resistance}}
+
+Big events (MYT): {{events}}
+
+Plan: {{plan}}
+
+{{?live_line}}$b$ where key = 'outlook';
+update public.templates set fields_list = '{offer_text}', body = $b${{offer_text}}
+
+{{?disclosure_line}}$b$ where key = 'offer';
+update public.templates set fields_list = '{question,options}', body = $b$Quick one before the week starts.
+
+{{question}}
+{{options}}
+
+(Answers pick next week's lessons.)$b$ where key = 'poll';
+update public.templates set fields_list = '{raw_notes}', body = $b${{raw_notes}}
+
+Map at 8am.$b$ where key = 'evening_wrap';
+update public.templates set fields_list = '{minutes,event,time}', body = $b$⚠️ *NEWS IN {{minutes}} MIN: {{event}} ({{time}})*
+
+Spreads widen and gold can jump 20-40 dollars in seconds.
+- Not in a trade? Wait for the first candle to close.
+- In a trade? Know where your stop is now, not after.
+
+We post the reaction after the release.$b$ where key = 'news_alert';
+update public.templates set fields_list = '{tier,quote}', body = $b$Shared with permission by a {{tier}} member:
+
+"{{quote}}"
+
+Not every week looks like this. What we like here is the process: fewer trades, planned stops.$b$ where key = 'member_result';
+update public.templates set fields_list = '{text}', body = $b${{text}}$b$ where key = 'holiday';
+update public.templates set fields_list = '{free_list}', body = $b$*Welcome to EzyMap*
+
+What you get here, free:
+{{free_list}}$b$ where key = 'start_here';
+
 insert into public.style_guide (kind, key, lang, body, extra, source, sort_order) values
   ('master_prompt', 'master', 'en',
    $t$You are the copywriter for EzyMap (t.me/ezymap), a Telegram channel run by Jack that maps gold (XAUUSD) daily, shares 1-2 free signals, and teaches traders to follow a plan instead of hype.

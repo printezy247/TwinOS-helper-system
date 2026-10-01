@@ -37,6 +37,42 @@ export interface TemplateRow {
 }
 
 /**
+ * Template `required_lines` hold brand-fact keys (risk, result_footer, ...), not
+ * text. Keys listed here become the locked line from `brand_facts` (the `_ms`
+ * variant for Malay when there is one); the rest (board_ref, one_cta, ...) are
+ * policy markers the compliance check enforces and add no line.
+ */
+const REQUIRED_LINE_FACT: Record<string, (t: PostType) => string> = {
+  risk: (t) => (t === "signal_card" ? "risk_line_signal" : "risk_line_map"),
+  result_footer: () => "result_footer",
+  past_performance: () => "past_performance",
+  education: () => "education_line",
+  pledge_pinned: () => "pledge_pinned",
+  disclosure: () => "ib_disclosure",
+};
+
+/** The brand_facts keys a template's required_lines stand for, in order. */
+export function requiredLineFacts(keys: string[], post_type: PostType): string[] {
+  return keys.map((k) => REQUIRED_LINE_FACT[k]?.(post_type)).filter((f): f is string => !!f);
+}
+
+/** Pick the locked line for each fact: the Malay variant for `ms` when one exists. */
+export function pickLines(facts: string[], lang: Lang, byKey: Map<string, string>): string[] {
+  return facts
+    .map((f) => (lang === "ms" ? byKey.get(`${f}_ms`) : undefined) ?? byKey.get(f))
+    .filter((line): line is string => !!line);
+}
+
+export async function resolveRequiredLines(keys: string[], post_type: PostType, lang: Lang): Promise<string[]> {
+  const facts = requiredLineFacts(keys, post_type);
+  if (!facts.length) return [];
+  const { data, error } = await admin().from("brand_facts").select("key, body")
+    .in("key", facts.flatMap((f) => [f, `${f}_ms`]));
+  if (error) throw new HttpError(503, "upstream_failed", `brand_facts: ${error.message}`);
+  return pickLines(facts, lang, new Map((data ?? []).map((r) => [r.key as string, r.body as string])));
+}
+
+/**
  * Load the active template for a post type, else 404. `templates.key` is the
  * post type and the primary key, so there is one row per type; `lang` is the
  * caller's language and the voice module localises the draft.
@@ -59,7 +95,7 @@ export async function loadTemplate(post_type: PostType, lang: Lang): Promise<Tem
     lang,
     body: data.body,
     fields: data.fields_list ?? [],
-    required_lines: data.required_lines ?? [],
+    required_lines: await resolveRequiredLines(data.required_lines ?? [], data.key as PostType, lang),
     char_limit: data.char_limit,
     approval_rule: data.approval_rule,
   } as TemplateRow;
@@ -67,28 +103,29 @@ export async function loadTemplate(post_type: PostType, lang: Lang): Promise<Tem
 
 /**
  * Fill {{field}} placeholders. Missing fields become `[NEEDED:field]`, which
- * the compliance check turns into a blocking finding (plan §9.C.16).
+ * the compliance check turns into a blocking finding (plan §9.C.16). A
+ * placeholder written {{?field}} is optional: it renders empty when missing.
  */
 export function render(
   template: Pick<TemplateRow, "body" | "fields" | "required_lines">,
   fields: Record<string, unknown>,
 ): { body: string; needed: string[] } {
   const needed = new Set<string>();
-  let body = template.body.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_m, key: string) => {
+  let body = template.body.replace(/\{\{\s*(\??)([a-zA-Z0-9_.]+)\s*\}\}/g, (_m, optional: string, key: string) => {
     const v = fields[key];
     if (v === undefined || v === null || v === "") {
+      if (optional) return "";
       needed.add(key);
       return `[NEEDED:${key}]`;
     }
     return String(v);
   });
+  body = body.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+/, "");
   for (const f of template.fields) {
     if (fields[f] === undefined || fields[f] === null || fields[f] === "") needed.add(f);
   }
   for (const line of template.required_lines) {
-    // The seed stores brand-fact keys here (risk, result_footer, ...), not text.
-    // Only literal sentences are appended until the keys are resolved (Phase 1).
-    if (line && /\s/.test(line) && !body.includes(line)) body = `${body.trimEnd()}\n\n${line}`;
+    if (line && !body.includes(line)) body = `${body.trimEnd()}\n\n${line}`;
   }
   return { body, needed: Array.from(needed) };
 }

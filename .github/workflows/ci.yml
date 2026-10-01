@@ -91,6 +91,18 @@ jobs:
           set -euo pipefail
           psql "$DATABASE_URL" -At -f tests/schema_dump.sql > "$RUNNER_TEMP/schema.json"
           python3 tests/check_schema_usage.py "$RUNNER_TEMP/schema.json"
+      # The seed's post skeletons, the locked brand lines, the renderer and the
+      # compliance engine must agree: every template has to render into a post
+      # with no blocking finding, in English and Malay.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: every post template renders and passes the compliance engine
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -At -f tests/templates_dump.sql > "$RUNNER_TEMP/templates.json"
+          deno run --allow-read --allow-env --config supabase/functions/deno.json \
+            tests/check_templates.ts "$RUNNER_TEMP/templates.json"
       - name: sqlfluff (advisory)
         continue-on-error: true
         run: |

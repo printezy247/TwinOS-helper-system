@@ -1,5 +1,7 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
-import { bannedWords, check, ctaCount, detectClaims, neededPlaceholders } from "./compliance.ts";
+import {
+  bannedWords, check, ctaCount, detectClaims, hasDisclosure, hasPastPerformanceLine, hasRiskLine, neededPlaceholders,
+} from "./compliance.ts";
 
 const RISK = "Not financial advice. Education only. Trade at your own risk.";
 
@@ -50,4 +52,21 @@ Deno.test("numbers outside the board flag approval", () => {
   const r = check({ post_type: "gold_map", platform: "telegram", lang: "en", body: `Watch 4590 and 4612\n${RISK}`, allowed_numbers: [4590] });
   const f = r.findings.find((x) => x.check === "numbers");
   assert(f && f.evidence?.includes("4612"));
+});
+
+// The locked brand lines are quoted verbatim in posts, so the detectors must
+// recognise every one of them (a post ending in the kit's own risk line was
+// being blocked as "risk line missing").
+Deno.test("locked brand lines satisfy the detectors", () => {
+  for (const line of [
+    "Map only, not advice. Manage your own risk.",
+    "Risk 1% or less.",
+    "Education only, not financial advice.",
+    "Ini mapping, bukan nasihat kewangan.",
+  ]) assertEquals(hasRiskLine(line), true, line);
+  for (const line of [
+    "Past performance is not indicative of future results. We do not publish win-rate or pip totals that cannot be independently verified.",
+    "Prestasi lepas tidak menunjukkan hasil masa depan. Kami tidak menerbitkan kadar kemenangan atau jumlah pip yang tidak dapat disahkan secara bebas.",
+  ]) assertEquals(hasPastPerformanceLine(line), true, line);
+  assertEquals(hasDisclosure("Honest note: we earn a commission when you trade through the link."), true);
 });
