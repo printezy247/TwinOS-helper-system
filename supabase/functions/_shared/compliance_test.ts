@@ -43,6 +43,16 @@ Deno.test("claim detector flags prices, levels, percentages, results, brokers", 
   for (const k of ["price", "level", "result", "percentage", "broker"]) assert(kinds.includes(k), k);
 });
 
+Deno.test("levels with a thousands comma are claims; a year in a date line is not", () => {
+  const level = (s: string) => detectClaims(s).some((c) => c.kind === "level");
+  assert(level("Wait for the price reaction at 4,613 zone."));
+  assert(level("It can possibly DROP till 4,500 or 4,602."));
+  assert(level("Gold held 4590"));
+  assert(level("TP 4,604.50"));
+  assert(!level("EZYMAP | 01 Oct 2026 | Jack's Plan"));
+  assert(!level("Hold > S1, look for continuation"));
+});
+
 Deno.test("char limit: threads 500 hard", () => {
   const r = check({ post_type: "lesson", platform: "threads", lang: "en", body: "x".repeat(600) });
   assert(r.findings.some((f) => f.check === "format" && f.severity === "blocking"));

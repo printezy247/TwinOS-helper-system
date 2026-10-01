@@ -255,12 +255,26 @@ export async function setStatus(
 }
 
 /** Resolve the 8-hex short id from a callback button to the full content id. */
+/**
+ * The uuid range a short id covers. The short id is the uuid's first 8 hex
+ * chars (its whole first group), so every match lies between these bounds.
+ * A range, because Postgres has no LIKE on uuid: `.ilike("id", …)` failed with
+ * "operator does not exist: uuid ~~* unknown" and every Desk button answered
+ * "That draft is gone".
+ */
+export function shortIdRange(short: string): { from: string; to: string } {
+  const s = short.toLowerCase();
+  if (!/^[0-9a-f]{8}$/.test(s)) throw notFound("draft");
+  return { from: `${s}-0000-0000-0000-000000000000`, to: `${s}-ffff-ffff-ffff-ffffffffffff` };
+}
+
 export async function resolveShort(short: string): Promise<string> {
-  // ids are uuids; the short id is the first 8 hex chars of the hyphen-less form.
+  const { from, to } = shortIdRange(short);
   const { data, error } = await admin()
     .from("content_items")
     .select("id")
-    .ilike("id", `${short.slice(0, 8)}%`)
+    .gte("id", from)
+    .lte("id", to)
     .limit(2);
   if (error) throw new HttpError(503, "upstream_failed", error.message);
   if (!data || data.length === 0) throw notFound("draft");

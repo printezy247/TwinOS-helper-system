@@ -115,8 +115,10 @@ export const BANNED_WORDS_MS = [
 export const CLAIM_PATTERNS: Array<{ name: string; re: RegExp }> = [
   // prices: $29, USD 249, RM49, 49/mo, 14.99
   { name: "price", re: /(?:\$|usd\s?|rm\s?|myr\s?)\s?\d{1,5}(?:[.,]\d{1,2})?|\b\d{1,4}(?:\.\d{2})?\s?\/\s?(?:mo|month|bulan|yr|year|tahun)\b/i },
-  // levels: 4-digit gold prices, "entry 4590", "TP 4604", "SL 4585"
-  { name: "level", re: /\b(?:entry|tp\d?|sl|stop|target|buy|sell|long|short|zone)\b[^\n]{0,12}\b\d{3,5}(?:\.\d{1,2})?\b|\b[1-9]\d{3}(?:\.\d{1,2})?\b/i },
+  // levels: 4-digit gold prices with or without a thousands comma ("4590",
+  // "4,613"), "entry 4590", "TP 4604", "SL 4585". A bare year (2020–2039) in a
+  // date line is not a level.
+  { name: "level", re: /\b(?:entry|tp\d?|sl|stop|target|buy|sell|long|short|zone)\b[^\n]{0,12}\b(?:\d{1,2},\d{3}|\d{3,5})(?:\.\d{1,2})?\b|\b(?!20[23]\d\b)[1-9],?\d{3}(?:\.\d{1,2})?\b/i },
   // results: +120 pips, 2.4R, win rate 68%, 7W 2L
   { name: "result", re: /[+-]\s?\d+(?:\.\d+)?\s?(?:pips?|r\b|rr\b)|\bwin\s?rate\b|\b\d+\s?w\s?\d+\s?l\b|\bprofit(?:able)?\b|\buntung\b/i },
   // percentages
