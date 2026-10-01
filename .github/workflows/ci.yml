@@ -83,6 +83,14 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
           echo "== tests/smoke.sql"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/smoke.sql
+      # The functions reach Postgres through supabase-js, so a wrong column name
+      # is a runtime error `deno check` cannot see. Compare what the code uses
+      # with the schema the migrations just built.
+      - name: edge functions only use tables, columns and upsert targets that exist
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -At -f tests/schema_dump.sql > "$RUNNER_TEMP/schema.json"
+          python3 tests/check_schema_usage.py "$RUNNER_TEMP/schema.json"
       - name: sqlfluff (advisory)
         continue-on-error: true
         run: |

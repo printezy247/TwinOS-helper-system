@@ -132,12 +132,18 @@ serve(async (req) => {
       const idem = await idemFrom(req, { path, sha256 }, "assets.ingest");
       const hit = await replay(idem);
       if (hit) return hit;
-      const { data, error } = await db.from("assets").upsert({
+      const row = {
         storage_path: path, bucket: ASSETS_BUCKET, kind: optString(body, "kind", 20) ?? "video",
         bytes: Number(body.bytes ?? 0), sha256, source: "drop_folder", meta: body.meta ?? {},
         created_by: caller.actor,
-      }, { onConflict: "sha256" }).select("id").single();
-      if (error || !data) throw bad(`assets upsert failed: ${error?.message}`);
+      };
+      // assets.sha256 is unique only where it is not null (a partial index), which
+      // ON CONFLICT cannot infer: look the row up, then update or insert.
+      const { data: known } = await db.from("assets").select("id").eq("sha256", sha256).maybeSingle();
+      const { data, error } = known
+        ? await db.from("assets").update(row).eq("id", known.id).select("id").single()
+        : await db.from("assets").insert(row).select("id").single();
+      if (error || !data) throw bad(`assets ingest failed: ${error?.message}`);
       await logAction({ actor: caller.actor, action: "assets.ingest", target: data.id, payload: { path, bytes: body.bytes } });
       // TODO(phase3): fan-out → caption variants per platform + publish kits.
       return remember(idem, 201, { ok: true, asset_id: data.id });

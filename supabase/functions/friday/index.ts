@@ -83,7 +83,14 @@ serve(async (req) => {
       if (!Number.isFinite(n)) throw bad(`metrics.${f} must be a number`, { field: f });
       clean[f] = n;
     }
-    const { error } = await db.from("manual_metrics").upsert({ week_start: week, source, metrics: clean, entered_by: caller.actor, entered_at: new Date().toISOString() }, { onConflict: "week_start,source" });
+    // One summary row per (week, source). The unique index behind it is partial
+    // (only rows that carry `metrics`), which ON CONFLICT cannot infer, so look
+    // the row up and update it, else insert.
+    const { data: existing } = await db.from("manual_metrics").select("id")
+      .eq("week_start", week).eq("source", source).not("metrics", "is", null).maybeSingle();
+    const { error } = existing
+      ? await db.from("manual_metrics").update({ metrics: clean, entered_by: caller.actor }).eq("id", existing.id)
+      : await db.from("manual_metrics").insert({ week_start: week, source, metrics: clean, entered_by: caller.actor });
     if (error) throw bad(`manual_metrics: ${error.message}`);
     await logAction({ actor: caller.actor, action: "metrics.manual", target: `${week}/${source}`, payload: clean });
     return json({ ok: true, week_start: week, source, missing_inputs: await missingInputs(week) });
