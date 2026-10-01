@@ -1,11 +1,11 @@
-# @EzyOpsBot — the ops bot
+# @EzyOps_bot — the ops bot
 
 ABDUL's hands in Telegram (plan §4.9, decision 17, open question 4). It is a
 plain Bot API bot with **no code of its own**: every update goes to the
 `tg-webhook` Edge Function, every send comes from `_shared/tg.ts`. This folder
 holds the setup and the rules only.
 
-Proposed name: `@EzyOpsBot` (fallback `@EzyMapOpsBot` if taken).
+Created as `@EzyOps_bot` (`@EzyOpsBot` was taken).
 
 ## What it does
 
@@ -17,10 +17,10 @@ Proposed name: `@EzyOpsBot` (fallback `@EzyMapOpsBot` if taken).
 
 ## BotFather steps (Jack, Phase 0)
 
-1. `@BotFather` → `/newbot` → name `EzyMap Ops` → username `EzyOpsBot`.
+1. `@BotFather` → `/newbot` → name `EzyMap Ops` → username `EzyOps_bot`.
    Copy the token **into the keyring only**:
    `secret-tool store --label "EzyOps bot token" service twinos key ops_bot_token`
-2. `/setprivacy` → `EzyOpsBot` → **Disable** (the bot must read Desk group messages).
+2. `/setprivacy` → `EzyOps_bot` → **Disable** (the bot must read Desk group messages).
 3. `/setjoingroups` → **Enable**.
 4. `/setcommands` → paste:
    ```

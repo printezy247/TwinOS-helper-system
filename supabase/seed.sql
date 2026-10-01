@@ -19,7 +19,7 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('desk_group_chat_id', 'null', 'Private EzyMap Desk group (Jack + ops bot). CONFIRM after the group is created (decision 17).', true),
   ('discussion_group_chat_id', 'null', 'Discussion group for comments, moderated by the ops bot. CONFIRM.', true),
   ('jack_telegram_user_id', 'null', 'Only this id may press Approve (§9.C.14). CONFIRM.', true),
-  ('ops_bot_username', '"@EzyOpsBot"', 'Proposed ops bot name (§16.4). CONFIRM once created in @BotFather; token goes to Vault / keyring, never here.', true),
+  ('ops_bot_username', '"@EzyOps_bot"', 'Ops bot username, created in @BotFather (§16.4); token goes to Vault / keyring, never here.', true),
   ('sales_bot_username', '"@EzyRegisterBot"', 'The sales bot, the one front door for every sale (decision 15).', false),
   ('support_persona', '"Sarah"', 'Support persona only; checkout retired (Growth Plan §02).', false),
   ('board_url', '"https://printezy.money/ezyai"', 'Public board referenced by the scorecard (Posting Kit POST 7).', false),
@@ -706,7 +706,7 @@ on conflict (name, platform) do update set audience_tier = excluded.audience_tie
 -- platform_accounts — names of Vault secrets only; no tokens (§9.A.6)
 -- ===========================================================================
 insert into public.platform_accounts (platform, handle, vault_secret_name, scopes, daily_limit, meta) values
-  ('telegram', '@EzyOpsBot', 'tg_ops_bot_token', array['post', 'edit', 'delete'], null, '{"role": "channel admin: Post, Edit, Delete only; Desk group member", "status": "CONFIRM bot name and create in @BotFather"}'),
+  ('telegram', '@EzyOps_bot', 'tg_ops_bot_token', array['post', 'edit', 'delete'], null, '{"role": "channel admin: Post, Edit, Delete only; Desk group member", "status": "CONFIRM bot name and create in @BotFather"}'),
   ('instagram', null, 'meta_ig_token', array['instagram_content_publish'], 100, '{"status": "Meta app Live with Standard Access (Phase 3)"}'),
   ('facebook', null, 'meta_page_token', array['pages_manage_posts'], 30, '{"status": "Phase 3"}'),
   ('threads', null, 'threads_token', array['threads_content_publish'], 250, '{"status": "Phase 3"}'),

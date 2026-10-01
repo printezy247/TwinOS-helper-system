@@ -13,7 +13,7 @@ methods only, and produces the Friday scoreboard. The full plan is
 Jack (Telegram Desk group, dashboard, ABDUL) ─▶ one API, one set of rules
                                                 ▼
                  Supabase (Jack's own project): Postgres + Edge Functions + pg_cron
-        ▲ EzyAi / TradingView      ▲ @EzyOpsBot      ▲ printezy (read)     ▲ PC worker (outbound only)
+        ▲ EzyAi / TradingView      ▲ @EzyOps_bot      ▲ printezy (read)     ▲ PC worker (outbound only)
 ```
 
 ## Repo layout
@@ -25,7 +25,7 @@ Jack (Telegram Desk group, dashboard, ABDUL) ─▶ one API, one set of rules
 | `supabase/functions/_shared/` | auth (JWT or hashed key → role), roles, idempotency, action_log, Telegram client, compliance checklist, draft pipeline | this scaffold |
 | `supabase/functions/<fn>/` | `content` `approve` `publish` `tg-webhook` `tv-webhook` `signals-ingest` `results` `health` `friday` `jobs` | this scaffold |
 | `workers/pc/` | Python worker on Jack's PC: drop folder, Telechurn CSV, backup, clips. Never opens a port | this scaffold |
-| `bots/ops/` | @EzyOpsBot setup, permissions, webhook, Desk group flow | this scaffold |
+| `bots/ops/` | @EzyOps_bot setup, permissions, webhook, Desk group flow | this scaffold |
 | `apps/dashboard/` | Lovable-generated dashboard (GitHub sync) | Lovable |
 | `apps/mcp/` | TwinOS MCP server for ABDUL (Phase 2) | mcp agent |
 | `docs/` | runbooks and contracts (below) | — |

@@ -567,4 +567,4 @@ All ten questions from v3 were answered on 2026-10-01 (decisions 10–19). Remai
 1. **Reference channel handles:** platform and handle for each of the five, so the benchmark study starts from the right accounts.
 2. **Monthly price list:** the exact monthly prices per ladder step (Growth Plan suggests TradingView Pro $29/mo next to $249 lifetime). Needed before `products` is seeded.
 3. **Supabase account:** confirm the Supabase account to create the TwinOS project in (same login as printezy's, or a separate one).
-4. **Ops bot name:** proposed `@EzyOpsBot` (or similar if taken). Jack creates it in @BotFather and stores the token in his keyring; TwinOS never sees it in a file.
+4. **Ops bot name:** proposed `@EzyOps_bot` (or similar if taken). Jack creates it in @BotFather and stores the token in his keyring; TwinOS never sees it in a file.

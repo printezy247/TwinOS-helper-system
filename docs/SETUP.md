@@ -143,13 +143,13 @@ secret-tool store --label "TwinOS abdul key"  service twinos key abdul_key
 The signal bot's key goes to its host: set `TWINOS_SIGNAL_KEY` as a secret there.
 Revoke any time: `update api_keys set revoked_at = now() where name = 'jack-pc';`.
 
-### 0.5 Ops bot (@EzyOpsBot) — see `bots/ops/README.md`
+### 0.5 Ops bot (@EzyOps_bot) — see `bots/ops/README.md`
 1. BotFather `/newbot` → token → `secret-tool store --label "EzyOps bot token" service twinos key ops_bot_token`.
 2. `/setprivacy` Disable, `/setjoingroups` Enable, `/setcommands`.
 3. Get Jack's Telegram id: message `@userinfobot` or `@getidsbot`; it goes into `settings.jack_telegram_user_id` (seed).
 
 ### 0.6 EzyMap Desk group (decision 17)
-1. Telegram → New Group → name **EzyMap Desk** → add `@EzyOpsBot` → done. Keep it private, two members.
+1. Telegram → New Group → name **EzyMap Desk** → add `@EzyOps_bot` → done. Keep it private, two members.
 2. Get the chat id: forward any message from it to `@getidsbot` (or read `my_chat_member` in the function logs after step 0.8). It is negative (`-100…`).
 3. Also note the channel id of `@ezymap` and, in Phase 4, the discussion group id.
 4. Put them in `settings` (SQL Editor). `settings.value` is **`jsonb`**, so every
@@ -374,7 +374,7 @@ Stays manual (decision 8): publish kit to Jack's phone; TikTok Studio schedule u
 ---
 
 ## Phase 4 — Community + tracking (Nov–Dec)
-- Create the discussion group linked to the channel; add `@EzyOpsBot` as admin (Delete, Ban, Invite via link); `settings.discussion_group_chat_id`.
+- Create the discussion group linked to the channel; add `@EzyOps_bot` as admin (Delete, Ban, Invite via link); `settings.discussion_group_chat_id`.
 - Seed `mod_rules` (scam keywords, `link_new_member`, `impersonation`).
 - Turn on join requests on the channel invite links (`creates_join_request`) for the captcha.
 

@@ -13,7 +13,7 @@ Jack ── voice/chat ─▶ ABDUL ── MCP (apps/mcp) ───────�
                          └──▲──────────▲───────────────▲──────────▲────────┘
           signals, outcomes │          │ webhooks       │ reads    │ jobs (outbound only)
                  ┌──────────┴──┐  ┌────┴─────────┐  ┌───┴──────┐ ┌─┴──────────────────┐
-                 │ Signal bot  │  │ @EzyOpsBot   │  │ printezy │ │ PC worker          │
+                 │ Signal bot  │  │ @EzyOps_bot   │  │ printezy │ │ PC worker          │
                  │ TradingView │  │ Desk group,  │  │ board,   │ │ workers/pc         │
                  │ alerts      │  │ channel,     │  │ ad clicks│ │ clips, local AI,   │
                  └─────────────┘  │ moderation   │  │ (read)   │ │ drop folder,       │
