@@ -125,6 +125,8 @@ returns table (
 )
 language sql
 stable
+security definer
+set search_path = public
 as $$
   with s as (
     select public.outcome_class(status, r_multiple) as cls, r_multiple
@@ -189,9 +191,9 @@ begin
       on conflict (external_id) do update set
         status = excluded.status,
         same_candle_ambig = excluded.same_candle_ambig,
-        resolved_at = coalesce(excluded.resolved_at, public.signals.resolved_at),
-        exit_price = coalesce(excluded.exit_price, public.signals.exit_price),
-        r_multiple = coalesce(excluded.r_multiple, public.signals.r_multiple),
+        resolved_at = coalesce(excluded.resolved_at, signals.resolved_at),
+        exit_price = coalesce(excluded.exit_price, signals.exit_price),
+        r_multiple = coalesce(excluded.r_multiple, signals.r_multiple),
         raw = excluded.raw,
         updated_at = now()
       returning id into v_id;
@@ -242,6 +244,6 @@ $$;
 
 grant execute on function public.outcome_class(text, numeric) to anon, authenticated, service_role;
 grant execute on function public.strict_win_rate(bigint, bigint) to anon, authenticated, service_role;
-grant execute on function public.results_stats(timestamptz, timestamptz) to authenticated, service_role;
+grant execute on function public.results_stats(timestamptz, timestamptz) to anon, authenticated, service_role;  -- aggregates only; feeds the public board
 grant execute on function public.ingest_signals(jsonb) to authenticated, service_role;
 grant execute on function public.ingest_outcome(jsonb) to authenticated, service_role;

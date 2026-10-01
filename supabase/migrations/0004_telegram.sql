@@ -130,7 +130,7 @@ create table if not exists public.telechurn_imports (
   file_name text,
   raw jsonb,
   imported_by text not null default public.twinos_actor(),
-  unique (period_start, period_end, chat_id, link_name)
+  unique nulls not distinct (period_start, period_end, chat_id, link_name)
 );
 
 -- bot_start_tags: read copy of @EzyRegisterBot start_log (§9.H.67)
@@ -142,7 +142,7 @@ create table if not exists public.bot_start_tags (
   started_at timestamptz not null,
   raw jsonb,
   created_at timestamptz not null default now(),
-  unique (source_bot, tag, user_id, started_at)
+  unique nulls not distinct (source_bot, tag, user_id, started_at)
 );
 create index if not exists idx_bot_start_tags_tag on public.bot_start_tags (tag, started_at desc);
 

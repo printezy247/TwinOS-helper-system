@@ -29,9 +29,6 @@ begin
              'new', coalesce(jsonb_object_agg(o.key, v_new -> o.key) filter (where o.value is distinct from (v_new -> o.key)), '{}'::jsonb))
       into v_payload
       from jsonb_each(v_old) o;
-    if v_payload -> 'new' = '{"updated_at": null}'::jsonb - 'updated_at' then
-      null;
-    end if;
     -- skip no-op updates (only updated_at moved)
     if (v_payload -> 'new') - 'updated_at' = '{}'::jsonb then
       return null;

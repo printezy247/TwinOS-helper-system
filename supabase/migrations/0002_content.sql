@@ -251,7 +251,7 @@ create table if not exists public.platform_accounts (
   meta jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (platform, handle)
+  unique nulls not distinct (platform, handle)
 );
 comment on column public.platform_accounts.vault_secret_name is 'Name of the secret in Supabase Vault. Never store the token here.';
 

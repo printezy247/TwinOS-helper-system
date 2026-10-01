@@ -39,7 +39,7 @@ create table if not exists public.manual_metrics (
   entered_by text not null default public.twinos_actor(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (week_start, kind, metric, campaign)
+  unique nulls not distinct (week_start, kind, metric, campaign)
 );
 create index if not exists idx_manual_metrics_week on public.manual_metrics (week_start desc, kind);
 
