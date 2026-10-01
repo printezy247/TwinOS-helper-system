@@ -91,14 +91,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: grep for token shapes
+      - name: grep tracked files for token shapes
         run: |
           set -e
-          # Telegram bot tokens, Supabase service-role JWTs, TwinOS keys with a real body.
-          if grep -rEn --exclude-dir=.git --exclude-dir=node_modules \
+          # Only files git tracks: a __pycache__ .pyc on a dev machine can hold a
+          # placeholder like twk_pc_worker_000...0 that would trip this and is
+          # not a secret.
+          if git ls-files -z | xargs -0 grep -nIE \
                -e '[0-9]{8,10}:AA[0-9A-Za-z_-]{30,}' \
                -e 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{40,}' \
-               -e 'twk_(abdul|pc_worker|ezyai)_[0-9a-f]{40}' . ; then
-            echo "secret-shaped string found"; exit 1
+               -e 'twk_(abdul|pc_worker|ezyai)_[0-9a-f]{40}' ; then
+            echo "secret-shaped string in a tracked file"; exit 1
           fi
           echo "clean"
+      - name: a key must never be all zeros or all the same character
+        run: |
+          set -e
+          if git ls-files -z | xargs -0 grep -nIE 'twk_[a-z_]+_(0{40}|a{40}|f{40})' ; then
+            echo "placeholder-shaped key in a tracked file"; exit 1
+          fi
+          echo "no placeholders"
