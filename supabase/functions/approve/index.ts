@@ -16,7 +16,7 @@
  * a run_at, enqueues publish jobs. Idempotent per (content_id, decision).
  */
 import { serve, readJson, reqString, oneOf, optString, bad } from "_shared/http.ts";
-import { authenticate, bearer, safeEqual } from "_shared/auth.ts";
+import { authenticate, bearer, isServiceKey, safeEqual } from "_shared/auth.ts";
 import { require as requireRole, type Role } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
@@ -31,8 +31,7 @@ async function resolveCaller(req: Request, body: Record<string, unknown>) {
   const internal = req.headers.get("x-twinos-internal");
   if (internal) {
     // Internal hop from tg-webhook: service token + derived secret + Jack's TG id.
-    const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    if (!safeEqual(bearer(req), service)) throw new HttpError(401, "unauthorized", "bad service token");
+    if (!(await isServiceKey(bearer(req)))) throw new HttpError(401, "unauthorized", "bad service token");
     if (!safeEqual(internal, await deriveWebhookSecret())) {
       throw new HttpError(401, "unauthorized", "bad internal secret");
     }

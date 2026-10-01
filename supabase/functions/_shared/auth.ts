@@ -63,6 +63,30 @@ export function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * True when `jwt` is this project's service-role key. The key Supabase injects
+ * into the function is compared first (constant time). Projects that run both
+ * the legacy and the new API-key systems can inject a differently formatted
+ * value than the legacy JWT Jack stores in Vault for pg_cron, so a miss falls
+ * back to asking the platform: PostgREST accepts a service-role token on a
+ * table only the service role can read, and only when its signature is valid.
+ */
+export async function isServiceKey(jwt: string): Promise<boolean> {
+  const injected = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (injected && safeEqual(jwt, injected)) return true;
+  const url = Deno.env.get("SUPABASE_URL") ?? "";
+  if (!url || !jwt) return false;
+  try {
+    const res = await fetch(`${url}/rest/v1/api_keys?select=id&limit=1`, {
+      headers: { apikey: jwt, Authorization: `Bearer ${jwt}` },
+    });
+    await res.body?.cancel();
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -120,8 +144,7 @@ async function callerFromJwt(req: Request, jwt: string): Promise<Caller> {
 
   // Service-role JWT: internal callers only (pg_cron, migrations' smoke tests).
   if (payload.role === "service_role") {
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    if (!safeEqual(jwt, serviceKey)) throw new HttpError(401, "unauthorized", "bad service token");
+    if (!(await isServiceKey(jwt))) throw new HttpError(401, "unauthorized", "bad service token");
     const actor = req.headers.get("x-twinos-actor") ?? "cron";
     if (actor !== "cron") throw new HttpError(403, "forbidden", "service token may only act as cron");
     return { role: "cron", subject: "service", actor: "cron" };
