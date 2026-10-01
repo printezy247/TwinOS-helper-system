@@ -6,25 +6,25 @@ Tick as done. "Jack" items are in `docs/SETUP.md` with commands.
 Exit: schema reviewed; baseline logged.
 - [ ] Baseline week: hours by task logged (`baseline_hours`) — Jack
 - [x] Unified monthly-first price list decided (§16 Q2): catalog prices kept, TradingView Pro $29/mo; EzyAI founding price deferred to Q1 2027
-- [ ] Reference-channel handles given (§16 Q1) — Jack
-- [x] Schema written and reviewed (`supabase/migrations`, 0001–0015)
+- [x] Reference-channel handles given (§16 Q1) — in the `benchmarks` table only (44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL, SandyFx, vexaflowai, bengoldtrader)
+- [x] Schema written and reviewed (`supabase/migrations`, 0001–0016)
 - [x] Schema verified against a real Postgres: migrations + seed + `tests/smoke.sql` load and pass, and CI repeats it on every push
 - [x] Schema reconciled with the Edge Functions (`0011_contract.sql`) — the two halves had drifted and nothing had ever run them together
 - [x] Seed: settings, brand_facts, products, personas, 15 templates, style_guide, hooks, calendar_slots, live_runsheets, mod_rules, benchmarks (`supabase/seed.sql`)
 - [x] MCP `ENDPOINTS` matched to the deployed function routes; 40 tests pass
 - [x] Settings keys aligned: the functions read the same names the seed and views write
 - [x] `docs/SETUP.md` verified — all 7 SQL blocks execute, all counts checked against a live database
-- [x] Cross-file consistency checks (`tests/check_consistency.py`, 21 checks) in CI
+- [x] Cross-file consistency checks (`tests/check_consistency.py`, 25 checks) in CI
 - [x] `deno check`/`deno lint`/`deno test` run locally against Deno 2.9.6 and are clean
-- [ ] Supabase project created in Jack's account, region Singapore; `db push`; seed applied; smoke test green — Jack (`docs/SETUP.md` step 0.2)
+- [x] Supabase project created in Jack's account (`cdnyybrfoclexjlroqcf`, Singapore); migrations + seed applied and fingerprint-checked; smoke test green
 - [x] `pg_cron`, `pg_net` (in `extensions`), pgvector enabled; private `assets` bucket created (45 MB limit)
 - [x] Jack's login created with `twinos_role = jack`
 - [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / on the host — Jack: `./scripts/mint-keys.sh` (helper + `rotate_api_key()` shipped; keys ride on `X-TwinOS-Key`)
 - [x] @EzyOps_bot created; token in keyring and function secrets
-- [ ] EzyMap Desk group created (Jack + bot); chat ids in `settings` — Jack
-- [ ] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean — Jack
-- [ ] Cron schedules installed (publish, health/check, stop-if, friday, backup, keep-alive) — Jack
-- [ ] Lovable project created, connected to Jack's Supabase (not Lovable Cloud), GitHub sync on, knowledge pasted — Jack
+- [x] EzyMap Desk group created (Jack + bot); chat ids in `settings`
+- [x] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean (redeploy with `scripts/deploy.sh` after each merge that touches functions)
+- [x] Cron schedules installed (publish, health/check, stop-if, friday, backup, keep-alive)
+- [x] Lovable project created (frontend-only, Jack's Supabase via public key, no Lovable Cloud), knowledge set — 2 Oct; GitHub sync optional (own repo)
 - [ ] Reference-channel benchmark study + `benchmarks` seed + high-capital ICP note — research task
 - [ ] Invite-link naming convention agreed (`src-campaign-yymm`) — Jack
 - [ ] The EzyMap indicator repo made private — Jack
@@ -50,7 +50,7 @@ Exit: Jack approves the map and a signal from his phone; a result reply posts by
 - [ ] Compliance checks on every variant; evidence trail in `compliance_checks`
 - [ ] PC worker installed as a user service; `--self-test` green; nightly backup file appears
 - [ ] 07:40 / 19:55 reminders (cron → content)
-- [ ] Approval Inbox screen in Lovable (jack-only Approve)
+- [x] Approval Inbox screen in Lovable (jack-only Approve) — built 2 Oct; Jack to sign in and confirm with a real draft
 
 ## Phase 2 — ABDUL + batch + Friday (22–31 Oct)
 Exit: Friday report arrives without Jack opening a spreadsheet.

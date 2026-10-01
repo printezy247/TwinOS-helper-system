@@ -1,6 +1,8 @@
 # TwinOS — project knowledge for Lovable
 
-Paste this whole file into Lovable → Project settings → Knowledge.
+Lovable project "TwinOS" (id 8aa151d6-f29b-4fba-8daf-345c4df50963). This text is
+its project knowledge (set over the Lovable MCP; paste it again by hand if it is
+ever lost: Project settings → Knowledge).
 
 ## What TwinOS is
 
@@ -9,11 +11,16 @@ map, TikTok and people. It drafts posts from templates, checks them against a
 compliance checklist, waits for Jack's approval, publishes to Telegram on a
 schedule, posts result replies under signals, tracks members and produces the
 Friday scoreboard. You are building its **dashboard only**. The backend is
-Postgres + Edge Functions in **Jack's own Supabase project** (already
-connected; **not** Lovable Cloud).
+Postgres + Edge Functions in **Jack's own Supabase project**, **not** Lovable
+Cloud. Never enable Lovable Cloud or any Lovable database, and never create
+tables, migrations, edge functions, storage buckets or auth settings.
 
-Repo: `TwinOS-helper-system`. Put all dashboard code under `apps/dashboard/`.
-Never write into `supabase/migrations`, `supabase/functions`, `workers/`, `docs/`.
+This is a frontend-only app. It connects with `@supabase/supabase-js` in
+`src/lib/supabase.ts` using the public project URL
+(`https://cdnyybrfoclexjlroqcf.supabase.co`) and the public publishable key.
+No other key, token or secret may ever appear in the code. The backend source
+lives in the GitHub repo `printezy247/TwinOS-helper-system`; this app's code
+lives only in this Lovable project.
 
 ## The schema-first rule
 
@@ -49,8 +56,10 @@ JWT is attached automatically. Error bodies are `{ error, message }`; show
 Roles come from the login claim `app_metadata.twinos_role`:
 - `jack` — Jack's login. The only role that can **approve** or schedule a post
   carrying a claim (price, level, result, offer, member result, scorecard).
-- `dashboard` — any other login. Read everything, draft, request approval,
-  enter manual numbers. Never approve.
+- `dashboard` — a login whose `app_metadata.twinos_role` is `dashboard`. Read
+  everything, draft, request approval, enter manual numbers. Never approve.
+  A login with no `twinos_role` at all reads nothing (RLS returns no rows);
+  show "This account has no TwinOS role yet" instead of an empty list.
 - Keys (`abdul`, `pc_worker`, `ezyai`) are for machines; the UI never uses them.
 
 Read the role once after login (`session.user.app_metadata.twinos_role`) and
@@ -59,10 +68,13 @@ The server enforces it again (403), so the UI is not the guard, just honest.
 
 ## Screens, in build order (one at a time; finish and wait between each)
 
-1. **Approval Inbox** — `content_items` where status in (`pending_approval`, `draft`)
+1. **Approval Inbox** (built) — `content_items` where status in (`pending_approval`, `draft`)
    newest first, with the variant body, compliance findings (`content_variants.compliance.findings`,
    colour by severity: blocking red, needs_approval gold, warn grey), `[NEEDED:…]`
-   highlighted, the Desk group link, and buttons Approve / Reject / Reschedule (jack only).
+   highlighted, and buttons Approve / Reject / Reschedule (jack only).
+   Variants join on `content_variants.content_id`; load them in a second query
+   (an embedded select is ambiguous: two foreign keys point at `content_items`).
+   `compliance` is `{ ok, needs_approval, findings: [{ check, severity, message, evidence? }], claim_flags }`.
 2. **Content Calendar** — week view from `publish_jobs` (run_at, status) joined to
    `content_items` (post_type, lang). The 15 post types as filters. Click → inbox detail.
    Failed jobs in red with `last_error`.
@@ -90,7 +102,7 @@ Also a thin **Settings** page that only reads `settings` (editing stays in SQL f
   (down / rejected / blocking), gold `#E3B341` (needs approval / warning / brand accent),
   background `#0B0F14`, panels `#121820`, text `#E6EDF3`, muted `#8B98A5`.
 - One font (Inter). Numbers tabular. Telegram-style message preview for drafts
-  (monospace block, bold only where the body has `<b>`).
+  (monospace block; bodies use Telegram Markdown, so `*text*` is bold; keep emojis and line breaks).
 - Mobile first: Jack approves from his phone. The Approval Inbox must work at 390 px.
 - Malay is `ms`, never `my`. Times shown in `Asia/Kuala_Lumpur`.
 - No emojis in UI chrome; emojis inside post bodies are content and stay.
@@ -102,7 +114,7 @@ Also a thin **Settings** page that only reads `settings` (editing stays in SQL f
 - A draft with any **blocking** finding cannot be approved; show the findings and
   an Edit path instead (`content.edit` is Phase 2; for now, the Desk group).
 - `[NEEDED:…]` in a body means not ready. Never hide it.
-- Never render or post anything from `signals` where `quality` is not `live`.
+- Never render or post anything from `signals` unless `data_source = 'live'` and `status <> 'shadow'`.
 - Do not add an AI "rewrite" call in the UI; drafting runs through the backend
   and ABDUL, never from the browser.
 - Do not store tokens or keys in the frontend. The anon key and the user session
