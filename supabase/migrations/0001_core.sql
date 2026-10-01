@@ -6,6 +6,26 @@
 create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------------
+-- Supabase creates anon / authenticated / service_role itself. On a plain
+-- Postgres (the CI job, a local scratch database) they do not exist, and the
+-- grants in 0001 and the RLS policies in 0009 would fail. Create them when they
+-- are missing; on Supabase this block is a no-op. Needs a role that may
+-- CREATE ROLE, which the Supabase `postgres` role has.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin noinherit;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    create role authenticated nologin noinherit;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin noinherit bypassrls;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- Role helpers. Roles come from the JWT claim `twinos_role` (§9.B item 9):
 -- jack, abdul, ops_bot, dashboard, cron, ezyai, pc_worker. Service-role
 -- connections carry role=service_role and bypass RLS as usual.
