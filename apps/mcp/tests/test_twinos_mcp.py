@@ -130,7 +130,7 @@ class TestRequestShapes(Base):
     def test_draft(self):
         tm.tool_call("twinos_draft", {"template": "gold_map", "input": {"lines": ["XAU 2410 support"]}, "lang": "en"})
         r = self.last()
-        self.assertEqual((r["method"], r["path"]), ("POST", "/functions/v1/content-draft"))
+        self.assertEqual((r["method"], r["path"]), ("POST", "/functions/v1/content/draft"))
         self.assertEqual(r["body"]["template"], "gold_map")
         self.assertEqual(r["body"]["input"]["lines"], ["XAU 2410 support"])
         self.assertEqual(r["body"]["actor"], "abdul")
@@ -149,25 +149,27 @@ class TestRequestShapes(Base):
     def test_batch(self):
         tm.tool_call("twinos_batch", {"for": "2026-10-05"})
         r = self.last()
-        self.assertEqual(r["path"], "/functions/v1/content-batch")
+        self.assertEqual(r["path"], "/functions/v1/content/batch")
         self.assertEqual(r["body"], {"for": "2026-10-05", "actor": "abdul"})
 
     def test_request_approval(self):
         tm.tool_call("twinos_request_approval", {"content_id": "c42", "note": "map for Thursday"})
         r = self.last()
-        self.assertEqual(r["path"], "/functions/v1/content-request-approval")
-        self.assertEqual(r["body"]["content_id"], "c42")
+        # the id is in the path, as the deployed route expects
+        self.assertEqual(r["path"], "/functions/v1/content/c42/request-approval")
+        self.assertEqual(r["body"], {"note": "map for Thursday", "actor": "abdul"})
 
     def test_schedule(self):
         tm.tool_call("twinos_schedule", {"content_id": "c42", "when": "2026-10-06T07:50:00+08:00", "platforms": ["telegram"]})
         r = self.last()
-        self.assertEqual(r["path"], "/functions/v1/content-schedule")
-        self.assertEqual(r["body"]["platforms"], ["telegram"])
+        self.assertEqual(r["path"], "/functions/v1/content/c42/schedule")
+        self.assertEqual(r["body"], {"run_at": "2026-10-06T07:50:00+08:00", "actor": "abdul"})
+        self.assertNotIn("platforms", r["body"], "platforms is not part of the deployed contract")
 
     def test_result_reply_sends_only_the_id(self):
         tm.tool_call("twinos_result_reply", {"signal_id": "3", "status": "TP1", "pips": 40})
         r = self.last()
-        self.assertEqual(r["path"], "/functions/v1/results-reply")
+        self.assertEqual(r["path"], "/functions/v1/results")
         self.assertEqual(r["body"], {"signal_id": "3", "actor": "abdul"})   # numbers never come from ABDUL
 
     def test_link_name_convention(self):
@@ -182,7 +184,7 @@ class TestRequestShapes(Base):
     def test_manual_metrics(self):
         tm.tool_call("twinos_manual_metrics", {"source": "Vantage", "week": "2026-10-05", "values": {"ftd": 3, "active": 12}})
         r = self.last()
-        self.assertEqual(r["path"], "/functions/v1/metrics-manual")
+        self.assertEqual(r["path"], "/functions/v1/friday/manual")
         self.assertEqual(r["body"]["source"], "vantage")
         self.assertEqual(r["body"]["values"]["ftd"], 3)
         with self.assertRaises(ValueError):
@@ -191,14 +193,14 @@ class TestRequestShapes(Base):
     def test_csi_log(self):
         tm.tool_call("twinos_csi_log", {"topic": "gold news today", "popularity": 82, "trend": "up", "gap": True, "icp": "beginner"})
         r = self.last()
-        self.assertEqual(r["path"], "/functions/v1/research-csi")
+        self.assertEqual(r["path"], "/functions/v1/research/csi")
         self.assertEqual(r["body"]["topic"], "gold news today")
         self.assertIs(r["body"]["gap"], True)
 
     def test_clip(self):
         tm.tool_call("twinos_clip", {"date": "2026-09-30"})
         r = self.last()
-        self.assertEqual(r["path"], "/functions/v1/studio-clip")
+        self.assertEqual(r["path"], "/functions/v1/jobs/enqueue")
         self.assertEqual(r["body"]["source"], "tiktok")
         self.assertEqual(r["body"]["kind"], "clip")
 
@@ -316,7 +318,7 @@ class TestGuardrails(Base):
                 tm.request("POST", path, {})
             self.assertEqual(cm.exception.status, 403)
         self.assertEqual(self.reqs, [])
-        tm.request("POST", "/functions/v1/content-request-approval", {"content_id": "c1"})   # asking is fine
+        tm.request("POST", "/functions/v1/content/c77/request-approval", {"content_id": "c1"})   # asking is fine
         self.assertEqual(len(self.reqs), 1)
 
     def test_endpoints_contain_no_approve(self):
@@ -358,7 +360,7 @@ class TestCLI(Base):
             rc = tm.cli(["draft", "--template", "gold_map", "--input", '{"lines": ["2410 holds"]}'])
         self.assertEqual(rc, 0)
         r = self.last()
-        self.assertEqual(r["path"], "/functions/v1/content-draft")
+        self.assertEqual(r["path"], "/functions/v1/content/draft")
         self.assertEqual(r["body"]["input"], {"lines": ["2410 holds"]})
         FakeTwinOS.state["bodies"]["/rest/v1/v_friday_scoreboard"] = [{"week": "2026-09-28"}]
         buf = io.StringIO()
@@ -401,35 +403,34 @@ class TestAbdulVerbs(Base):
             self.assertNotIn("approv", v["verb"])
 
     def test_draft_with_ask_requests_approval(self):
-        FakeTwinOS.state["bodies"]["/functions/v1/content-draft"] = {"id": "c77", "needed_fields": ["risk_line"], "claim_flags": ["price"]}
+        FakeTwinOS.state["bodies"]["/functions/v1/content/draft"] = {"id": "c77", "needed_fields": ["risk_line"], "claim_flags": ["price"]}
         out = tv.twinos_action("twinos_draft", "gold_map | 2410 held, buyers back above 2425 | ask", {})
         self.assertIn("drafted gold_map (c77)", out)
         self.assertIn("risk_line", out)
         self.assertIn("Jack approves", out)
         self.assertIn("on Jack's phone now", out)
         paths = [r["path"] for r in self.reqs]
-        self.assertEqual(paths, ["/functions/v1/content-draft", "/functions/v1/content-request-approval"])
+        self.assertEqual(paths, ["/functions/v1/content/draft", "/functions/v1/content/c77/request-approval"])
         self.assertEqual(self.reqs[0]["body"]["input"], {"text": "2410 held, buyers back above 2425"})
-        self.assertEqual(self.reqs[1]["body"]["content_id"], "c77")
+        self.assertEqual(paths[1], "/functions/v1/content/c77/request-approval")  # id in the path
 
     def test_draft_batch(self):
         out = tv.twinos_action("twinos_draft", "batch", {})
-        self.assertEqual(self.last()["path"], "/functions/v1/content-batch")
+        self.assertEqual(self.last()["path"], "/functions/v1/content/batch")
         self.assertIn("Jack's turn", out)
 
     def test_schedule_parses_abdul_date_marks_and_claims_are_refused(self):
         out = tv.twinos_action("twinos_schedule", "c42 📅 2026-10-06 ⏰ 07:50 on telegram, threads", {})
         r = self.last()
-        self.assertEqual(r["body"]["content_id"], "c42")
-        self.assertEqual(r["body"]["when"], "2026-10-06T07:50:00")
-        self.assertEqual(r["body"]["platforms"], ["telegram", "threads"])
+        self.assertEqual(r["path"], "/functions/v1/content/c42/schedule")
+        self.assertEqual(r["body"]["run_at"], "2026-10-06T07:50:00")
         self.assertIn("scheduled c42 for 2026-10-06 07:50 on telegram, threads", out)
         FakeTwinOS.state["status_once"] = (403, {"error": "claim post needs approval"})
         out = tv.twinos_action("twinos_schedule", "c43 at 2026-10-07 09:00", {})
         self.assertIn("Jack approves it on his phone first", out)
 
     def test_result_sends_only_the_id(self):
-        FakeTwinOS.state["bodies"]["/functions/v1/results-reply"] = {"ok": True, "status": "TP1"}
+        FakeTwinOS.state["bodies"]["/functions/v1/results"] = {"ok": True, "status": "TP1"}
         out = tv.twinos_action("twinos_result", "signal 3", {})
         self.assertEqual(self.last()["body"], {"signal_id": "3", "actor": "abdul"})
         self.assertEqual(out, "result reply posted under signal 3: TP1")
@@ -461,7 +462,7 @@ class TestAbdulVerbs(Base):
         res = tv.twinos_call({}, "/rest/v1/v_stop_if?select=*&limit=1")
         self.assertEqual(res, [{"ok": 1}])
         self.assertEqual(self.last()["method"], "GET")
-        tv.twinos_call({}, "/functions/v1/content-batch", {"for": "2026-10-05"})
+        tv.twinos_call({}, "/functions/v1/content/batch", {"for": "2026-10-05"})
         self.assertEqual(self.last()["method"], "POST")
         self.assertIn("idempotency-key", self.last()["headers"])
         with self.assertRaises(tm.TwinOSError):

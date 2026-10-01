@@ -35,22 +35,27 @@ verbs for Phase 2: `../abdul/PATCH-NOTES.md`.
 
 | Tool | Does | Backend (plan §11) |
 |---|---|---|
-| `twinos_draft` | One post from a template; returns the draft, its `[NEEDED]` fields and claim flags | `POST /functions/v1/content-draft` |
-| `twinos_batch` | The Wednesday batch (7 lessons, audit, poll, offer) into the Desk group | `POST /functions/v1/content-batch` |
-| `twinos_request_approval` | Push a draft to the Desk group with Approve/Edit/Reject for Jack | `POST /functions/v1/content-request-approval` |
-| `twinos_schedule` | Publish jobs for an approved, claim-free item; 403 for anything with a price | `POST /functions/v1/content-schedule` |
-| `twinos_result_reply` | Result reply under the signal; only the id crosses, wording from the board | `POST /functions/v1/results-reply` |
-| `twinos_link` | Named invite or bot link, `src-campaign-yymm` | `POST /functions/v1/links` |
-| `twinos_manual_metrics` | Vantage / TikTok / Telechurn weekly numbers | `POST /functions/v1/metrics-manual` |
+| `twinos_draft` | One post from a template; returns the draft, its `[NEEDED]` fields and claim flags | `POST /functions/v1/content/draft` |
+| `twinos_batch` | The Wednesday batch (7 lessons, audit, poll, offer) into the Desk group (Phase 2) | `POST /functions/v1/content/batch` |
+| `twinos_request_approval` | Push a draft to the Desk group with Approve/Edit/Reject for Jack | `POST /functions/v1/content/{id}/request-approval` |
+| `twinos_schedule` | Publish jobs for an approved, claim-free item; 403 for anything with a price | `POST /functions/v1/content/{id}/schedule` |
+| `twinos_result_reply` | Result reply under the signal; only the id crosses, wording from the board | `POST /functions/v1/results` |
+| `twinos_link` | Named invite or bot link, `src-campaign-yymm` (Phase 2) | `POST /functions/v1/links` |
+| `twinos_manual_metrics` | Vantage / TikTok / Telechurn weekly numbers | `POST /functions/v1/friday/manual` |
 | `twinos_friday` | The Friday scoreboard | `GET /rest/v1/v_friday_scoreboard` |
 | `twinos_health` | "Anything broken?" in one line | `GET /rest/v1/health_checks`, open `alerts` |
-| `twinos_csi_log` | Log a Creator Search Insights topic | `POST /functions/v1/research-csi` |
-| `twinos_clip` | Queue a live for the PC worker: transcript, picks, captions, clips | `POST /functions/v1/studio-clip` |
+| `twinos_csi_log` | Log a Creator Search Insights topic (Phase 5) | `POST /functions/v1/research/csi` |
+| `twinos_clip` | Queue a live for the PC worker: transcript, picks, captions, clips | `POST /functions/v1/jobs/enqueue` (`kind: clip`) |
 | `twinos_brief` | Latest Monday research brief | `GET /rest/v1/briefs` |
 | `twinos_inbox` | Open unified-inbox items with suggested replies | `GET /rest/v1/inbox_items` |
-| `twinos_analytics` | One analytics view (`v_results_board`, `v_funnel`, `v_stop_if`, `content_log`...) | `GET /rest/v1/<view>` |
+| `twinos_analytics` | One analytics view (`v_results_board`, `v_funnel`, `v_stop_if`, `v_content_log`...) | `GET /rest/v1/<view>` |
 
-Endpoint names are in one dict (`ENDPOINTS`) at the top of the file; match them to the schema when it lands.
+The function name is the directory under `supabase/functions/`; the route is the
+path inside it. `docs/API.md` has the full request/response for each. Routes
+marked Phase 2 or Phase 5 are not deployed yet and will answer 404 until they are.
+The two `{id}` routes carry the content id **in the path**, so
+`twinos_schedule` sends `POST /content/<id>/schedule {"run_at": ...}` and omits
+`run_at` when Jack did not name a time (the item's own schedule applies).
 
 Every write carries `Idempotency-Key` (uuid4, same key across retries). 5xx and 429 are retried three times with
 backoff; 4xx are not. Timeout 20 s (`TWINOS_TIMEOUT`). Error text is scrubbed of anything token-shaped before a

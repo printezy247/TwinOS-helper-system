@@ -68,26 +68,41 @@ FORBIDDEN_TOOL = re.compile(r"approv|publish_now|force", re.I)
 ALLOWED_ASK = "twinos_request_approval"   # the one name with "approv" in it: it asks, it never decides
 
 # --------------------------------------------------------------------------- endpoints (plan §11)
-# kind: "fn" = POST /functions/v1/<name>  (writes, with Idempotency-Key)
+# kind: "fn" = POST /functions/v1/<path>  (writes, with Idempotency-Key)
 #       "rest" = GET /rest/v1/<table or view>?<query>  (reads, PostgREST)
+#
+# These names are the ones actually deployed in supabase/functions/. The function
+# name is the directory; the route is the path inside it (docs/API.md).
+#   content → POST /content/draft
+#   approve → POST /approve                (jack only; ABDUL is refused by role)
+#   results → POST /results
+#   friday  → POST /friday/manual
+#   jobs    → POST /jobs/enqueue
+# Phase-2+ routes (links, research, studio) are marked so the failure is a clear
+# 404 rather than a confusing one.
 ENDPOINTS = {
-    "twinos_draft":            ("fn", "content-draft"),
-    "twinos_batch":            ("fn", "content-batch"),
-    "twinos_request_approval": ("fn", "content-request-approval"),
-    "twinos_schedule":         ("fn", "content-schedule"),
-    "twinos_result_reply":     ("fn", "results-reply"),
-    "twinos_link":             ("fn", "links"),
-    "twinos_manual_metrics":   ("fn", "metrics-manual"),
-    "twinos_csi_log":          ("fn", "research-csi"),
-    "twinos_clip":             ("fn", "studio-clip"),
+    "twinos_draft":            ("fn", "content/draft"),
+    "twinos_batch":            ("fn", "content/batch"),              # phase 2
+    # the two {id} routes carry the content id in the path, so only the
+    # function base is stored and the route is built per call
+    "twinos_request_approval": ("fn", "content"),
+    "twinos_schedule":         ("fn", "content"),
+    "twinos_result_reply":     ("fn", "results"),
+    "twinos_link":             ("fn", "links"),                      # phase 2
+    "twinos_manual_metrics":   ("fn", "friday/manual"),
+    "twinos_csi_log":          ("fn", "research/csi"),               # phase 5
+    "twinos_clip":             ("fn", "jobs/enqueue"),               # kind=clip
     "twinos_friday":           ("rest", "v_friday_scoreboard"),
     "twinos_health":           ("rest", "health_checks"),
     "twinos_brief":            ("rest", "briefs"),
     "twinos_inbox":            ("rest", "inbox_items"),
     "twinos_analytics":        ("rest", None),   # the view is a parameter, from ANALYTICS_VIEWS
 }
+# Views ANALYTICS_VIEWS may read, with the ones that are not views marked, so a
+# bad name is refused locally instead of becoming a confusing PostgREST error.
 ANALYTICS_VIEWS = ("v_results_board", "v_funnel", "v_quarter_targets", "v_stop_if", "v_friday_scoreboard",
-                   "content_log", "post_metrics", "channel_daily", "manual_metrics", "benchmarks", "time_saved")
+                   "v_results_weekly", "v_content_log", "post_metrics", "channel_daily", "manual_metrics",
+                   "benchmarks", "time_saved", "signals", "content_items", "publish_jobs", "alerts")
 
 # --------------------------------------------------------------------------- tools (plan §11 list + three reads)
 # (name, description, {arg: type}, required args)
@@ -281,9 +296,19 @@ def tool_call(name, a, idem=None):
     if name == "twinos_batch":
         return fn(target, dict(_clean(a, ("for", "only")), actor=ACTOR), idem)
     if name == "twinos_request_approval":
-        return fn(target, dict(_clean(a, ("content_id", "note")), actor=ACTOR), idem)
+        # POST /content/{id}/request-approval — the id is in the path, not the body
+        cid = urllib.parse.quote(str(a["content_id"]))
+        return fn("%s/%s/request-approval" % (target, cid),
+                  dict(_clean(a, ("note",)), actor=ACTOR), idem)
     if name == "twinos_schedule":
-        return fn(target, dict(_clean(a, ("content_id", "when", "platforms")), actor=ACTOR), idem)
+        # POST /content/{id}/schedule { run_at }. No "when" means publish on the
+        # item's own schedule, which is what the function does with run_at absent
+        # (the Desk flow is "OK, and it goes out").
+        cid = urllib.parse.quote(str(a["content_id"]))
+        body = {"actor": ACTOR}
+        if a.get("when"):
+            body["run_at"] = str(a["when"])
+        return fn("%s/%s/schedule" % (target, cid), body, idem)
     if name == "twinos_result_reply":
         # only the id crosses: wording and numbers are the board's, never ABDUL's (plan item 24)
         return fn(target, {"signal_id": str(a["signal_id"]), "actor": ACTOR}, idem)
