@@ -23,7 +23,17 @@
 | 6 | Baseline week | **Yes** | Week 1 time log before automation starts |
 | 7 | Professional advice on compliance | **Yes** | Lawyer's opinion before paid ads (Growth Plan: before Q1 2027) |
 | 8 | TikTok account type | **Personal** | Creator Search Insights stays available. TikTok posting stays manual through a publish kit. LIVE needs about 1,000 followers |
-| 9 | Commit and push this plan | **Yes** | Done with this version |
+| 9 | Commit and push this plan | **Yes** | Pushed as `734696d` |
+| 10 | Backend | **Lovable + Jack's own Supabase project** (§8 option A) | TwinOS gets its own Supabase project, separate from printezy's. Lovable builds the UI against it; migrations live in this repo |
+| 11 | Paid services kept | **CapCut, TradingView** (plus Telechurn) | CapCut stays the editor; the Studio module prepares clips and captions for it rather than replacing it. TradingView plan includes webhook alerts |
+| 12 | Reference channels | They are not usual IB channels; they target **big-deposit audiences**. Jack wants trending channels like them found | Phase 0 research task: a benchmark study of these five and similar trending channels (§4.10). Allowed methods only |
+| 13 | TradingView webhooks | **Yes, included** | Signal cards come from TradingView alert webhooks (item 22). EzyAi stays the second source |
+| 14 | Pricing model | **Monthly subscriptions preferred** | Price list unified around monthly plans (TradingView Pro gets a monthly option via invite-only scripts, as the Growth Plan proposes). Lifetime SKUs kept only where already sold. `products` carries `billing = monthly | lifetime | one_time` |
+| 15 | Sales bot today | **ASAP-TeleBot (@EzyRegisterBot)**, ahead of the website's bot | TwinOS reads ASAP's `/start` tags and subscriptions. The website bot is not a source |
+| 16 | Telechurn setup | Telechurn's bot is connected to the channels and reads joins and leaves. No CSV export, no link naming yet | TwinOS owns link naming from Phase 1 (convention in §5). Telechurn keeps reporting on them. Weekly numbers copied from Telechurn's report into `manual_metrics` until an export exists |
+| 17 | EzyMap Desk group | **Yes** | Created in Phase 0 with Jack and the ops bot |
+| 18 | Sales bot hosting | **PythonAnywhere first** | No VPS now. Health module watches the monthly keep-alive click and write load; revisit at Phase 8 |
+| 19 | EzyMap repo privacy | **Jack will make it private** | Outside TwinOS. Checked off in Phase 0 |
 
 ---
 
@@ -178,8 +188,10 @@ One TikTok → Instagram Reels, Facebook Reels, YouTube Shorts (clean export, no
 
 Keys and money stay with Jack: bot tokens, IB portal, Stripe, USDT wallet, licence server token.
 
-### 4.10 Reference channels (decision 5)
+### 4.10 Reference channels (decisions 5 and 12)
 44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL, GARY GOLD TRADER.
+- **Why Jack picked them:** they are not the usual IB-rebate channels. They target a big-deposit audience. That is a positioning signal, not a copy target: EzyMap stays the honest channel, but its Funded ladder (Premium $100+, Elite $700+) and the Elite Circle speak to the same higher-capital segment.
+- **Phase 0 research task:** a benchmark study of these five plus trending channels like them, found through allowed means (public channel previews, TikTok and YouTube search by hand, TGStat-style public pages viewed one at a time). For each: platform and handle, size, posting rhythm, view rate, offer structure, how they qualify big-deposit members, and what disclosures they show. The output is a short report and a `benchmarks` seed, plus a proposed "high-capital" ICP note for Jack to accept or reject.
 - **What TwinOS does:** a benchmark card per channel, refreshed weekly by an allowed, low-volume check of each public channel's web preview (subscribers, posts per day, average views, view rate) and recorded by hand for TikTok. Shows how EzyMap's rhythm and view rate compare.
 - **What TwinOS does not do:** feed their posts to the AI as writing examples (Telegram's terms forbid using channel content for AI without consent), copy their wording, or name them in content. The Channel Audit series stays pattern-based, as the Growth Plan requires.
 - Jack's style notes on what he likes about each ("short map format", "clean result replies") go into `style_guide` as rules written by Jack.
@@ -197,9 +209,11 @@ Keys and money stay with Jack: bot tokens, IB portal, Stripe, USDT wallet, licen
 | Brand voice (Jasper) | Build | Posting Kit master prompt + Jack's best posts + Claude/local models |
 | Keyword and topic research (Semrush, vidIQ, Creator Search Insights) | Build with free sources | Search Console, Bing, YouTube API, autocomplete, weekly manual TikTok capture |
 | Content log (Google Sheet) | Connect, then lead | TwinOS writes every row automatically and keeps a Sheet export |
-| Clipping (OpusClip/Vizard) | Build on Jack's PC | faster-whisper + ffmpeg + templates |
+| Clipping (OpusClip/Vizard) | Build on Jack's PC, **hand off to CapCut** | faster-whisper + ffmpeg produce transcript, suggested cut points, caption file and clean clips; Jack finishes in CapCut (kept). No CapCut replacement |
+| Signal alerts | **Keep TradingView** (webhooks included) | Alert webhook → signal card draft |
+| Video editing | **Keep CapCut** | Studio output is CapCut-ready: SRT captions, clip list, cover text |
 
-**Open item:** Jack lists which other paid services he currently uses. Each one gets a keep/connect line here before Phase 1.
+**Invite-link naming convention (Phase 1, used by TwinOS and visible in Telechurn):** `src-campaign-yymm`, lowercase, e.g. `tt-live-2610`, `swap-macronews-2611`, `ig-bio-2610`. Links are created only through the ops bot so the name, source and campaign are stored at creation.
 
 ---
 
@@ -218,7 +232,7 @@ Keys and money stay with Jack: bot tokens, IB portal, Stripe, USDT wallet, licen
 | Exact keyword search volumes aren't free | Relative scores from free sources |
 | X API has no free tier ($0.015 per post) | X stays manual (2 min) unless Jack accepts a few cents a month |
 | Vantage IB portal has no API | Weekly two-minute entry form |
-| TradingView webhooks need a paid TradingView plan | Jack's existing plan if it includes webhooks; otherwise EzyAi alerts feed signal cards |
+| Telechurn has no export on Jack's plan | Weekly numbers copied from Telechurn's report (two-minute entry); TwinOS's own `chat_member` events carry the per-link detail |
 
 ---
 
@@ -259,7 +273,7 @@ The PC worker never opens a port. It asks the backend for jobs and posts results
 
 A new Lovable project ("TwinOS") holds the dashboard and the backend. It is separate from the printezy Lovable project and its database.
 
-**One sub-choice remains, recommended option first:**
+**Decided (decision 10): option A.** Kept here for the record.
 
 | Option | What it is | Fits TwinOS because | Watch out |
 |---|---|---|---|
@@ -493,7 +507,7 @@ ABDUL tools mirror these: `twinos_draft`, `twinos_batch`, `twinos_request_approv
 
 | Phase | Dates | TwinOS delivers | Growth Plan milestone it serves | Exit criteria |
 |---|---|---|---|---|
-| **0 — Plan and mind** | 1–7 Oct | Baseline hours week; unified price list and settings; schema written; new Lovable project and backend created; ops bot created; Desk group set up | Week 1: pinned Start here, pledge, Sarah support-only | Schema reviewed; baseline logged |
+| **0 — Plan and mind** | 1–7 Oct | Baseline hours week; unified monthly-first price list and settings; schema written; new Supabase project + Lovable project connected; ops bot created; **EzyMap Desk group created**; reference-channel benchmark study; link naming convention agreed; EzyMap repo made private (Jack) | Week 1: pinned Start here, pledge, Sarah support-only | Schema reviewed; baseline logged |
 | **1 — Desk loop** | 8–21 Oct | Desk drafts with approve buttons; Telegram publisher and scheduler; templates for all 15 post types; signal card from alerts; result replies under signals; stop-if alarm; compliance checks | Week 2: "a signal and its result post without you typing" | Jack approves the map and a signal from his phone; result reply posts by itself |
 | **2 — ABDUL + batch + Friday** | 22–31 Oct | MCP server and ABDUL verbs; Wednesday batch; scorecard image; Friday scoreboard with manual inputs; content log automatic; invite links + Telechurn import | Week 4: scorecard auto-posts Friday; first KPI sheet | Friday report arrives without Jack opening a spreadsheet |
 | **3 — Repurposing** | Nov | Meta app Live; IG/FB/Threads direct; TikTok/YouTube/X publish kits; drop-folder fan-out; YouTube audit applied; metrics pollers | "Social reposts: set up once"; stop hand-posting | One TikTok reaches 7 places with only the TikTok, YouTube and X taps by hand; ≥60% hours cut |
@@ -546,13 +560,9 @@ Outside patterns (no code copied): Postiz provider design, tg-spam rules, OpenSh
 
 ## 16. Open questions for Jack
 
-1. **Backend sub-choice (§8):** new Supabase project connected to Lovable (recommended), or Lovable Cloud?
-2. **Paid services you use today:** besides Telechurn, which ones do you pay for (Combot, TGStat, Metricool, CapCut Pro, Canva Pro, TradingView plan)? Each gets a keep/connect line in §5.
-3. **Reference channels:** which platform and handle for each of 44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL and GARY GOLD TRADER? What do you like about each?
-4. **TradingView webhooks:** does your TradingView plan include webhook alerts?
-5. **Unified price list:** TradingView Pro at $249 lifetime only, or add $29/mo as the Growth Plan suggests? Trial 3 days everywhere?
-6. **Which bot sells today:** ASAP or the website's bot (Growth Plan asks the same)?
-7. **Telechurn export:** does your plan include CSV export, and do you name your links already? If so, what convention?
-8. **Desk group:** OK to create a private "EzyMap Desk" group with you and the new ops bot?
-9. **Sales bot hosting:** stay on PythonAnywhere free until Phase 8, or the Growth Plan's paid VPS now?
-10. **EzyMap repo:** will you make `printezy247/EzyMap` private this week?
+All ten questions from v3 were answered on 2026-10-01 (decisions 10–19). Remaining:
+
+1. **Reference channel handles:** platform and handle for each of the five, so the benchmark study starts from the right accounts.
+2. **Monthly price list:** the exact monthly prices per ladder step (Growth Plan suggests TradingView Pro $29/mo next to $249 lifetime). Needed before `products` is seeded.
+3. **Supabase account:** confirm the Supabase account to create the TwinOS project in (same login as printezy's, or a separate one).
+4. **Ops bot name:** proposed `@EzyOpsBot` (or similar if taken). Jack creates it in @BotFather and stores the token in his keyring; TwinOS never sees it in a file.
