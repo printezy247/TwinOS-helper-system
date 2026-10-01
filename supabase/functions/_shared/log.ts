@@ -1,8 +1,11 @@
 /**
  * action_log insert helper (plan §9.A.2).
  *
- *   action_log(id bigserial, actor text, action text, target text null,
- *              payload jsonb, at timestamptz default now())
+ *   action_log(id bigint identity, actor text, action text, target_table text,
+ *              target_id text null, payload jsonb, created_at timestamptz default now())
+ *
+ * `target` here is the id of whatever the action touched; the table name is the
+ * first dotted segment of the action ("content.approved" -> "content").
  *
  * Table writes also fire the trigger that the migrations agent owns; this
  * helper is for actions that are not a single row change (a draft rendered,
@@ -40,7 +43,8 @@ export async function logAction(entry: LogEntry): Promise<void> {
     const { error } = await admin().from("action_log").insert({
       actor: entry.actor,
       action: entry.action,
-      target: entry.target ?? null,
+      target_table: entry.action.split(".")[0] || "system",
+      target_id: entry.target ?? null,
       payload: redact(entry.payload),
     });
     if (error) console.warn("[action_log] insert failed", error.message, entry.action);

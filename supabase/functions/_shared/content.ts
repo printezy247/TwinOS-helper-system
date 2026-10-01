@@ -36,23 +36,32 @@ export interface TemplateRow {
   approval_rule: "jack" | "abdul_ok" | "auto";
 }
 
-/** Load the active template for a post type + language, else 404. */
+/**
+ * Load the active template for a post type, else 404. `templates.key` is the
+ * post type and the primary key, so there is one row per type; `lang` is the
+ * caller's language and the voice module localises the draft.
+ */
 export async function loadTemplate(post_type: PostType, lang: Lang): Promise<TemplateRow> {
   const { data, error } = await admin()
     .from("templates")
-    .select("id, post_type, lang, body, fields, required_lines, char_limit, approval_rule")
-    .eq("post_type", post_type)
-    .eq("lang", lang)
+    .select("id, key, body, fields_list, required_lines, char_limit, approval_rule")
+    .eq("key", post_type)
     .eq("active", true)
-    .order("version", { ascending: false })
-    .limit(1)
     .maybeSingle();
   if (error) throw new HttpError(503, "upstream_failed", `templates: ${error.message}`);
-  if (!data) throw notFound(`template ${post_type}/${lang}`);
+  if (!data) throw notFound(`template ${post_type}`);
+  if (!data.body) {
+    throw new HttpError(503, "not_configured", `the ${post_type} template has no body text yet (templates.body)`);
+  }
   return {
-    ...data,
-    fields: data.fields ?? [],
+    id: data.id,
+    post_type: data.key as PostType,
+    lang,
+    body: data.body,
+    fields: data.fields_list ?? [],
     required_lines: data.required_lines ?? [],
+    char_limit: data.char_limit,
+    approval_rule: data.approval_rule,
   } as TemplateRow;
 }
 
@@ -77,7 +86,9 @@ export function render(
     if (fields[f] === undefined || fields[f] === null || fields[f] === "") needed.add(f);
   }
   for (const line of template.required_lines) {
-    if (line && !body.includes(line)) body = `${body.trimEnd()}\n\n${line}`;
+    // The seed stores brand-fact keys here (risk, result_footer, ...), not text.
+    // Only literal sentences are appended until the keys are resolved (Phase 1).
+    if (line && /\s/.test(line) && !body.includes(line)) body = `${body.trimEnd()}\n\n${line}`;
   }
   return { body, needed: Array.from(needed) };
 }

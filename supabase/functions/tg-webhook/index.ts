@@ -152,11 +152,69 @@ function parseTime(text: string, tz: string): string | null {
   return new Date(d.getTime() + offsetMs).toISOString();
 }
 
+const HELP_TEXT = [
+  "<b>EzyMap Desk</b>",
+  "Send the chart screenshot and 3-5 raw lines for the morning map. Start a line with <code>wrap:</code> for the evening wrap. End with <code>BM</code> for Malay.",
+  "Reply to a draft with new text to edit it, or with a time like <code>13:00</code> to reschedule.",
+  "",
+  "/status - anything broken?",
+  "/friday - this week's Friday numbers so far",
+  "/help - this message",
+].join("\n");
+
+/** Slash commands in the Desk group (Jack only; read-only). */
+async function onDeskCommand(m: Message, cmd: string): Promise<void> {
+  const say = (html: string) => tg.sendMessage(m.chat.id, html, { parse_mode: "HTML", reply_to_message_id: m.message_id });
+  const db = admin();
+
+  if (cmd === "status") {
+    const since = new Date(Date.now() - 15 * 60_000).toISOString();
+    const [{ data: beats }, { count: openAlerts }] = await Promise.all([
+      db.from("health_checks").select("source, status, at").gte("at", since).order("at", { ascending: false }).limit(100),
+      db.from("alerts").select("id", { count: "exact", head: true }).is("resolved_at", null),
+    ]);
+    const latest = new Map<string, { status: string; at: string }>();
+    for (const b of beats ?? []) if (b.source && !latest.has(b.source)) latest.set(b.source, { status: b.status, at: b.at });
+    const lines = [...latest.entries()].map(([src, b]) => {
+      const mins = Math.max(0, Math.round((Date.now() - new Date(b.at).getTime()) / 60_000));
+      return `${b.status === "ok" ? "✅" : "⚠️"} ${tg.escapeHtml(src)}: ${tg.escapeHtml(b.status)}, ${mins} min ago`;
+    });
+    await say([
+      "<b>Status</b>",
+      ...(lines.length ? lines : ["No health beats in the last 15 minutes."]),
+      `Open alerts: ${openAlerts ?? 0}`,
+    ].join("\n"));
+    return;
+  }
+
+  if (cmd === "friday") {
+    const { data: w } = await db.from("v_friday_scoreboard")
+      .select("week_start, channel_members, net_joins, signals_posted, results_posted, strict_win_rate_4w, total_r_4w")
+      .order("week_start", { ascending: false }).limit(1).maybeSingle();
+    if (!w) { await say("No scoreboard data yet."); return; }
+    const n = (v: unknown) => (v === null || v === undefined ? "-" : String(v));
+    await say([
+      `<b>Friday numbers, week of ${tg.escapeHtml(String(w.week_start))}</b>`,
+      `Members: ${n(w.channel_members)} (net joins ${n(w.net_joins)})`,
+      `Signals posted: ${n(w.signals_posted)}, with results: ${n(w.results_posted)}`,
+      `Strict win rate (4 weeks): ${n(w.strict_win_rate_4w)}%, total R: ${n(w.total_r_4w)}`,
+      "TikTok and Vantage numbers are entered by hand.",
+    ].join("\n"));
+    return;
+  }
+
+  if (cmd === "help" || cmd === "start") { await say(HELP_TEXT); return; }
+  await say(`I don't know /${tg.escapeHtml(cmd)}.\n\n${HELP_TEXT}`);
+}
+
 async function onDeskMessage(m: Message): Promise<void> {
   const jack = await jackId();
   if (m.from?.id !== jack) return; // only Jack's inputs become drafts (plan §6: AI only on Jack's own inputs)
   const text = (m.text ?? m.caption ?? "").trim();
   const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+
+  const command = /^\/([a-z_]+)(?:@\w+)?(?:\s|$)/i.exec(text);
+  if (command) { await onDeskCommand(m, command[1].toLowerCase()); return; }
 
   // Reply to a draft message → edit or reschedule
   const replyId = m.reply_to_message?.message_id;
@@ -199,15 +257,25 @@ async function onDeskMessage(m: Message): Promise<void> {
   const numbers = (raw.match(/\b\d{3,5}(?:\.\d{1,2})?\b/g) ?? []).map(Number);
   const photo = largestPhoto(m);
 
-  const draft = await createDraft({
-    post_type,
-    lang,
-    fields: { raw_notes: raw, date: new Date().toLocaleDateString("en-GB", { timeZone: tz }) },
-    allowed_numbers: numbers,
-    media: photo ? [{ kind: "photo", file_id: photo }] : undefined,
-    source: { via: "desk", message_id: m.message_id, chat_id: m.chat.id },
-    actor: ACTOR,
-  });
+  let draft: Awaited<ReturnType<typeof createDraft>>;
+  try {
+    draft = await createDraft({
+      post_type,
+      lang,
+      fields: { raw_notes: raw, date: new Date().toLocaleDateString("en-GB", { timeZone: tz }) },
+      allowed_numbers: numbers,
+      media: photo ? [{ kind: "photo", file_id: photo }] : undefined,
+      source: { via: "desk", message_id: m.message_id, chat_id: m.chat.id },
+      actor: ACTOR,
+    });
+  } catch (err) {
+    // Say so in the Desk instead of staying silent, then let the entry point log it.
+    const why = err instanceof Error ? err.message : String(err);
+    await tg.sendMessage(m.chat.id, `⚠️ I couldn't draft that: ${tg.escapeHtml(why.slice(0, 200))}`, {
+      parse_mode: "HTML", reply_to_message_id: m.message_id,
+    });
+    throw err;
+  }
   // The 08:00 slot for maps, now for wraps (plan §4.4).
   if (post_type === "gold_map") {
     const slot = parseTime("08:00", tz);
