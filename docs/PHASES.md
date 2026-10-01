@@ -20,7 +20,7 @@ Exit: schema reviewed; baseline logged.
 - [x] `pg_cron`, `pg_net` (in `extensions`), pgvector enabled; private `assets` bucket created (45 MB limit)
 - [x] Jack's login created with `twinos_role = jack`
 - [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / on the host — Jack
-- [ ] @EzyOps_bot created; token in keyring and function secrets — Jack
+- [x] @EzyOps_bot created; token in keyring and function secrets
 - [ ] EzyMap Desk group created (Jack + bot); chat ids in `settings` — Jack
 - [ ] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean — Jack
 - [ ] Cron schedules installed (publish, health/check, stop-if, friday, backup, keep-alive) — Jack

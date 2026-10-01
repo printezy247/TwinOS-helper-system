@@ -699,7 +699,7 @@ insert into public.benchmarks (name, platform, handle, audience_tier, is_usual_i
   ('Callisto Fx', 'telegram', null, 'high_capital', false, 'targets big-deposit audiences; not usual IB', 'manual'),
   ('Orient Fx', 'telegram', null, 'high_capital', false, 'targets big-deposit audiences; not usual IB', 'manual'),
   ('10X INTERNATIONAL', 'telegram', null, 'high_capital', false, 'targets big-deposit audiences; not usual IB', 'manual'),
-  ('GARY GOLD TRADER', 'telegram', null, 'high_capital', false, 'targets big-deposit audiences; not usual IB', 'manual')
+  ('SandyFx', 'telegram', null, null, null, 'Added by Jack 2026-10-02; audience tier not yet classified.', 'manual')
 on conflict (name, platform) do update set audience_tier = excluded.audience_tier, is_usual_ib = excluded.is_usual_ib, note = excluded.note;
 
 -- ===========================================================================

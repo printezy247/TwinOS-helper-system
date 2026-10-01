@@ -19,7 +19,7 @@
 | 2 | Who is "Abdul" in the Posting Kit? | **ABDUL the assistant** | ABDUL takes the "Abdul" desk role: drafts, checks, schedules, logs. It never approves prices, trades, results or offers |
 | 3 | Telegram tracking method | **Allowed methods only, keep current services like Telechurn** | Telechurn stays the join/leave tracker. TwinOS adds Bot API events and imports Telechurn exports. Jack's personal account is not automated |
 | 4 | ICPs | **From the PDFs** | Six ICPs from the Growth Plan, §4.2 |
-| 5 | Reference channels | **44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL, GARY GOLD TRADER** | A benchmark watchlist. TwinOS tracks their public rhythm and reach by hand-sized, allowed checks. Their text is never fed to the AI as examples, and they are never named in posts (§4.10) |
+| 5 | Reference channels | **44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL, SandyFx** | A benchmark watchlist. TwinOS tracks their public rhythm and reach by hand-sized, allowed checks. Their text is never fed to the AI as examples, and they are never named in posts (§4.10) |
 | 6 | Baseline week | **Yes** | Week 1 time log before automation starts |
 | 7 | Professional advice on compliance | **Yes** | Lawyer's opinion before paid ads (Growth Plan: before Q1 2027) |
 | 8 | TikTok account type | **Personal** | Creator Search Insights stays available. TikTok posting stays manual through a publish kit. LIVE needs about 1,000 followers |
@@ -191,7 +191,7 @@ One TikTok → Instagram Reels, Facebook Reels, YouTube Shorts (clean export, no
 Keys and money stay with Jack: bot tokens, IB portal, Stripe, USDT wallet, licence server token.
 
 ### 4.10 Reference channels (decisions 5 and 12)
-44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL, GARY GOLD TRADER.
+44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL, SandyFx.
 - **Why Jack picked them:** they are not the usual IB-rebate channels. They target a big-deposit audience. That is a positioning signal, not a copy target: EzyMap stays the honest channel, but its Funded ladder (Premium $100+, Elite $700+) and the Elite Circle speak to the same higher-capital segment.
 - **Phase 0 research task:** a benchmark study of these five plus trending channels like them, found through allowed means (public channel previews, TikTok and YouTube search by hand, TGStat-style public pages viewed one at a time). For each: platform and handle, size, posting rhythm, view rate, offer structure, how they qualify big-deposit members, and what disclosures they show. The output is a short report and a `benchmarks` seed, plus a proposed "high-capital" ICP note for Jack to accept or reject.
 - **What TwinOS does:** a benchmark card per channel, refreshed weekly by an allowed, low-volume check of each public channel's web preview (subscribers, posts per day, average views, view rate) and recorded by hand for TikTok. Shows how EzyMap's rhythm and view rate compare.
@@ -564,7 +564,7 @@ Outside patterns (no code copied): Postiz provider design, tg-spam rules, OpenSh
 
 All ten questions from v3 were answered on 2026-10-01 (decisions 10–19). Remaining:
 
-1. **Reference channel handles:** platform and handle for each of the five, so the benchmark study starts from the right accounts.
+1. **Reference channel handles:** *answered 2026-10-02.* Handles are loaded in the `benchmarks` table only (never in this public repo). Gary Gold Trader was dropped and SandyFx added.
 2. **Monthly price list:** *answered 2026-10-02.* The catalog's monthly prices stand as seeded and TradingView Pro is $29/mo next to $249 lifetime. EzyAI PRO's founding price is deferred to closer to the Q1 2027 launch.
 3. **Supabase account:** *answered 2026-10-01.* The project is "Jack's Twin" (ap-southeast-1, Singapore) in Jack's own account.
 4. **Ops bot name:** *answered.* `@EzyOps_bot` (`@EzyOpsBot` was taken). Jack creates it in @BotFather and stores the token in his keyring; TwinOS never sees it in a file.
