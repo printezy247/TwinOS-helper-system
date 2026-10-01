@@ -432,6 +432,23 @@ begin
   raise notice 'ok: anon reads the public board only';
 end $$;
 
+-- 14. a reject reaches the variant (0017): the item status is mirrored onto the
+--     content_status enum, which must know 'rejected'
+do $$
+declare
+  v_item uuid;
+  v_var uuid;
+begin
+  insert into public.content_items (post_type, title, status) values ('gold_map', 'smoke reject', 'pending_approval')
+    returning id into v_item;
+  insert into public.content_variants (item_id, body) values (v_item, 'GOLD MAP. Not financial advice.')
+    returning id into v_var;
+  update public.content_items set status = 'rejected', reject_note = 'smoke' where id = v_item;
+  assert (select status::text = 'rejected' from public.content_variants where id = v_var),
+    'a rejected item must mirror rejected onto its variant';
+  raise notice 'ok: reject mirrors onto the variant';
+end $$;
+
 -- 13. a real login carries the role under app_metadata (0016)
 do $$
 begin
