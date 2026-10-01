@@ -1,14 +1,19 @@
 /**
  * Caller identity → twinos_role.
  *
- * Two ways in, both on `Authorization: Bearer …`:
+ * Two ways in:
  *
- *  1. A Supabase Auth JWT (dashboard, Lovable). The role comes from the login
+ *  1. A Supabase Auth JWT (dashboard, Lovable) on `Authorization: Bearer …`.
+ *     The role comes from the login
  *     claim `app_metadata.twinos_role` (plan §9.B.9 "roles from login claims").
  *     Jack sets his own user to `jack` once (docs/SETUP.md, Phase 0). Any other
  *     verified login is `dashboard`.
  *
- *  2. A scoped API key (ABDUL, PC worker, EzyAi). Format `twk_<role>_<40 hex>`.
+ *  2. A scoped API key (ABDUL, PC worker, EzyAi) on `X-TwinOS-Key: …`, with the
+ *     project's public anon key on `Authorization: Bearer …`. The platform
+ *     gateway only lets JWTs through, so the anon JWT gets the request to this
+ *     code and the header says who is calling. Format `twk_<role>_<40 hex>`.
+ *     A key sent as the bearer is still read (local runs without the gateway).
  *     Only the SHA-256 of the key is stored, in the `api_keys` table:
  *
  *       api_keys(id uuid pk, name text, role text, key_prefix text,
@@ -44,6 +49,14 @@ const KEY_RE = /^twk_([a-z_]+)_([0-9a-f]{40})$/;
 export function bearer(req: Request): string {
   const h = req.headers.get("authorization") ?? "";
   return normalise(h.startsWith("Bearer ") ? h.slice(7) : "");
+}
+
+/** The scoped API key: `X-TwinOS-Key`, else a `twk_` bearer. Empty when the caller sent none. */
+export function apiKeyFrom(req: Request): string {
+  const header = normalise(req.headers.get("x-twinos-key"));
+  if (header) return header;
+  const token = bearer(req);
+  return token.startsWith("twk_") ? token : "";
 }
 
 /** Trim and drop one matched pair of quotes (ported from printezy). */
@@ -161,12 +174,13 @@ async function callerFromJwt(req: Request, jwt: string): Promise<Caller> {
 
 /** Resolve the caller or throw 401. */
 export async function authenticate(req: Request): Promise<Caller> {
-  const token = bearer(req);
-  if (!token) throw new HttpError(401, "unauthorized", "no bearer token");
-  // `await` on both branches, so a rejected callerFromKey/callerFromJwt surfaces
+  // `await` on every branch, so a rejected callerFromKey/callerFromJwt surfaces
   // here rather than as an unhandled rejection, and so the stack points at the
   // caller that asked.
-  if (token.startsWith("twk_")) return await callerFromKey(token);
+  const key = apiKeyFrom(req);
+  if (key) return await callerFromKey(key);
+  const token = bearer(req);
+  if (!token) throw new HttpError(401, "unauthorized", "no bearer token");
   return await callerFromJwt(req, token);
 }
 

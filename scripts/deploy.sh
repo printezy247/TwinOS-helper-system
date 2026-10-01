@@ -44,6 +44,20 @@ for fn in tg-webhook tv-webhook; do
   code="$(curl -s -o /dev/null -w '%{http_code}' "https://$REF.supabase.co/functions/v1/$fn")"
   case "$code" in 200|401|403|405) echo "ok   $fn ($code)";; *) echo "FAIL $fn ($code)"; fail=1;; esac
 done
+# A scoped key rides behind the public anon key (docs/API.md). A made-up key must
+# get past the gateway and be refused by our own code, not by the gateway.
+anon="$(secret-tool lookup service twinos key apikey 2>/dev/null || true)"
+if [ -n "$anon" ]; then
+  fake="twk_abdul_$(printf '0123456789abcdef%.0s' 1 2 3 | cut -c1-40)"
+  body="$(curl -s -X POST -H "apikey: $anon" -H "Authorization: Bearer $anon" -H "X-TwinOS-Key: $fake" \
+            "https://$REF.supabase.co/functions/v1/health/beat")"
+  case "$body" in
+    *"unknown or revoked api key"*) echo "ok   API keys reach the functions (X-TwinOS-Key)";;
+    *) echo "FAIL API-key path: $body"; fail=1;;
+  esac
+else
+  echo "skip API-key probe (no anon key in the keyring yet; run ./scripts/mint-keys.sh)"
+fi
 [ "$fail" -eq 0 ] || die "a function did not answer as expected"
 say "done"
 supabase functions list 2>&1 | sed -n "1,14p" || true

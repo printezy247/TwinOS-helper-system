@@ -263,8 +263,24 @@ def approval_gate() -> None:
     check("mcp: the approve refusal guard is present", "FORBIDDEN_PATH" in mcp and "FORBIDDEN_TOOL" in mcp)
 
 
+# ---------------------------------------------------------------------------
+# 6. Every function checks its caller, and scoped keys travel on X-TwinOS-Key.
+#    The platform gateway only admits JWTs, so a twk_ key on Authorization is
+#    refused before the code runs; the clients put the anon key there instead.
+# ---------------------------------------------------------------------------
+def auth_paths() -> None:
+    fns = sorted(p.parent.name for p in (ROOT / "supabase/functions").glob("*/index.ts") if p.parent.name != "_shared")
+    unguarded = [f for f in fns
+                 if not re.search(r"\b(authenticate|requireSecret)\(", read(f"supabase/functions/{f}/index.ts"))]
+    check("functions: every one calls authenticate() or requireSecret()", not unguarded, str(unguarded))
+    check("cors: X-TwinOS-Key is an allowed header",
+          "x-twinos-key" in read("supabase/functions/_shared/http.ts"))
+    for client in ("apps/mcp/twinos_mcp.py", "workers/pc/twinos_worker.py"):
+        check(f"{client}: sends its key on X-TwinOS-Key", '"X-TwinOS-Key"' in read(client))
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()

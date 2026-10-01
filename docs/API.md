@@ -1,8 +1,12 @@
 # API (plan §11) — request/response examples
 
 Base URL: `https://<project-ref>.supabase.co/functions/v1`.
-Auth: `Authorization: Bearer <session JWT | twk_<role>_<40hex>>`. Webhooks
-carry their own secret instead. Every error is
+Auth: a login uses `Authorization: Bearer <session JWT>`. A scoped key
+(ABDUL, PC worker, signal bot) sends the project's public anon key as
+`Authorization: Bearer <anon key>` (and `apikey: <anon key>`) plus
+`X-TwinOS-Key: twk_<role>_<40hex>`: the platform gateway only lets JWTs
+through, and the function decides who is calling from the `X-TwinOS-Key`
+header. Webhooks carry their own secret instead. Every error is
 `{ "error": "<code>", "message": "<human>", ...detail }` with codes
 `unauthorized 401 · forbidden 403 · bad_request 400 · not_found 404 · conflict 409 · not_configured 503 · upstream_failed 503 · internal 500`.
 POSTs that create or change something accept `Idempotency-Key: <id>`

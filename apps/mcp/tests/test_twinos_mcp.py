@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import twinos_mcp as tm  # noqa: E402
 
+FAKE_ANON = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.YW5vbi1zaWduYXR1cmUtYW5vbi1zaWduYXR1cmU"
 FAKE_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYWJkdWwifQ.c2lnbmF0dXJlLXNpZ25hdHVyZS1zaWduYXR1cmU"
 
 
@@ -64,6 +65,7 @@ class Base(unittest.TestCase):
         cls.thread.start()
         os.environ["TWINOS_URL"] = "http://127.0.0.1:%d" % cls.srv.server_address[1]
         os.environ["TWINOS_KEY"] = FAKE_KEY
+        os.environ["TWINOS_ANON"] = FAKE_ANON
         cls._backoff = tm.BACKOFF
         tm.BACKOFF = (0.01, 0.01, 0.01)
 
@@ -135,8 +137,10 @@ class TestRequestShapes(Base):
         self.assertEqual(r["body"]["input"]["lines"], ["XAU 2410 support"])
         self.assertEqual(r["body"]["actor"], "abdul")
         self.assertEqual(r["headers"]["content-type"], "application/json")
-        self.assertEqual(r["headers"]["authorization"], "Bearer " + FAKE_KEY)
-        self.assertEqual(r["headers"]["apikey"], FAKE_KEY)
+        # The gateway only admits JWTs: the public anon key gets the call in, the abdul key says who it is.
+        self.assertEqual(r["headers"]["authorization"], "Bearer " + FAKE_ANON)
+        self.assertEqual(r["headers"]["apikey"], FAKE_ANON)
+        self.assertEqual(r["headers"]["x-twinos-key"], FAKE_KEY)
 
     def test_draft_input_as_json_string_from_cli(self):
         tm.tool_call("twinos_draft", {"template": "lesson", "input": '{"topic": "spread"}'})

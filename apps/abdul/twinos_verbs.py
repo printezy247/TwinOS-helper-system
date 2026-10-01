@@ -21,7 +21,7 @@ Verbs (one line each in the ```abdul``` block, like every other ABDUL verb):
 `twinos_call(conf, path, body)` has hub_call's shape and does the talking; the HTTP itself (retries,
 Idempotency-Key, redaction, the no-approve guard) lives once, in apps/mcp/twinos_mcp.py, which this
 module imports from its sibling folder. Keys come from the login keyring, service `twinos`
-(`secret-tool store --label='TwinOS apikey' service twinos key apikey`), never from a file.
+(`abdul_key` plus the public anon key `apikey`; scripts/mint-keys.sh stores both), never from a file.
 
 Guardrail, in words ABDUL would use: ABDUL drafts, schedules the harmless, posts what the board already
 decided, and asks. The Approve button is on Jack's phone. There is no verb for it here, and the HTTP layer

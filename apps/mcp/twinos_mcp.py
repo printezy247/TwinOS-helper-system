@@ -17,7 +17,9 @@ to bin/abdul):
 
 Where the backend is: env TWINOS_URL, else the keyring
 (`secret-tool lookup service twinos key url`). The key: env TWINOS_KEY, else
-keyring key `apikey`. That key carries the `abdul` role on the server; the
+keyring key `abdul_key` (scripts/mint-keys.sh puts it there), sent as X-TwinOS-Key
+behind the public anon key (env TWINOS_ANON, else keyring `apikey`), because the
+platform gateway only lets JWTs through. That key carries the `abdul` role on the server; the
 server, not this file, is the final judge of what ABDUL may do.
 
 THERE IS NO APPROVE TOOL HERE, ON PURPOSE.
@@ -172,10 +174,16 @@ def base_url():
 
 
 def api_key():
-    key = (os.environ.get("TWINOS_KEY") or secret("apikey")).strip()
+    key = (os.environ.get("TWINOS_KEY") or secret("abdul_key")).strip()
     if not key:
-        raise RuntimeError("no TwinOS key: set TWINOS_KEY or secret-tool store --label='TwinOS apikey' service twinos key apikey")
+        raise RuntimeError("no TwinOS key: set TWINOS_KEY or run scripts/mint-keys.sh (keyring service twinos key abdul_key)")
     return key
+
+
+def anon_key():
+    """The project's public anon key (keyring `apikey`). The platform gateway only admits JWTs, so it rides on
+    Authorization and the abdul key goes on X-TwinOS-Key. Empty when absent (local servers without a gateway)."""
+    return (os.environ.get("TWINOS_ANON") or secret("apikey")).strip()
 
 
 # Things that look like credentials: JWTs, bearer values, Supabase keys, long hex or base64 runs, key= query values.
@@ -213,8 +221,9 @@ def request(method, path, body=None, query=None, idem=None, _opener=None):
     if FORBIDDEN_PATH.search(path):
         raise TwinOSError("ABDUL has no approve path. That button is on Jack's phone.", 403)
     url, key = base_url(), api_key()
+    gate = anon_key() or key
     full = url + path + (("?" + query) if query else "")
-    headers = {"apikey": key, "Authorization": "Bearer " + key, "Accept": "application/json",
+    headers = {"apikey": gate, "Authorization": "Bearer " + gate, "X-TwinOS-Key": key, "Accept": "application/json",
                "X-TwinOS-Actor": ACTOR, "User-Agent": "twinos-mcp/%s (abdul)" % VERSION}
     data = None
     if method != "GET":

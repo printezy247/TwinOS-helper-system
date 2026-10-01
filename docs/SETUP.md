@@ -9,11 +9,12 @@ Keyring entries used everywhere below (`service twinos key <name>`):
 | key | value | used by |
 |---|---|---|
 | `url` | `https://<project-ref>.supabase.co` | PC worker, ABDUL |
-| `apikey` | anon key (public, but keep it here anyway) | ABDUL's MCP, scripts |
+| `apikey` | anon key (public; the gateway needs it in front of every `twk_` key) | PC worker, ABDUL's MCP, scripts |
 | `db_url` | `postgresql://postgres.<ref>:…@…pooler.supabase.com:5432/postgres` | seeding, the smoke test, nightly backup |
 | `db_password` | the project's DB password | direct `psql` if the pooler refuses |
 | `worker_key` | `twk_pc_worker_…` | PC worker |
-| `abdul_key` | `twk_abdul_…` | ABDUL's `twinos_call()` |
+| `abdul_key` | `twk_abdul_…` | ABDUL's MCP and `twinos_call()` |
+| `ezyai_key` | `twk_ezyai_…` | copied once to the signal bot's host as `TWINOS_SIGNAL_KEY` |
 | `ops_bot_token` | from BotFather | webhook setup, `supabase secrets set` |
 | `tv_secret` | random 32+ chars | TradingView alert URL |
 
@@ -74,7 +75,7 @@ cd ~/TwinOS-helper-system
 npm i -g supabase                          # or the .deb from supabase.com/docs/guides/cli
 supabase login                             # browser auth; paste the URL it prints
 supabase link --project-ref <ref>          # remembers the project ref (supabase/.temp)
-supabase db push                           # applies supabase/migrations/0001…0014
+supabase db push                           # applies supabase/migrations/0001…0015
 ```
 
 `db push` echoes each migration as it applies. **If any line fails, stop and send
@@ -129,19 +130,25 @@ the whole diagnosis — send it to me as it is.
    Run in SQL Editor. Any other login is `dashboard` (read-mostly). Nobody else gets `jack`.
 
 ### 0.4 Scoped API keys (table `api_keys`, hashed)
-Mint with the `mint_api_key(name, role)` RPC from the migrations (it returns the plain key **once**):
-```sql
-select mint_api_key('jack-pc', 'pc_worker');
-select mint_api_key('abdul', 'abdul');
-select mint_api_key('ezyai-fly', 'ezyai');
-```
-Store each immediately:
+One command, from your own terminal (it needs the desktop keyring):
 ```bash
-secret-tool store --label "TwinOS worker key" service twinos key worker_key
-secret-tool store --label "TwinOS abdul key"  service twinos key abdul_key
+cd ~/TwinOS-helper-system && ./scripts/mint-keys.sh
 ```
-The signal bot's key goes to its host: set `TWINOS_SIGNAL_KEY` as a secret there.
-Revoke any time: `update api_keys set revoked_at = now() where name = 'jack-pc';`.
+It stores `url` and the public anon key (`apikey`) if they are missing, then
+mints `abdul`, `pc-worker` and `ezyai` keys with `rotate_api_key()` and pipes
+each one straight into the keyring (`abdul_key`, `worker_key`, `ezyai_key`).
+Only the 12-character prefix is ever printed. Re-running it changes nothing.
+
+```bash
+./scripts/mint-keys.sh --list            # names, prefixes, last used, revoked (no secrets)
+./scripts/mint-keys.sh --rotate worker   # new key for the PC worker; the old one stops working at once
+./scripts/mint-keys.sh --revoke ezyai    # switch a key off and remove it from the keyring
+```
+
+Callers send the anon key as `Authorization: Bearer …` and their own key as
+`X-TwinOS-Key: …` (the platform gateway only admits JWTs; see `docs/API.md`).
+The signal bot's key goes to its host as `TWINOS_SIGNAL_KEY`, with the anon key
+next to it.
 
 ### 0.5 Ops bot (@EzyOps_bot) — see `bots/ops/README.md`
 1. BotFather `/newbot` → token → `secret-tool store --label "EzyOps bot token" service twinos key ops_bot_token`.

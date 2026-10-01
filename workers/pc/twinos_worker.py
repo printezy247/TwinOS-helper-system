@@ -81,12 +81,17 @@ class Api:
         self._key = keyring("worker_key")
         if not self._key.startswith("twk_pc_worker_"):
             log.warning("worker key does not look like a pc_worker key (twk_pc_worker_…)")
+        # The platform gateway only admits JWTs: the public anon key gets the call
+        # in, X-TwinOS-Key says who is calling (supabase/functions/_shared/auth.ts).
+        self._gate = keyring("apikey", required=False) or self._key
 
     def call(self, path: str, body: dict[str, Any] | None = None, method: str = "POST",
              idempotency_key: str | None = None) -> tuple[int, dict[str, Any]]:
         data = json.dumps(body or {}).encode()
         headers = {
-            "Authorization": f"Bearer {self._key}",
+            "Authorization": f"Bearer {self._gate}",
+            "apikey": self._gate,
+            "X-TwinOS-Key": self._key,
             "Content-Type": "application/json",
             "User-Agent": f"twinos-worker/{WORKER_NAME}",
         }
