@@ -75,7 +75,7 @@ cd ~/TwinOS-helper-system
 npm i -g supabase                          # or the .deb from supabase.com/docs/guides/cli
 supabase login                             # browser auth; paste the URL it prints
 supabase link --project-ref <ref>          # remembers the project ref (supabase/.temp)
-supabase db push                           # applies supabase/migrations/0001…0015
+supabase db push                           # applies supabase/migrations/0001…0016
 ```
 
 `db push` echoes each migration as it applies. **If any line fails, stop and send
@@ -263,63 +263,44 @@ Lovable is only the **face**. The rules engine, the approval gate and all the
 automation live in Jack's own Supabase. Lovable must never become a second
 database.
 
-**1. Create the project.** https://lovable.dev → **New project**, name `TwinOS`.
-In the **first prompt**, before anything else, say:
+**Done (2 Oct 2026).** Project **TwinOS** in the PrintEzy workspace,
+id `8aa151d6-f29b-4fba-8daf-345c4df50963`
+(editor: https://lovable.dev/projects/8aa151d6-f29b-4fba-8daf-345c4df50963).
+It was created over the Lovable MCP as a **frontend-only** app: no Lovable
+Cloud (database status: not enabled), no Supabase integration, no migrations.
+It talks to this project with `@supabase/supabase-js`, the public URL and the
+public publishable key (`src/lib/supabase.ts`), and changes data only through
+`supabase.functions.invoke('approve', …)`. Its project knowledge is
+`docs/LOVABLE-KNOWLEDGE.md`; keep the two in sync.
 
-> Do not enable Lovable Cloud. I will connect my own Supabase project, and its
-> schema already exists. Put every file you write under `apps/dashboard/`.
+The dashboard's code lives in the Lovable project, not in this repo: Lovable's
+GitHub sync creates its own repository and cannot write into a subfolder here.
+If you want a copy on GitHub, Lovable → **GitHub → Connect** creates
+`printezy247/twinos-dashboard` (optional).
 
-That first message matters: Lovable's defaults are to spin up its own Postgres,
-and once it has, every screen it builds is wired to the wrong database.
+Built so far: **Login** (email + password, no sign-up) and the **Approval
+Inbox** (pending/draft items, Telegram-style preview, findings by severity,
+`[NEEDED` in red, Approve/Reject/Reschedule only for `twinos_role = jack`,
+Approve hidden on blocked drafts, confirm dialog, 60 s refresh, 390 px).
 
-**2. Connect Jack's Supabase — not a new one.**
-Project → **Integrations → Supabase → Connect** → choose the `twinos` project
-created in 0.2. You may be offered "let Lovable manage the database" — **decline
-it.** That toggle grants it DDL rights, and the schema in this repo is the
-contract; a Lovable-generated migration would be a second, divergent source of
-truth.
+Check it after each new screen:
 
-If it asks to seed sample data, decline that too. The real seed is already loaded
-in step 0.2.
-
-**3. GitHub sync.** Project → **Settings → GitHub → Connect** →
-`printezy247/TwinOS-helper-system`, branch `main`. That is what keeps the
-dashboard reviewable in the same history as the migrations.
-
-`.gitignore` already covers what Lovable would otherwise commit: `.env` and
-`.env.*` (lines 226–227), `node_modules/`, `.deno/` and
-`apps/dashboard/dist/`. Nothing to add — but confirm with
-`git status` after Lovable's first commit that only source files appear.
-
-**4. Knowledge.** Project → **Settings → Knowledge**, paste the whole of
-`docs/LOVABLE-KNOWLEDGE.md` (115 lines). It carries the schema-first rule, the
-table→Edge-Function map, the role model, the screen build order and the design
-tokens. Without it Lovable invents tables and writes prices into posts.
-
-**5. First prompt — one screen only.** Do not ask for the whole dashboard in one
-go; that produces plausible screens wired to columns that do not exist.
-
-> Read the knowledge section first. Build the **Approval Inbox** screen only:
-> `content_items` where status is `pending_approval` or `draft`, newest first,
-> with the variant body, compliance findings coloured by severity, `[NEEDED:…]`
-> highlighted, and Approve / Reject / Reschedule visible only when
-> `session.user.app_metadata.twinos_role` is `jack`. Mutations go through
-> `supabase.functions.invoke`, never a table write. Mobile first, 390 px.
-
-Check its work before letting it continue:
-
-- Does the network tab show only `invoke` calls, or is it writing to a table?
-- Does it try to create a migration? It should not.
-- Does the Approve button *disappear* for a non-`jack` login, rather than just
-  greying out?
+- Does it only *read* tables and change things through `invoke`?
+- Did it create a migration, a table or Lovable Cloud? It must not.
+- Does the Approve button *disappear* for a non-`jack` login?
 - Does it still work at 390 px?
 
-**Screen order** — one prompt each, verify between: Approval Inbox → Content
-Calendar → Health → Analytics/Friday → Signal board → Research → Inbox.
+**Screen order**, one prompt each, verify between: Approval Inbox (done) →
+Content Calendar → Health → Analytics/Friday → Signal board → Research → Inbox.
 
-**6. Auth.** In the Supabase dashboard → **Users**, add Jack's email and confirm
-it, then give it the `jack` claim (step 0.3). Lovable's own login screen is fine
-for that one user; there is no public registration.
+**Auth.** Jack's login is `printezyusd@gmail.com` with `app_metadata.twinos_role
+= jack`. Row-level security reads that claim since migration 0016. The second
+login (`jack@printezy.money`) has no role and reads nothing until it is given
+one (step 0.3). There is no public registration.
+
+**Publishing** (optional): the preview only opens for workspace members. To use
+it on the phone without the Lovable login, press **Publish** in the editor; the
+app still needs your Supabase login, and RLS guards the data.
 
 ### 0.11 Baseline week, price list, benchmark study
 Not technical: log hours by task for one week (`baseline_hours`), decide the monthly price list (§16 Q2) and give the five reference-channel handles (§16 Q1).

@@ -432,5 +432,19 @@ begin
   raise notice 'ok: anon reads the public board only';
 end $$;
 
+-- 13. a real login carries the role under app_metadata (0016)
+do $$
+begin
+  perform set_config('request.jwt.claims', '{"role":"authenticated","app_metadata":{"twinos_role":"jack"}}', true);
+  assert public.twinos_role() = 'jack', 'app_metadata.twinos_role must be read';
+  assert public.twinos_actor() = 'jack', 'actor must follow app_metadata.twinos_role';
+  perform set_config('request.jwt.claims', '{"role":"authenticated","user_metadata":{"twinos_role":"jack"}}', true);
+  assert public.twinos_role() is null, 'user_metadata is editable by the user and must never grant a role';
+  perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+  assert public.twinos_role() is null, 'anon has no twinos role';
+  perform set_config('request.jwt.claims', '{"twinos_role":"jack","role":"authenticated"}', false);
+  raise notice 'ok: login roles come from app_metadata only';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
