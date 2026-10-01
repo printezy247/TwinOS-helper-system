@@ -74,7 +74,7 @@ cd ~/TwinOS-helper-system
 npm i -g supabase                          # or the .deb from supabase.com/docs/guides/cli
 supabase login                             # browser auth; paste the URL it prints
 supabase link --project-ref <ref>          # remembers the project ref (supabase/.temp)
-supabase db push                           # applies supabase/migrations/0001…0011
+supabase db push                           # applies supabase/migrations/0001…0012
 ```
 
 `db push` echoes each migration as it applies. **If any line fails, stop and send
