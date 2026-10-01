@@ -140,8 +140,11 @@ async function callerFromJwt(req: Request, jwt: string): Promise<Caller> {
 export async function authenticate(req: Request): Promise<Caller> {
   const token = bearer(req);
   if (!token) throw new HttpError(401, "unauthorized", "no bearer token");
-  if (token.startsWith("twk_")) return callerFromKey(token);
-  return callerFromJwt(req, token);
+  // `await` on both branches, so a rejected callerFromKey/callerFromJwt surfaces
+  // here rather than as an unhandled rejection, and so the stack points at the
+  // caller that asked.
+  if (token.startsWith("twk_")) return await callerFromKey(token);
+  return await callerFromJwt(req, token);
 }
 
 /**

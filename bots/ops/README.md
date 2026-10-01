@@ -96,7 +96,7 @@ Fri 09:00  "Friday numbers" request: Vantage and TikTok, two-minute reply
 
 `callback_data` is `ok:<id8>` / `edit:<id8>` / `later:<id8>` / `no:<id8>` where
 `id8` is the first 8 hex of the content id (plan §9.C.21, under 64 bytes). Only
-Jack's Telegram id (`settings.jack_telegram_id`) is accepted; everyone else gets
+Jack's Telegram id (`settings.jack_telegram_user_id`) is accepted; everyone else gets
 "Only Jack can use these buttons". After a decision the keyboard is removed so a
 second tap cannot happen (ASAP `decision.py` pattern).
 

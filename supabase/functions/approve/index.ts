@@ -10,7 +10,7 @@
  *     Telegram id. It calls with the service-role token and
  *     `x-twinos-actor: cron` is NOT accepted here; instead it passes
  *     `x-twinos-internal: <derived webhook secret>` plus the Telegram user id,
- *     and this function re-checks the id against settings.jack_telegram_id.
+ *     and this function re-checks the id against settings.jack_telegram_user_id.
  *
  * Writes an `approvals` row, flips content_items.status and, on approve with
  * a run_at, enqueues publish jobs. Idempotent per (content_id, decision).

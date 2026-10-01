@@ -64,12 +64,25 @@ export async function requireSetting(key: string, envFallback?: string): Promise
   return v;
 }
 
-/** Settings keys the Phase 1 functions read. Seeded by supabase/seed.sql (other agent). */
+/**
+ * Settings keys the Phase 1 functions read.
+ *
+ * These are the exact keys `supabase/seed.sql` writes and the ones
+ * `v_friday_scoreboard` and friends already read from SQL. They used to be
+ * `jack_telegram_id` / `tg_desk_chat_id` / `tg_channel_id` /
+ * `tg_discussion_chat_id`, which nothing else in the system used: the Desk bot
+ * would have read null and 404'd on the first message, and Jack would have
+ * filled in four rows that no view could see.
+ *
+ * A value of JSON `null` (the seed's CONFIRM placeholders) reads back as null,
+ * so `requireSetting` raises 503 naming the setting instead of messaging chat
+ * id 0. Fill them from docs/SETUP.md step 0.6.
+ */
 export const SETTING_KEYS = {
-  jackTelegramId: "jack_telegram_id", // bigint as text
-  deskChatId: "tg_desk_chat_id", // EzyMap Desk private group
-  channelId: "tg_channel_id", // @ezymap channel (bigint, -100…)
-  discussionChatId: "tg_discussion_chat_id", // linked discussion group (Phase 4)
+  jackTelegramId: "jack_telegram_user_id", // bigint as text; only this id may press Approve (§9.C.14)
+  deskChatId: "desk_group_chat_id", // EzyMap Desk private group
+  channelId: "channel_chat_id", // @ezymap channel (bigint, -100…)
+  discussionChatId: "discussion_group_chat_id", // linked discussion group (Phase 4)
   timezone: "timezone", // Asia/Kuala_Lumpur
   signalExpiryHours: "signal_expiry_hours", // stop-if window (§9.D.25)
 } as const;

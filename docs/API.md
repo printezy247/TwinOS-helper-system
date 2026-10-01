@@ -72,7 +72,7 @@ blocking finding answers `409 conflict` with `findings`. The Desk message's
 buttons are removed after any decision.
 From Telegram the function is called by `tg-webhook` with the service token +
 `x-twinos-internal` (derived webhook secret) + `telegram.user_id`, re-checked
-against `settings.jack_telegram_id`.
+against `settings.jack_telegram_user_id`.
 
 ## publish  (cron)
 `POST /publish` `{ "limit": 10 }` → `{ "ran": 2, "results": [{ "job_id": "…", "ok": true, "kind": "success" }, …] }`.
