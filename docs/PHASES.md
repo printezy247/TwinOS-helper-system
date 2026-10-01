@@ -12,7 +12,11 @@ Exit: schema reviewed; baseline logged.
 - [x] Schema reconciled with the Edge Functions (`0011_contract.sql`) — the two halves had drifted and nothing had ever run them together
 - [x] Seed: settings, brand_facts, products, personas, 15 templates, style_guide, hooks, calendar_slots, live_runsheets, mod_rules, benchmarks (`supabase/seed.sql`)
 - [x] MCP `ENDPOINTS` matched to the deployed function routes; 40 tests pass
-- [ ] Supabase project created in Jack's account, region Singapore; `db push`; seed applied — Jack (`docs/SETUP.md`)
+- [x] Settings keys aligned: the functions read the same names the seed and views write
+- [x] `docs/SETUP.md` verified — all 7 SQL blocks execute, all counts checked against a live database
+- [x] Cross-file consistency checks (`tests/check_consistency.py`, 21 checks) in CI
+- [x] `deno check`/`deno lint`/`deno test` run locally against Deno 2.9.6 and are clean
+- [ ] Supabase project created in Jack's account, region Singapore; `db push`; seed applied; smoke test green — Jack (`docs/SETUP.md` step 0.2)
 - [ ] `pg_cron`, `pg_net` enabled; `assets` bucket created — Jack
 - [ ] Jack's login created with `twinos_role = jack` — Jack
 - [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / Fly — Jack
@@ -28,6 +32,11 @@ Exit: schema reviewed; baseline logged.
 
 **Phase 1 does not start until Jack confirms the Supabase project exists and the
 functions are deployed.** Until then the work is local only.
+
+Everything above the Jack items is verified against a real Postgres 17 and a real
+Deno 2.9.6, and CI repeats all of it on every push. What remains unverified is
+anything that needs a live Supabase project: the `pg_cron`, `pg_net` and
+pgvector extensions, a real deployment, and the Telegram webhook.
 
 ## Phase 1 — Desk loop (8–21 Oct)
 Exit: Jack approves the map and a signal from his phone; a result reply posts by itself.
