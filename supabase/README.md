@@ -49,7 +49,7 @@ loaded because nothing had ever executed the two together. The first real
 column the earlier files use is still there. Where the two sides disagreed on a
 name, the migration keeps its own column and adds the function-side one, with a
 trigger or a generated view keeping them in step. It was verified on a real
-Postgres 17 by loading `0001`–`0011` + `seed.sql` and running `tests/smoke.sql`,
+Postgres 17 by loading `0001`–`0012` + `seed.sql` and running `tests/smoke.sql`,
 which CI now does on every push.
 
 Three decisions inside it are worth knowing:
@@ -77,7 +77,7 @@ empty project created in the Supabase dashboard (§16.3 decides which account).
 cd TwinOS-helper-system
 supabase login
 supabase link --project-ref <ref>        # remembers the project ref (supabase/.temp)
-supabase db push                         # applies migrations/0001..0011 in order
+supabase db push                         # applies migrations/0001..0012 in order
 psql "$(supabase db url)" -v ON_ERROR_STOP=1 -f supabase/seed.sql   # or: supabase db reset --linked (migrations + seed)
 psql "$(supabase db url)" -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql
 ```
