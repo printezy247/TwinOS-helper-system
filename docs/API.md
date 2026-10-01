@@ -166,7 +166,7 @@ read is the one listed here.
 | `publish_jobs` | `id`, `content_id`, `variant_id` unique, `platform`, `run_at`, `status` (queued/claimed/done/failed), `attempts`, `claimed_at`, `done_at`, `last_error`, `created_by` |
 | `tg_posts` | `chat_id`, `message_id`, `content_id`, `variant_id`, `post_type`, `posted_at` |
 | `tg_updates` | `update_id` pk (webhook de-dupe) |
-| `signals` | `id`, `external_id` unique, `source`, `symbol`, `direction`, `status`, `entry_low`, `entry_high`, `stop_price`, `tp1`, `tp2`, `rr`, `setup`, `timeframe`, `counter_trend`, `result_r`, `result_pips`, `quality`, `raw`, `opened_at`, `closed_at`, `updated_at` — each of these is bridged to its EzyAi-named twin (`pair`, `stop_loss`, `rr_target`, `r_multiple`, `data_source`, `signal_at`, `resolved_at`) by `trg_signal_bridge`, so the board views and EzyAi's own ingest keep their spelling |
+| `signals` | `id`, `external_id` unique, `source`, `symbol`, `direction`, `status`, `entry_low`, `entry_high`, `stop_price`, `tp1`, `tp2`, `rr`, `setup`, `timeframe`, `counter_trend`, `result_r`, `result_pips`, `quality`, `raw`, `opened_at`, `closed_at`, `updated_at` — each of these is bridged to its signal-bot-named twin (`pair`, `stop_loss`, `rr_target`, `r_multiple`, `data_source`, `signal_at`, `resolved_at`) by `trg_signal_bridge`, so the board views and the signal bot's own ingest keep their spelling |
 | `signal_outcomes` | `signal_id`, `status_new` (= `status`), `result_r`, `result_pips`, `raw`, `at` |
 | `signal_posts` | `signal_id`, `chat_id`, `message_id`, `content_id`, `kind` (signal/result/card), `status_posted` |
 | `member_events` | `chat_id`, `user_id`, `username`, `event`, `old_status`, `new_status`, `invite_link`, `invite_link_name`, `via_join_request`, `at`; `kind` and `occurred_at` are derived so the membership fold still works |
@@ -185,6 +185,6 @@ Storage bucket: `assets` (private).
 **Two vocabularies worth knowing.** `post_type` is one enum with the Posting Kit
 names (`signal_card`, `result_reply`, `channel_audit`, `holiday`), because the
 functions are what write it. `signal_posts.kind` and `signals` columns each keep
-both spellings because EzyAi's ingest and the board views predate the functions;
+both spellings because the signal bot's ingest and the board views predate the functions;
 `v_stop_if` and `v_friday_scoreboard` count `kind in ('card', 'signal')` so
 neither writer under-reports.

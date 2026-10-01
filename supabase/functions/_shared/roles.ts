@@ -12,7 +12,7 @@ export type Role =
   | "abdul" // ABDUL's scoped key
   | "ops_bot" // the tg-webhook function acting for the bot
   | "pc_worker" // scoped key on Jack's PC
-  | "ezyai" // scoped key held by the EzyAi bot on Fly
+  | "ezyai" // scoped key held by the EzyAi bot on its host
   | "tradingview" // tv-webhook secret
   | "cron" // pg_cron / scheduler invocations (service role + x-twinos-actor: cron)
   | "dashboard" // any other logged-in dashboard user (read-mostly)

@@ -20,7 +20,7 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('discussion_group_chat_id', 'null', 'Discussion group for comments, moderated by the ops bot. CONFIRM.', true),
   ('jack_telegram_user_id', 'null', 'Only this id may press Approve (§9.C.14). CONFIRM.', true),
   ('ops_bot_username', '"@EzyOpsBot"', 'Proposed ops bot name (§16.4). CONFIRM once created in @BotFather; token goes to Vault / keyring, never here.', true),
-  ('sales_bot_username', '"@EzyRegisterBot"', 'ASAP-TeleBot, the one front door for every sale (decision 15).', false),
+  ('sales_bot_username', '"@EzyRegisterBot"', 'The sales bot, the one front door for every sale (decision 15).', false),
   ('support_persona', '"Sarah"', 'Support persona only; checkout retired (Growth Plan §02).', false),
   ('board_url', '"https://printezy.money/ezyai"', 'Public board referenced by the scorecard (Posting Kit POST 7).', false),
   ('posting_times', '{
@@ -68,7 +68,7 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('media_max_mb', '45', 'Storage: media ≤ 45 MB (§7).', false),
   ('snapshot_offsets', '["1h", "24h", "7d"]', 'Post view snapshot schedule (§9.H.66).', false),
   ('language_test', '{"blocks": ["ms_first", "ms_first", "en_first", "en_first"], "block_weeks": 1, "metric": "reactions per view"}', 'Two weeks BM-first, two weeks EN-first (§9.E.42).', false),
-  ('language_codes', '{"malay": "ms", "note": "ASAP and wsapi-dashboard use my; TwinOS uses ms (§3.3)"}', 'Language code convention.', false),
+  ('language_codes', '{"malay": "ms", "note": "the sales bot and the ops dashboard use my; TwinOS uses ms (§3.3)"}', 'Language code convention.', false),
   ('vantage_rebate_per_active_client_usd', '40', 'Placeholder from Growth Plan §10. CONFIRM from the Vantage portal: last month rebates / clients who traded.', true),
   ('ad_cost_per_ftd_tested_usd', '66', 'Tested figure from the Taurex/Valetax proposals (Growth Plan §01).', false),
   ('repurpose_map', '{

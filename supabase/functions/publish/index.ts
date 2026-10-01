@@ -9,7 +9,7 @@
  * UPDATE … WHERE status='queued' so two ticks never send the same post, sends
  * through the platform provider, records `tg_posts` / `signal_posts`, flips
  * the content item, and on failure reschedules with exponential backoff
- * (ported from wsapi-dashboard outboundQueue + classifyMetaError).
+ * (ported from the ops dashboard's outboundQueue + classifyMetaError).
  *
  * Phase 1: Telegram only. Instagram / Facebook / Threads are stubs that fail
  * the job as `permanent: provider not enabled` so nothing silently queues.
@@ -30,7 +30,7 @@ const PACE_MS = 1100; // Telegram: ~1 msg/s to one chat, 20/min to a group
 
 type Kind = "success" | "throttled" | "permanent" | "unknown";
 
-/** Ported from wsapi-dashboard classifyMetaError, adapted to Bot API codes. */
+/** Ported from the ops dashboard's classifyMetaError, adapted to Bot API codes. */
 function classify(err: unknown): { kind: Kind; reason: string } {
   if (err instanceof tg.TgError) {
     if (err.code === 429) return { kind: "throttled", reason: err.message };

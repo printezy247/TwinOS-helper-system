@@ -13,7 +13,7 @@ Jack ── voice/chat ─▶ ABDUL ── MCP (apps/mcp) ───────�
                          └──▲──────────▲───────────────▲──────────▲────────┘
           signals, outcomes │          │ webhooks       │ reads    │ jobs (outbound only)
                  ┌──────────┴──┐  ┌────┴─────────┐  ┌───┴──────┐ ┌─┴──────────────────┐
-                 │ EzyAi (Fly) │  │ @EzyOpsBot   │  │ printezy │ │ PC worker          │
+                 │ Signal bot  │  │ @EzyOpsBot   │  │ printezy │ │ PC worker          │
                  │ TradingView │  │ Desk group,  │  │ board,   │ │ workers/pc         │
                  │ alerts      │  │ channel,     │  │ ad clicks│ │ clips, local AI,   │
                  └─────────────┘  │ moderation   │  │ (read)   │ │ drop folder,       │
@@ -27,9 +27,9 @@ Jack ── voice/chat ─▶ ABDUL ── MCP (apps/mcp) ───────�
 | Job | Runs on | Why |
 |---|---|---|
 | Queue, scheduling, Telegram (IG/FB/Threads in Phase 3) publishing, approvals, Desk group, moderation, member events | Edge Functions + pg_cron | Always on, independent of Jack's PC |
-| Signal computation | EzyAi (unchanged) | Already tested, already live |
+| Signal computation | The signal bot (unchanged) | Already tested, already live |
 | Clipping, transcription, local AI, thumbnails, research batches, backups | PC worker | Needs the GPU and the drop folder; can run late |
-| Sales, payments, licences | @EzyRegisterBot (unchanged until Phase 8) | Revenue core, highest risk |
+| Sales, payments, licences | The sales bot (unchanged until Phase 8) | Revenue core, highest risk |
 
 The PC worker never opens a port: it asks `jobs/claim`, works, posts `jobs/result`.
 
@@ -42,8 +42,8 @@ The PC worker never opens a port: it asks `jobs/claim`, works, posts `jobs/resul
 | `publish` | pg_cron every minute | claims due `publish_jobs`, sends, records `tg_posts`/`signal_posts`, backoff on failure |
 | `tg-webhook` | Telegram | Desk input → draft; buttons; `chat_member`/`chat_join_request` → `member_events`; discussion moderation; reactions |
 | `tv-webhook` | TradingView | alert → `signals` + signal-card draft in the Desk (COUNTER-TREND line kept) |
-| `signals-ingest` | EzyAi | idempotent batch ≤50, per-row results, 200/207/400 |
-| `results` | ABDUL, cron, EzyAi | result reply under the original signal; `stop-if` sweep |
+| `signals-ingest` | The signal bot | idempotent batch ≤50, per-row results, 200/207/400 |
+| `results` | ABDUL, cron, the signal bot | result reply under the original signal; `stop-if` sweep |
 | `health` | everyone (beats), cron (`check`) | beats, stale alerts, "anything broken?" |
 | `friday` | cron, Jack, ABDUL | scoreboard read, manual inputs, scorecard draft + image job |
 | `jobs` | PC worker | claim/result, enqueue, signed upload, asset register, Telechurn import |

@@ -25,7 +25,7 @@ copies through `supabase secrets set` (step 0.7), and the database through Vault
 
 ## Phase 0 — Plan and mind (1–7 Oct)
 
-### 0.1 Make `printezy247/EzyMap` private (plan §3.3, decision 19)
+### 0.1 Make the EzyMap indicator repo private (plan §3.3, decision 19)
 GitHub → repo → Settings → General → Danger Zone → **Change visibility → Private**.
 Then rotate anything that was in the public history (licence server token if it ever was).
 
@@ -140,7 +140,7 @@ Store each immediately:
 secret-tool store --label "TwinOS worker key" service twinos key worker_key
 secret-tool store --label "TwinOS abdul key"  service twinos key abdul_key
 ```
-The EzyAi key goes to Fly: `fly secrets set TWINOS_SIGNAL_KEY=twk_ezyai_… -a <ezyai-app>`.
+The signal bot's key goes to its host: set `TWINOS_SIGNAL_KEY` as a secret there.
 Revoke any time: `update api_keys set revoked_at = now() where name = 'jack-pc';`.
 
 ### 0.5 Ops bot (@EzyOpsBot) — see `bots/ops/README.md`
@@ -337,8 +337,8 @@ TradingView → chart → Alerts → **Create alert** on the EzyMap indicator:
   One alert per direction (`"side":"sell"` for the other). If the indicator exposes a counter-trend plot, set `"counter_trend":{{plot("CT")}}` so the card keeps the warning line.
 - TradingView only sends to ports 80/443 and cannot set headers, hence the query-string secret.
 
-### 1.3 EzyAi push (plan §9.D.23)
-In `tradernonymous/EzyAi`, point the existing signal client at TwinOS:
+### 1.3 Signal bot push (plan §9.D.23)
+In the signal bot's repo, point the existing signal client at TwinOS:
 `EZYMAP_SITE_URL=https://<ref>.supabase.co/functions/v1` and path `/signals-ingest`,
 key from 0.4. Same contract as printezy (`docs/API.md`).
 

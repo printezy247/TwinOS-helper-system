@@ -19,7 +19,7 @@ Exit: schema reviewed; baseline logged.
 - [ ] Supabase project created in Jack's account, region Singapore; `db push`; seed applied; smoke test green — Jack (`docs/SETUP.md` step 0.2)
 - [ ] `pg_cron`, `pg_net` enabled; `assets` bucket created — Jack
 - [ ] Jack's login created with `twinos_role = jack` — Jack
-- [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / Fly — Jack
+- [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / on the host — Jack
 - [ ] @EzyOpsBot created; token in keyring and function secrets — Jack
 - [ ] EzyMap Desk group created (Jack + bot); chat ids in `settings` — Jack
 - [ ] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean — Jack
@@ -27,7 +27,7 @@ Exit: schema reviewed; baseline logged.
 - [ ] Lovable project created, connected to Jack's Supabase (not Lovable Cloud), GitHub sync on, knowledge pasted — Jack
 - [ ] Reference-channel benchmark study + `benchmarks` seed + high-capital ICP note — research task
 - [ ] Invite-link naming convention agreed (`src-campaign-yymm`) — Jack
-- [ ] `printezy247/EzyMap` made private — Jack
+- [ ] The EzyMap indicator repo made private — Jack
 - [x] Backend scaffolding: `_shared`, ten functions, PC worker, docs, CI (this repo, Phase 0 commit)
 
 **Phase 1 does not start until Jack confirms the Supabase project exists and the
@@ -44,7 +44,7 @@ Exit: Jack approves the map and a signal from his phone; a result reply posts by
 - [ ] Telegram publisher and scheduler running every minute; backoff verified with a forced 429
 - [ ] Templates for all 15 post types seeded and rendering without `[NEEDED]` on the daily ones
 - [ ] TradingView alert → signal card draft (COUNTER-TREND line kept); alert JSON set in TradingView — Jack
-- [ ] EzyAi pushing to `signals-ingest` (key on Fly) — Jack + EzyAi repo
+- [ ] The signal bot pushing to `signals-ingest` (key on its host) — Jack + signal bot repo
 - [ ] Result replies under signals from board status changes
 - [ ] Stop-if alarm firing on a test signal with no result
 - [ ] Compliance checks on every variant; evidence trail in `compliance_checks`
@@ -58,7 +58,7 @@ Exit: Friday report arrives without Jack opening a spreadsheet.
 - [ ] `twinos_call()` in ABDUL with the key from the keyring
 - [ ] Wednesday 14:30 batch (7 lessons + audit + poll + offer), numbered, edits by "N: instruction"
 - [ ] Thursday auto-scheduling of the approved batch
-- [ ] Scorecard image renderer (`studio/scorecard.py`, port of ASAP `receipt.py`)
+- [ ] Scorecard image renderer (`studio/scorecard.py`, port of the sales bot's `receipt.py`)
 - [ ] Friday scoreboard with Vantage + TikTok manual inputs; `v_friday_scoreboard` complete
 - [ ] Content log rows automatic + Sheet export
 - [ ] Named invite links through the bot (`POST /links`); weekly Telechurn numbers imported
@@ -78,7 +78,7 @@ Exit: one TikTok reaches seven places with only the TikTok, YouTube and X taps b
 Exit: every swap shows joins and 7-day retention.
 - [ ] Discussion group linked; bot admin; `mod_rules` seeded; warn → mute → ban live
 - [ ] Join-request captcha + CAS check
-- [ ] Scam-impersonation watch; repeat-question detector → Sarah's sheet
+- [ ] Scam-impersonation watch; repeat-question detector → the FAQ bot's sheet
 - [ ] Post view snapshots at +1 h / 24 h / 7 d
 - [ ] Swap tracker (one link per partner) + funnel view (`v_funnel`)
 - [ ] Reference-channel benchmark cards refreshed weekly
@@ -109,5 +109,5 @@ Exit: cost per FTD visible daily.
 ## Phase 8 — Revenue core (after Phase 7)
 Exit: payments match the old bot for two weeks.
 - [ ] Stars payment idempotency; larger Stripe de-dupe window; service-role key replaced by a narrow read
-- [ ] @EzyRegisterBot migration with parallel running
-- [ ] Hosting decision for the sales bot (PythonAnywhere vs VPS)
+- [ ] The sales bot migration with parallel running
+- [ ] Hosting decision for the sales bot (existing host vs VPS)
