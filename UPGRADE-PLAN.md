@@ -1,245 +1,558 @@
-# EzyMap TwinOS — Master Plan
+# EzyMap TwinOS — Master Plan v3
 
-**Status:** Draft · **Owner:** Jack · **Scope:** EzyMap only · **Supersedes:** previous UPGRADE-PLAN.md (generic tool list)
+**Status:** Master plan, not started · **Owner:** Jack · **Scope:** EzyMap only · **Updated:** 2026-10-01
+**Built from:** v1 (commit `fe035b9`), v2 research (platform APIs and limits verified 2026-10-01, audit of Jack's repos), and three documents dated 30 Sep 2026: *EzyMap Growth Plan 2026-27*, *EzyMap Channel Posting Kit*, *Jack's FYP Content Plan*.
 
----
+**What TwinOS is for:** the Growth Plan says "Make Telegram run itself" and "anything a script can do, a script does". TwinOS is that script. It runs the channel desk, the repost machine, the tracking and the Friday numbers, so Jack's five hours a day go only to the gold map, TikTok and people.
 
-## 1. Objective
+**Budget rule:** no new paid subscriptions. Services Jack already pays for and relies on (Telechurn first) stay. TwinOS connects to them instead of replacing them. Free official APIs fill the gaps.
 
-Consolidate EzyMap's scattered tooling into **one system with one database** that acts as the operational mind, cutting Jack's non-creative workload by up to 70%.
-
-Jack retains the irreducible 30%: **his face on camera, market judgment, and partner relationships.** Everything else is fair game.
-
-**Success metric:** Jack's weekly operational hours on EzyMap (scheduling, cross-posting, reporting, monitoring, admin), excluding content recording and trade decisions. Target ≥60% reduction by end of Phase 3, ≥70% by Phase 4.
+**Method rule:** tracking and automation use allowed methods only: the Telegram Bot API, official platform APIs, exports from tools Jack already uses, and manual entry. No automation of Jack's personal Telegram account, no scraping of TikTok, no bulk crawling of Telegram.
 
 ---
 
-## 2. Scope & non-goals
+## 0. Decisions log
 
-**In scope:** All EzyMap operations — content publishing, Telegram/TikTok distribution, sales/entitlements, signals distribution, analytics, health monitoring, community triage.
-
-**Explicitly out of scope:** Sambang Gold, Aish Capital, 20 Pips Lab. No multi-tenant design and no per-owner permissions. This removes significant complexity — do not reintroduce it.
-
-**Non-goal:** Rewriting the signal engine. EzyAi's analysis is an asset, not debt.
-
----
-
-## 3. Current state (verified)
-
-| System | Role | Stack | Hosting |
+| # | Question | Decision (Jack, 2026-10-01) | What it means for the build |
 |---|---|---|---|
-| **EzyAi** (`tradernonymous/EzyAi`, private) | Signals, outcomes, health alerts | Py 3.13, ptb 21.6+, 328 tests | Fly.io `ezyai` (ams) |
-| **ASAP-TeleBot** (private) = `@EzyRegisterBot` | Sales, payments, MT5 licensing, post store, attribution | Py 3.11, ptb 22.8, EN/BM | **PythonAnywhere free** |
-| **tg-ezy-chatbot** / **tg_ezy_ai_os** | Funnel automation, "marketing OS" | Node/Python | unverified |
-| **wsapi** / **wsapi-dashboard** | WhatsApp campaigns | — | unverified |
-| **printezy** | EzyMap brand site | Lovable | Lovable |
-| **stripe_payment_gateway**, **TG-database** | Payments, client data | — | — |
-| **TwinOS-helper-system** | This repo — the target | — | GitHub |
-
-**Key findings driving this plan:**
-
-- `@EzyRegisterBot` already contains `channel_posts_store.py`, `dashboard.py`, `ad_attribution.py` — **the seeds of the content + dashboard + attribution layer already exist.** Extend, don't rebuild.
-- EzyAi has **health beats and admin alerting already built** — reuse that pattern for monitoring.
-- EzyAi stores state in JSON on a Fly volume; it has **no database**. Fine for signals, wrong for a content queue.
-- The revenue bot sits on **PythonAnywhere free tier** — fragile under increased write load.
-
-**The core problem is not missing features. It's fragmentation.** Eight systems doing pieces means the cost is context-switching, not capability.
+| 1 | Which backend? | A **new** project on **Lovable**, kept apart from printezy so ABDUL's data doesn't mix with older systems | New Lovable project with its own database. printezy's Supabase is never written to by TwinOS. See §8 for the one sub-choice left |
+| 2 | Who is "Abdul" in the Posting Kit? | **ABDUL the assistant** | ABDUL takes the "Abdul" desk role: drafts, checks, schedules, logs. It never approves prices, trades, results or offers |
+| 3 | Telegram tracking method | **Allowed methods only, keep current services like Telechurn** | Telechurn stays the join/leave tracker. TwinOS adds Bot API events and imports Telechurn exports. Jack's personal account is not automated |
+| 4 | ICPs | **From the PDFs** | Six ICPs from the Growth Plan, §4.2 |
+| 5 | Reference channels | **44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL, GARY GOLD TRADER** | A benchmark watchlist. TwinOS tracks their public rhythm and reach by hand-sized, allowed checks. Their text is never fed to the AI as examples, and they are never named in posts (§4.10) |
+| 6 | Baseline week | **Yes** | Week 1 time log before automation starts |
+| 7 | Professional advice on compliance | **Yes** | Lawyer's opinion before paid ads (Growth Plan: before Q1 2027) |
+| 8 | TikTok account type | **Personal** | Creator Search Insights stays available. TikTok posting stays manual through a publish kit. LIVE needs about 1,000 followers |
+| 9 | Commit and push this plan | **Yes** | Done with this version |
 
 ---
 
-## 4. Target architecture
+## 1. Objective and success metrics
+
+**Business target (from the Growth Plan):** from about 640 channel members and under $50 a day today to $1,000 a day by June 2027 with a broker-funded ad pilot, or $400–600 a day organic only.
+
+**TwinOS target:** cut Jack's operational hours by ≥60% by end of Phase 3 and ≥70% by Phase 5, so his day matches the Growth Plan's five-hour schedule: 30 min map, 30 min approvals and DMs, 60 min recording, 30 min TikTok replies, 60–90 min rotating block, 60 min NY session.
+
+**How it is measured:**
+1. Baseline week (decision 6): Jack logs hours by task for one normal week.
+2. TwinOS counts what it did instead of Jack in `action_log` (posts drafted, posted, logged, reposted, numbers pulled).
+3. The Growth Plan's Friday scoreboard (§4.8) is produced by TwinOS, not by hand.
+
+**Quarter targets TwinOS reports against (Growth Plan §11):**
+
+| | Q4 2026 | Q1 2027 | Q2 2027 |
+|---|---|---|---|
+| Channel members | 2,500 | 5,000 | 10,000 |
+| Active funded clients | 80 | 200 | 400 |
+| Revenue per day | $150 | $450 | $1,000 |
+| Stop-if rule (TwinOS alerts on it) | A signal posts without a result update even once | Cost per first-time depositor above $120 for 2 weeks | Refund or complaint rate above 3% |
+
+---
+
+## 2. Scope and non-goals
+
+**In scope:** everything the Posting Kit's desk does, the FYP plan's repurposing, the Growth Plan's automation table (§09) and scoreboard (§14), community moderation, research for content and ICPs.
+
+**Out of scope:** Sambang Gold, Aish Capital, 20 Pips Lab, Sam, EzyViralAI (the Growth Plan says park them). No multi-tenant design.
+
+**Non-goals:**
+- Rewriting EzyAi's signal engine or the EzyMap indicator.
+- Replacing services Jack already uses and trusts (decision 3).
+- Automating Jack's personal Telegram account, scraping TikTok, or bulk-crawling Telegram.
+- Buying members, views or reactions.
+- Selling on TikTok. TikTok sends people to the channel; the bot sells.
+
+**Growth Plan "stop doing" list, which TwinOS enforces where it can:** no hand-posting on IG/FB/YouTube/X; no answering the same question twice (repeat questions go to Sarah's reply sheet); no new bots or brands before $500 a day.
+
+---
+
+## 3. Current state
+
+### 3.1 Systems (verified from the repos)
+
+| System | What it does today | Role in TwinOS |
+|---|---|---|
+| **EzyAi** (`tradernonymous/EzyAi`) | Signals, outcome resolver, results stats, health beats, billing. 357 tests. Fly.io | Pushes signals and outcomes to TwinOS. Its board feeds result replies and the Friday scorecard |
+| **@EzyRegisterBot** (ASAP-TeleBot) | The one front door for every sale (Growth Plan). EN/BM, Stripe/USDT/Stars, MT5 licences, `/start` tag stats, channel post manager. PythonAnywhere free | Untouched by TwinOS until the revenue migration. TwinOS reads its `/stats` tags and subscriber data |
+| **Sarah** (tg-ezy-chatbot) | Keyword FAQ in EN/BM. Growth Plan: support persona only, checkout retired | Reply corpus feeds TwinOS; repeat questions get added to her sheet |
+| **printezy.money** | Proof layer: public board, checkout, SEO, ad landing. Own Supabase (22 tables) | Read-only source for ad-click attribution and the board, through a narrow read endpoint |
+| **MacroTrader bot** | Free 8 AM ET digest, paid macro products | Its daily card becomes the 08:15 macro post |
+| **ABDUL** | Local assistant with an MCP server, HTTP hub, approval-hold UX, redaction, research, monitors | The desk operator (decision 2) |
+| **NeuraOS** | Local llama-server and image server on Jack's PC | Local drafts, thumbnails |
+| **Telechurn** | Join/leave tracking per named invite link (Jack's paid service, kept) | Stays the tracker of record for channel churn. TwinOS imports its CSV export |
+| **Google Sheet content log** | Date, time, post type, language, link, views 24h, reactions, bot starts, notes (Posting Kit) | TwinOS fills it automatically, then becomes the master log with a Sheet export |
+
+### 3.2 Gaps nothing covers today
+Scheduled queue with approval, TradingView alert → channel card, result replies under signals, Friday scorecard image, posting to IG/FB/Threads/YouTube, clipping lives, moderation, keyword research, and the Friday scoreboard in one place.
+
+### 3.3 Fix before TwinOS copies anything (from repos and the Growth Plan)
+- **Urgent, outside TwinOS:** the `printezy247/EzyMap` repo is public and holds the paid EzyMap Pro Pine source and MT5 tools (Growth Plan §03, GitHub listing confirms it is public). Jack makes it private.
+- Vantage IB number differs between repos (`6709552` vs `26468008`). Trial length differs (7 vs 3 days). TradingView Pro shows "$29/mo" in one repo and $249 lifetime elsewhere. The Growth Plan proposes adding a $29/mo option, so this needs one decided price list.
+- Sarah shows "RM49" for a $49 product to BM users.
+- Malay language code: TwinOS uses `ms`. ASAP and wsapi-dashboard use `my`.
+- Website testimonials without a source: written permission or removal (Growth Plan rules).
+- Contact lists in `blasting` came from personal Telegram exports. Never imported.
+
+---
+
+## 4. Business inputs TwinOS encodes
+
+These come from the three PDFs and become data in TwinOS (tables and templates), so Jack edits them in one place.
+
+### 4.1 Positioning and pledge
+- **Promise:** "EzyMap maps gold every day, shows every result, and teaches you to trade the plan, not the hype."
+- **Transparency pledge** (pinned): every free signal gets a result reply; strict win rate with break-even excluded; IB commission disclosed and never required for free content; education first.
+- Stored as `brand_facts` and quoted word for word in the pinned post and disclosure lines.
+
+### 4.2 Six ICPs (Growth Plan §05)
+
+| # | ICP | Entry point | Main pillar | Offer ladder |
+|---|---|---|---|---|
+| 1 | Gold beginner (main), 22–35, phone, small account, blew one before | TikTok, channel | Map Recap | Free → Beginner/Pro tiers, EzyMap Lite |
+| 2 | Signal-channel refugee, burned by VIP groups | TikTok audits, referrals | Channel Audit | Pledge, scorecard, education |
+| 3 | Tool-driven trader, TradingView/MT5, prop firms | 3-day trials, website | Tool Demo | MT5 bundle, Drawdown Guardian, Bulk Close, EzyMap Pro |
+| 4 | Macro trader | Macro bot, daily card | Macro card | Macro desk $19 |
+| 5 | Crypto + forex generalist | Website board, Threads/X | — | EzyAI PRO $14.99 |
+| 6 | General financial-solution seeker, not trading yet, worried about scams | TikTok, BM SEO | Start Safe | Free ebook, demo challenge, never pushed to deposit early |
+
+Every content item carries an `icp` tag. Research scores topics by ICP fit. The Friday report shows which ICP each week's content served.
+
+### 4.3 Three ladders (Growth Plan §06)
+Free (channel → ebook + Lite via Beginner → Top Trade Calls script), Funded via IB (Pro any deposit → Premium $100+ → Elite $700+), Paid without broker (MT5 tool from $9/mo or Lite $49 → EzyAI PRO or Macro desk → MT5 bundle $99/mo or Pro $249). Stored in `products` with a `ladder` and `step`. Offer posts may only quote prices from this table.
+
+### 4.4 Channel rhythm (Growth Plan §07, Posting Kit §01)
+
+| Time (MYT) | Post | Source | Who |
+|---|---|---|---|
+| 07:45 | Map screenshot + raw notes into the private **EzyMap Desk** group | Jack | Jack |
+| 07:50 | Draft back in the Desk group (Prompt 1) | ABDUL + ops bot | Auto |
+| 07:58 | OK or one-line edit | Jack | Jack |
+| 08:00 | Gold map | Publisher | Auto after OK |
+| 08:15 | Macro card | Macro bot digest → template 2 | Auto |
+| 13:00 | Lesson from the weekly batch | Queue | Auto |
+| London/NY | Free signal card 1–2 from the EzyMap alert | TradingView webhook → template 3 | Jack taps approve |
+| On hit | Result reply under the original signal | Board status change → template 4 | Auto |
+| 15–30 min before CPI/NFP/FOMC | News alert | Economic calendar → template 12 | Auto, approve if it names levels |
+| 20:00 | Evening wrap from one line | Jack's line → template 11 | Jack + auto |
+
+Weekly: Mon poll, Wed Channel Audit, Fri scorecard image, Sat one offer post, Sun outlook. Holidays and milestones from a Malaysian holiday calendar and member-count thresholds.
+
+### 4.5 Fifteen post types (Posting Kit §04)
+Gold map, macro card, signal card, result reply (TP1/TP2/BE/SL), lesson (skill / Start Safe), Channel Audit, weekly scorecard, Sunday outlook, offer (A free via broker, B 3-day trial, C no-broker, D EzyAI waitlist), poll, evening wrap, news alert, member result (written permission only), holiday/milestone, pinned Start here. Each becomes a `template` row holding the kit's prompt, the field list, the character limit, the required lines (risk, disclosure) and the approval rule.
+
+The kit's **master prompt**, **banned words list**, **hashtag index** (#GoldMap #Signal #Result #Lesson #StartSafe #Audit #Macro #Scorecard #Outlook #Tools) and **trade card format** become `style_guide` rows. The **pre-post checklist** (numbers, words, risk line, one CTA, disclosure, losses, format, language) becomes the automatic check in §12.
+
+### 4.6 TikTok plan (FYP Content Plan)
+- One short a day, 30–60 s; five pillars in a fixed weekly mix: Map Recap ×2, Channel Audit ×1, Lesson/Start Safe ×2, Tool Demo ×1, Jack's Desk ×1.
+- 28-day calendar, 40-line hook bank (EN/BM), script templates per pillar, caption pattern with 3–5 hashtags.
+- Three lives a week (NY session Mon/Wed/Thu, Sunday outlook, monthly Channel Audit live) with run sheets. Until ~1,000 followers, lives run as Telegram video chats and the best 60 s goes to TikTok.
+- Double-down rule: a video well above average gets a part 2 within 48 hours.
+- Signature look: dark chart, EzyMap green/red/gold, one font, one end card.
+- All stored as `calendar_slots`, `hooks`, `script_templates`, `live_runsheets`.
+
+### 4.7 Repurposing map (FYP §08)
+One TikTok → Instagram Reels, Facebook Reels, YouTube Shorts (clean export, no watermark), Threads (chart screenshot + two lines), X (screenshot or 3-post thread), Telegram (Saturday video of the week), YouTube long form (Sunday live, from Q2 2027).
+
+### 4.8 Friday scoreboard (Growth Plan §14 + FYP §08)
+
+| Number | Source in TwinOS |
+|---|---|
+| Channel members, net joins | Bot API member count + `chat_member` events; Telechurn export as the reference |
+| Average views per post as % of members | Post view snapshots (ops bot, §9.H) |
+| TikTok followers, profile views, watch time, % watched in full | Manual weekly entry or TikTok Studio export |
+| Bot `/start` by source tag | @EzyRegisterBot `start_log` (read) |
+| IB accounts opened, first-time depositors, active funded clients, rebates | **Vantage portal, entered weekly by Jack** (no API). Two-minute form |
+| Product revenue | Stripe + USDT + Stars records |
+| Active subscribers, expiring in 7 days | ASAP `subscriptions` (read) |
+| Signals posted vs results posted | Board vs channel posts. Must be 100% or TwinOS alerts at once |
+| Strict win rate and total R, 4 weeks | Board |
+
+### 4.9 Roles (Posting Kit §01–02, with decision 2)
+
+| Who | Does | Never does |
+|---|---|---|
+| **Jack** | Map screenshot and 3–5 raw lines, one evening line, approves signals and anything with a price/result/offer, records TikTok, final say | Formatting, scheduling, logging, routine FAQs |
+| **ABDUL** (assistant) | Runs the prompts, checks the checklist, schedules, logs, posts result replies, runs the Wednesday batch, answers "how did it do" | Approving prices, trades, results or offers; DMing members about money; changing prices |
+| **@EzyOps bot** (new, ABDUL's hands in Telegram) | Admin in the channel with Post/Edit/Delete only. Member of the Desk group. Shows drafts with Approve/Edit buttons | Adding admins, changing channel info |
+| **Claude** | The drafting model behind ABDUL for long or important copy (ABDUL's existing Claude route) | Posting anything |
+
+Keys and money stay with Jack: bot tokens, IB portal, Stripe, USDT wallet, licence server token.
+
+### 4.10 Reference channels (decision 5)
+44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL, GARY GOLD TRADER.
+- **What TwinOS does:** a benchmark card per channel, refreshed weekly by an allowed, low-volume check of each public channel's web preview (subscribers, posts per day, average views, view rate) and recorded by hand for TikTok. Shows how EzyMap's rhythm and view rate compare.
+- **What TwinOS does not do:** feed their posts to the AI as writing examples (Telegram's terms forbid using channel content for AI without consent), copy their wording, or name them in content. The Channel Audit series stays pattern-based, as the Growth Plan requires.
+- Jack's style notes on what he likes about each ("short map format", "clean result replies") go into `style_guide` as rules written by Jack.
+
+---
+
+## 5. Services policy: keep, connect, build
+
+| Need | Decision | How |
+|---|---|---|
+| Channel join/leave and churn by link | **Keep Telechurn** | Name every invite link in a shared convention (`src_campaign_date`). TwinOS creates links through the ops bot so it also sees the joins; Telechurn keeps tracking them as before. Weekly Telechurn CSV import for the reference numbers |
+| Telegram moderation | Build in the ops bot (free) | CAS check on join, link block for new members, flood control, warn/mute/ban. Combot only if Jack already uses it |
+| Telegram channel stats | Build with allowed methods | Bot API member count, `chat_member` events, post view snapshots through the bot's own login. No personal-account automation, so Telegram's full broadcast stats stay in the Telegram app |
+| Scheduling, cross-posting (Buffer/Hootsuite/Repurpose.io/Metricool) | Build (free official APIs) | Instagram, Facebook, Threads publish directly. TikTok and (until the free audit) YouTube get a publish kit |
+| Brand voice (Jasper) | Build | Posting Kit master prompt + Jack's best posts + Claude/local models |
+| Keyword and topic research (Semrush, vidIQ, Creator Search Insights) | Build with free sources | Search Console, Bing, YouTube API, autocomplete, weekly manual TikTok capture |
+| Content log (Google Sheet) | Connect, then lead | TwinOS writes every row automatically and keeps a Sheet export |
+| Clipping (OpusClip/Vizard) | Build on Jack's PC | faster-whisper + ffmpeg + templates |
+
+**Open item:** Jack lists which other paid services he currently uses. Each one gets a keep/connect line here before Phase 1.
+
+---
+
+## 6. Hard limits (verified 2026-10-01)
+
+| Limit | Fallback |
+|---|---|
+| TikTok rejects auto-posting apps for one's own account; unaudited apps post privately only | **Publish kit:** clean file, caption, hashtags and cover text sent to Jack's phone; he posts in the app or schedules in TikTok Studio (up to 10 days ahead); taps "Posted" and pastes the link |
+| YouTube uploads from an unaudited API project stay private | Apply for Google's free audit in Phase 3; publish kit until then |
+| Facebook posts from a development-mode Meta app are not public | Meta app set to Live with Standard Access (no review needed for Jack's own Pages) |
+| Instagram comment webhooks need Advanced Access | Poll comments every 15 min |
+| Bot API has no scheduling and no view counts | Own scheduler; view snapshots through the ops bot's own login |
+| `chat_member` updates can go missing | Telechurn export and daily member count as reconciliation |
+| Telegram forbids using channel/group content for AI without consent | No AI on group text or other channels' posts. AI only on Jack's own inputs and consented replies |
+| TikTok Creator Search Insights and Creative Center have no API; scraping is banned | Weekly 10-minute capture form, or "ABDUL, log CSI topic …" |
+| Exact keyword search volumes aren't free | Relative scores from free sources |
+| X API has no free tier ($0.015 per post) | X stays manual (2 min) unless Jack accepts a few cents a month |
+| Vantage IB portal has no API | Weekly two-minute entry form |
+| TradingView webhooks need a paid TradingView plan | Jack's existing plan if it includes webhooks; otherwise EzyAi alerts feed signal cards |
+
+---
+
+## 7. Product shape
 
 ```
-        Jack ── voice/chat ──▶ ABDUL ─────────┐
-        Jack ── browser   ──▶ Lovable UI ─────┤
-                                              │  same authenticated API
-                                       ┌──────▼───────┐
-                                       │  TwinOS API  │  ← business rules
-                                       └──────┬───────┘
-                                              │
-                                       ┌──────▼───────┐
-                                       │   SUPABASE   │  ← THE MIND
-                                       │   Postgres   │
-                                       └──────▲───────┘
-                                              │ writes
-                                       ┌──────┴───────┐
-                                       │    EzyAi     │  ← muscle
-                                       │   Fly.io     │
-                                       └──────────────┘
+Jack ── Telegram: EzyMap Desk group + approve buttons + publish kits ──┐
+Jack ── TwinOS dashboard (new Lovable project) ─────────────────────────┤
+Jack ── voice/chat ─▶ ABDUL ── MCP ─────────────────────────────────────┤ one API, one set of rules
+                                                                        ▼
+                         ┌─────────────────────────────────────────────────┐
+                         │ TwinOS backend (new, Lovable)                   │
+                         │  Postgres: the mind     Functions: the rules    │
+                         │  Scheduler: the clock   Storage: media ≤45 MB   │
+                         └──▲──────────▲───────────────▲──────────▲────────┘
+          signals, outcomes │          │ webhooks       │ reads    │ jobs (outbound only)
+                 ┌──────────┴──┐  ┌────┴─────────┐  ┌───┴──────┐ ┌─┴──────────────────┐
+                 │ EzyAi (Fly) │  │ @EzyOps bot  │  │ printezy │ │ PC worker          │
+                 │ TradingView │  │ Desk group,  │  │ board,   │ │ clips, local AI,   │
+                 │ alerts      │  │ channel,     │  │ ad clicks│ │ research, drop     │
+                 └─────────────┘  │ moderation   │  │ (read)   │ │ folder, Telechurn  │
+                                  └──────────────┘  └──────────┘ │ CSV import         │
+                                                                 └────────────────────┘
 ```
 
-| Layer | Role | Tool |
+| Job | Runs on | Why |
 |---|---|---|
-| **Mind** | Single source of truth | Supabase Postgres |
-| **Rules** | Business logic, approval gate, audit | TwinOS API (Supabase Edge Functions or FastAPI) |
-| **Face** | Jack's dashboard & approval inbox | Lovable → React |
-| **Voice** | Conversational control | ABDUL via MCP |
-| **Muscle** | Heavy signal computation | EzyAi, Python on Fly.io |
+| Queue, scheduling, Telegram/IG/FB/Threads publishing, approvals, Desk group, moderation, attribution events | TwinOS backend | Always on, independent of Jack's laptop |
+| Signal computation | EzyAi | Unchanged |
+| Clipping, transcription, local AI, thumbnails, research batches | PC worker | Needs the GPU; can run late |
+| Sales, payments, licences | @EzyRegisterBot | Untouched until Phase 8 |
 
-**Critical:** Supabase Edge Functions are Deno/TypeScript, built for short request/response. They cannot host EzyAi's technical analysis. **The signal engine stays Python on Fly.io and pushes into Supabase.** Do not attempt to port it.
-
----
-
-## 5. Six principles
-
-1. **Strangle, don't rewrite.** Move seams first, revenue last. A big-bang rewrite of a live Stripe/MT5 pipeline is the highest-risk move available.
-2. **One writer per concern.** Every action goes through the API. No direct client→table writes from Lovable, no raw DB access for ABDUL. Otherwise rules diverge.
-3. **Approval gate is non-negotiable.** Nothing containing a price, trade, or offer publishes without Jack's explicit tap — regardless of whether Jack, ABDUL, or a cron initiated it.
-4. **Execution is wake-independent.** ABDUL runs on Jack's laptop, which sleeps. Scheduling and publishing must execute server-side. ABDUL *commands*; TwinOS *executes*.
-5. **Secrets in keyring, never in files.** Service-role keys never reach the frontend or the repo.
-6. **Numbers counted from code.** No unverified claims; "verified" only when the check ran.
+The PC worker never opens a port. It asks the backend for jobs and posts results back.
 
 ---
 
-## 6. The mind — Supabase schema
+## 8. Backend on Lovable (decision 1)
 
-**Identity & revenue**
+A new Lovable project ("TwinOS") holds the dashboard and the backend. It is separate from the printezy Lovable project and its database.
 
-- `users` — telegram_id, username, language (EN/BM), tier, source_link_id, created_at
-- `payments` — user_id, provider (stripe/usdt/stars), amount, currency, status, provider_ref, created_at
-- `entitlements` — user_id, product_code, tier, granted_at, expires_at
-- `products` — code, name, tier, price, currency
+**One sub-choice remains, recommended option first:**
 
-**Content operations (the main time sink)**
-
-- `content_queue` — id, platform, content_type, body, media_url, status (`draft`/`pending_approval`/`approved`/`published`/`failed`), scheduled_for, published_at, requires_approval(bool), created_by
-- `action_log` — id, **actor** (`jack`/`abdul`/`dashboard`/`cron`), action, target_type, target_id, payload, created_at ← *mandatory audit trail*
-
-**Signals** (fed by EzyAi)
-
-- `signals` — id, pair, direction, entry, stop, targets, confidence, timeframe, created_at, status
-- `signal_outcomes` — signal_id, result, hit_at, r_multiple
-
-**Growth & attribution**
-
-- `source_links` — code, platform, campaign, invite_url, created_at
-- `member_sources` — user_id, source_link_id, joined_at, left_at, invite_source
-
-**Operations**
-
-- `health_checks` — service, status, last_beat_at, detail, checked_at
-
-Enable **RLS** from day one. Define this schema **before** pointing Lovable at Supabase — otherwise Lovable generates direct table calls that you will immediately rewrite.
-
----
-
-## 7. The rules — API surface
-
-Both Lovable and ABDUL call this. Same endpoints, same permissions.
-
-| Endpoint | Purpose | Who may call |
-|---|---|---|
-| `POST /content/draft` | Create draft | jack, abdul |
-| `POST /content/{id}/approve` | **Publish gate** | **jack only** |
-| `POST /content/{id}/schedule` | Server-side job | jack, abdul |
-| `GET /content/inbox` | Pending approvals | all |
-| `GET /analytics/posts` | Performance | all |
-| `GET /analytics/sources` | Attribution | all |
-| `POST /source_links` | Tracked invite link | jack, abdul |
-| `GET /health` | Service status | all |
-| `POST /signals/ingest` | EzyAi → Supabase | cron (scoped key) |
-
----
-
-## 8. The voice — ABDUL control layer
-
-ABDUL becomes a **client of the API**, not a database client. Implement a thin **MCP server** (`apps/mcp/`) exposing typed tools, so ABDUL and any future agent control TwinOS without guessing endpoints. Supabase ships an official MCP server — do **not** point ABDUL at raw tables; that bypasses the rules.
-
-**Capabilities:**
-
-| ABDUL command | Result |
-|---|---|
-| "Draft tomorrow's XAUUSD post" | Draft → approval inbox, waits |
-| "Approve the last draft" | Publishes — **explicit instruction only** |
-| "Schedule two TikTok reposts" | Server-side jobs |
-| "How did yesterday's post do?" | Reads analytics |
-| "Anything broken?" | Reads health — kills Z3-feed babysitting |
-| "Which source brought members?" | Reads attribution |
-
-**Guardrail:** ABDUL may **create drafts and read everything**. It publishes **only on explicit Jack instruction**. Regulators hold Jack accountable regardless of who drafted it — so the tap stays human.
-
----
-
-## 9. Roadmap
-
-| Phase | Weeks | Deliverable | Exit criteria |
+| Option | What it is | Fits TwinOS because | Watch out |
 |---|---|---|---|
-| **0 — Mind** | 1 | Supabase project, full schema, RLS, `action_log` | Tables queryable, empty |
-| **1 — Face** | 2–3 | Lovable dashboard: approval inbox, calendar, health | Jack approves a real post from the dashboard |
-| **2 — Voice** | 4 | TwinOS API + MCP; ABDUL commands live | ABDUL drafts + reads successfully |
-| **3 — Pipeline** | 5–6 | EzyAi→Supabase ingest, auto-drafts, cross-post, weekly digest | ≥60% hours cut |
-| **4 — Pocket** | 7+ | PWA push approvals | ≥70% hours cut |
+| **A. New Lovable project connected to a new Supabase project in Jack's own Supabase account** (recommended, if Lovable still offers the Supabase connection) | Lovable builds the UI and writes migrations and functions into Jack's Supabase | Full access for ABDUL's MCP server, the PC worker's scoped keys, database cron, secret storage for platform tokens, CLI migrations from this repo, `pg_dump` backups | Supabase free tier limits; project pauses after a week idle (the scheduler keeps it active) |
+| **B. Lovable Cloud** (Lovable's built-in backend) | Lovable manages the database and functions | Least setup | Less direct control of cron jobs, secrets and keys for outside workers; usage billed beyond Lovable's included allowance. Check both before choosing |
 
-**Do not skip Phase 0.** Lovable built against an undefined schema generates throwaway code.
+Either way, Lovable's GitHub sync points at this repo, so all generated code lands here.
 
----
-
-## 10. Lovable build order (use the Pro month)
-
-Build in this sequence — each is independently useful:
-
-1. **Approval Inbox** — highest value: drafts queue + tap-to-approve
-2. **Content Calendar** — drag-drop scheduling
-3. **Health / status page** — replaces manual feed checks
-4. **Analytics + attribution** — which sources produce retained members
-5. **Signal board** — read-only view of EzyAi output
-
-Connect Lovable's **GitHub sync** to this repo so generated code lands in one place.
+**Schema first:** the schema (§10) is written and reviewed before Lovable generates screens, as v1 required.
 
 ---
 
-## 11. Migration — strictly risk-ascending
+## 9. Modules and upgrade list
 
-| Order | Move | Risk |
+**[R]** = reuse from Jack's repos. **[PDF]** = specified in the three documents.
+
+### A. Mind
+1. New database, row-level security on every table, nothing readable without login except the public results view.
+2. `action_log` written by a database trigger: actor (`jack`, `abdul`, `ops_bot`, `dashboard`, `cron`, `ezyai`, `pc_worker`), action, target, payload, time.
+3. `settings` for business constants (IB numbers per broker, trial days, channel IDs, posting times). One source instead of hardcoded copies. **[R]**
+4. `products` with ladder and step, seeded from printezy `catalog.ts` after the price list is unified. **[R][PDF]**
+5. `brand_facts`, `style_guide`, `templates`, `hooks`, `calendar_slots`, `live_runsheets`, `personas` seeded from the PDFs. **[PDF]**
+6. Platform tokens stored only in the backend's secret store.
+7. Nightly backup pulled to Jack's PC by the PC worker.
+
+### B. Rules
+8. Functions per area: `content`, `approve`, `publish`, `tg-webhook`, `tv-webhook`, `signals-ingest`, `metrics`, `research`, `jobs`.
+9. Roles from login claims; scoped keys for EzyAi, the PC worker and ABDUL.
+10. Idempotent signal ingest ported from printezy's EzyAi endpoint (batches ≤50, per-row results). **[R]**
+11. Webhook secrets and signature checks ported from printezy. **[R]**
+12. Idempotency key on every retried write. **[R]**
+
+### C. Desk (the Posting Kit, automated)
+13. **EzyMap Desk** private group: Jack, the ops bot. Jack drops the map screenshot and raw lines; the bot replies with the draft within a minute. **[PDF]**
+14. Approve / Edit / Reject / Reschedule buttons; only Jack's Telegram ID can press them. **[R]** (ASAP `decision.py`, wsapi-dashboard `approvalService`)
+15. Edits by reply: "3: soften", "5: BM" apply to numbered drafts, as in the kit's Wednesday flow. **[PDF]**
+16. `[NEEDED]` placeholders block publishing until filled. **[PDF]**
+17. Prompt library: the kit's master prompt and 15 post prompts as editable templates. **[PDF]**
+18. Wednesday 14:30 batch: 7 lessons (5 skill + 2 Start Safe), Channel Audit, Monday poll, Saturday offer, numbered with suggested times, ready in the Desk group by 15:30. **[PDF]**
+19. Thursday auto-scheduling of the approved batch and logging to the content log. **[PDF]**
+20. Daily 07:40 reminder if no map has arrived; 19:55 reminder for the evening line.
+21. Short callback IDs under Telegram's 64-byte limit. **[R]**
+
+### D. Signals and results
+22. TradingView alert webhook → signal card draft (template 3) → Jack's tap → channel. Keeps COUNTER-TREND warnings. **[PDF]**
+23. EzyAi pushes signals and outcomes after `outcomes.record()`. **[R]**
+24. Result reply posted **as a reply under the original signal** when the board status changes (TP1, TP2, BE, SL). Wording from template 4. **[PDF]**
+25. Stop-if alarm: a signal with no result reply after its expiry window alerts Jack immediately (Growth Plan Q4 stop-if). **[PDF]**
+26. Strict win rate everywhere: W / (W + L), break-evens excluded. **[R][PDF]**
+27. Demo or shadow data never reaches a public post (EzyAi `quality.may_emit`). **[R]**
+28. Friday scorecard **image** generated from the board, posted to the channel and Threads, X kit if X stays manual. **[PDF][R]** (ASAP `receipt.py` Pillow renderer)
+29. Weekly signal number counter ("Free signal #3 this week"). **[PDF]**
+
+### E. Channel publisher
+30. Queue: `content_items` → `content_variants` (platform, language) → `publish_jobs`. **[R]** (tg_ezy_ai_os `contentStore.ts`)
+31. Status flow `draft → pending_approval → approved → scheduled → publishing → published | failed`.
+32. Scheduler runs every minute with pacing and backoff. **[R]** (wsapi-dashboard `outboundQueue.js`)
+33. Telegram provider: text, photo, video, album, inline buttons, pin, edit in place, reply-to. **[R]** (ASAP `channel_posts`, `build_keyboard`)
+34. Pinned **Start here** post managed as a template; disclosure and pledge lines locked word for word. **[PDF]**
+35. Hashtag index and a pinned table of contents updated automatically. **[PDF]**
+36. Monday poll posted as a native Telegram poll; results feed next week's lesson topics. **[PDF]**
+37. News alerts generated from the economic calendar 30 min before high-impact events. **[R][PDF]** (macro-trader `economic_calendar.py`, EzyAi `calendar.py`)
+38. Macro card at 08:15 from the macro bot digest. **[PDF]**
+39. Malaysian holiday calendar (no map, no signals; holiday notice). **[PDF]**
+40. Milestone posts drafted when members cross 1,000, 2,500, 5,000, 10,000. **[PDF]**
+41. One offer post per week maximum, enforced; value-to-offer ratio about 6:1 reported weekly. **[PDF]**
+42. Language test: two weeks BM-first, two weeks EN-first, compared on reactions per view. **[PDF]**
+43. Every bot link tagged (`?start=tt_live`, `?start=ch_pin`, per post), so sales trace back to posts. **[PDF][R]**
+
+### F. Repurposing (one TikTok → seven places)
+44. Drop folder `~/EzyMap/out/`: the clean, watermark-free export becomes an asset. **[PDF]**
+45. Captions per platform from the FYP pattern (IG shorter + 5 hashtags, YouTube searchable title, Threads two-line takeaway + question). **[PDF]**
+46. Instagram Reels via the official API (100 posts per 24 h). 
+47. Facebook Reels via the Pages API (30 per 24 h).
+48. Threads: chart screenshot + two lines (250 per 24 h). **[PDF]**
+49. YouTube Shorts: publish kit until the audit passes, then direct.
+50. TikTok: publish kit with hook text, caption, 3–5 hashtags and posting slot (12:30–13:30 or 20:00–22:00 to start). **[PDF]**
+51. X: screenshot or 3-post thread kit, copied in two taps. **[PDF]**
+52. Telegram Saturday "video of the week" picked from the week's best TikTok. **[PDF]**
+53. Per-platform validator: caption length, hashtags, duration, size. **[R]** (webcopy `formats.ts`)
+54. Friday 10-minute repurpose check replaced by an automatic "all platforms posted" report. **[PDF]**
+
+### G. Studio (lives and shorts)
+55. Live recordings (TikTok or Telegram video chat) → transcript (faster-whisper on the GPU) → highlight picks → clips. 
+56. Layout templates in the signature look: chart full, chart + face, blurred fill. No face tracking on chart videos. **[PDF]**
+57. Burned-in captions EN or BM, hook text in the first frame, the EzyMap end card. **[PDF]**
+58. In-video risk line (spoken or on screen), as SC rules expect for video. 
+59. Sunday live → trimmed YouTube long-form outlook (from Q2 2027). **[PDF]**
+60. Cover text of 3–5 words suggested from the hook. **[PDF]**
+61. Thumbnail drafts on the local image server with a pinned brand-safe model.
+
+### H. Telegram tracking (allowed methods + Telechurn)
+62. Named invite links created by the ops bot with the shared naming convention, so both TwinOS and Telechurn see them. **[PDF]**
+63. `chat_member` events and join requests stored, then folded into stays (joined, left, source link).
+64. Weekly Telechurn CSV import: joins, leaves and retention per link as the reference figures.
+65. Daily member count snapshot.
+66. Post view snapshots at +1 h, 24 h, 7 d through the ops bot's own login (no view inflation). Gives "views after 24h" for the content log and "average views as % of members" for the scoreboard. **[PDF]**
+67. Bot `/start` tags read from @EzyRegisterBot. **[R]**
+68. Funnel view: TikTok/ad → bot start → channel join → IB account / purchase. **[R]** (printezy attribution chain)
+69. Channel swap tracker: one link per swap partner, joins and 7-day retention per swap. **[PDF]**
+70. Referral reward tracking hook (the reward itself lives in the sales bot later). **[PDF]**
+71. Reference-channel benchmark cards (§4.10).
+
+### I. Community and moderation
+72. Discussion group moderation in the ops bot: CAS check on join, link block for new members, flood control, scam keywords ("account manager", "DM me for signals"), warn → mute → ban. **[R]**
+73. Join captcha through Telegram's join-request flow.
+74. Scam-impersonation watch: new accounts using "Jack" or "EzyMap" names in the group get flagged. **[PDF]**
+75. Repeat-question detector: a question asked twice gets proposed for Sarah's reply sheet. **[PDF]**
+76. Missed-message alert once per chat. **[R]**
+77. Unified inbox for IG/FB/YouTube comments (polled) and Threads replies; suggested replies, Jack taps to send. TikTok comments stay in the app.
+78. Live-moderator checklist for the trusted member during TikTok lives. **[PDF]**
+
+### J. Voice (Jasper replacement)
+79. Master prompt, rules, brand facts and banned words from the Posting Kit as the base. **[PDF]**
+80. Jack's own best posts (picked from the content log by 24 h views and reactions) as writing examples. 
+81. Jack's edits to drafts are saved and become new examples.
+82. BM written natively in the kit's casual style ("korang", "jom"), trading terms kept in English. **[PDF]**
+83. Model routing: Claude via ABDUL for map, audit, outlook and offers; local Malay-capable model for short lessons and captions; free cloud tiers only with no personal data.
+84. Hook bank and script templates served per pillar for TikTok recording. **[PDF]**
+
+### K. Research (Semrush, vidIQ, Creator Search Insights)
+85. Personas = the six ICPs with pain points and seed questions in EN, BM and Manglish. **[PDF]**
+86. Autocomplete expansion for Malaysia (`hl=ms`, `gl=my`) with question prefixes, slow and small.
+87. Search Console for printezy.money queries (Start Safe BM articles in Q2). **[PDF]**
+88. Bing keyword impressions as a free volume signal.
+89. YouTube competition score (about 100 keyword checks a day on the free quota).
+90. YouTube channel RSS for the reference channels that have YouTube (no quota).
+91. Weekly TikTok Creator Search Insights capture form (personal account has access). 
+92. Live Q&A and Monday poll answers become topic seeds (Jack's own audience, with consent notice). **[PDF]**
+93. Topic clusters scored by demand × ICP fit × low compliance risk; Monday brief proposes next week's 7 TikToks against the 28-day calendar. **[PDF]**
+94. Double-down alert: a TikTok above average triggers a "make part 2 within 48 h" task with the top comment attached. **[PDF]**
+
+### L. Analytics and Friday report
+95. Friday scoreboard (§4.8) generated automatically, with the two manual inputs requested Friday morning: Vantage numbers and TikTok numbers. **[PDF]**
+96. Content log rows written automatically: date, time, type, language, link, views 24 h, reactions, bot starts from its tag, notes. Sheet export kept. **[PDF]**
+97. Keep top 3 post types, fix or drop the bottom one: shown as a ranked table. **[PDF]**
+98. Pillar comparison for TikTok: watch time, % watched, followers, profile views, tagged bot starts. **[PDF]**
+99. Quarter target tracker and stop-if alarms (§1). **[PDF]**
+100. Revenue model check: rebate per active client entered monthly; the $30k/month mix recalculated with real numbers. **[PDF]**
+101. Cost per first-time depositor per campaign once the broker pilot starts (Q1 2027). **[PDF]**
+
+### M. Health
+102. Beats from EzyAi, ops bot, scheduler, PC worker, pollers; stale beat → Telegram alert. **[R]**
+103. Token expiry and quota watch (Meta, YouTube, backend limits).
+104. "Anything broken?" one-query answer for ABDUL and the dashboard.
+
+### N. ABDUL control
+105. TwinOS MCP server in `apps/mcp/`, registered next to `abdul mcp`.
+106. TwinOS verbs added to ABDUL's action schema via a `twinos_call()` copied from `hub_call()`, token in the keyring. **[R]**
+107. ABDUL may draft, run the batch, schedule non-claim posts, post result replies that come straight from the board, log, read everything, and request approval.
+108. ABDUL cannot approve maps, signals, offers, member results or anything with a price. That button exists only on Jack's phone.
+109. Voice commands: "draft tomorrow's lessons", "post the result for signal 3", "how did today's map do", "anything broken", "log CSI topic", "make a link for the swap with X", "clip yesterday's live", "Friday numbers".
+
+### O. Compliance engine
+110. Pre-post checklist from the kit run automatically on every variant (§12). **[PDF]**
+111. Claim detector: prices, levels, results, percentages, offers, broker names, testimonials → approval required.
+112. Required lines attached per post type and platform; publishing blocked if missing.
+113. Evidence trail per published post: checks passed, approver, time.
+
+### P. Revenue core (last, high risk)
+114. @EzyRegisterBot stays live and unchanged until TwinOS has run for weeks. Then migration with parallel running.
+115. Before moving: Stars payment idempotency, larger Stripe de-dupe window, service-role key replaced by a narrow read.
+
+---
+
+## 10. Schema
+
+`bigint` Telegram IDs, `timestamptz` everywhere, `ms` for Malay.
+
+- **Core:** `settings`, `brand_facts`, `products`, `personas`, `action_log`, `approvals`, `health_checks`, `alerts`, `jobs`, `baseline_hours`, `time_saved`
+- **Content:** `templates`, `style_guide`, `hooks`, `calendar_slots`, `live_runsheets`, `content_items` (pillar, icp, post_type), `content_variants` (platform, lang, body, media, claim_flags, board_refs, needed_fields), `assets`, `publish_jobs`, `platform_accounts`, `compliance_checks`, `content_log` (view)
+- **Signals:** `signals`, `signal_outcomes`, `signal_posts` (signal → channel message id, for reply-under)
+- **Telegram:** `invite_links` (name, source, campaign, partner, cost), `member_events`, `memberships`, `channel_daily`, `tg_posts`, `post_snapshots`, `telechurn_imports`, `bot_start_tags` (read copy), `mod_rules`, `moderation_events`
+- **Cross-platform:** `post_metrics`, `manual_metrics` (TikTok and Vantage weekly entries), `inbox_items`
+- **Research:** `queries`, `topic_clusters`, `briefs`, `csi_captures`, `benchmarks` (reference channels), `exemplars`
+- **Views:** `v_results_board`, `v_friday_scoreboard`, `v_funnel`, `v_quarter_targets`, `v_stop_if`
+
+---
+
+## 11. API and ABDUL tools
+
+| Endpoint | Purpose | Who |
 |---|---|---|
-| 1 | Content & publishing → Supabase | Low |
-| 2 | Health monitoring & alerting | Low |
-| 3 | Analytics & attribution | Low |
-| 4 | (Optional) Funnel bots consolidate | Medium |
-| 5 | **`@EzyRegisterBot` revenue core** | **High — LAST, payments parallel-running** |
+| `POST /desk/input` | Map screenshot + raw lines from the Desk group | ops bot |
+| `POST /content/draft` | Draft from a template | jack, abdul, cron |
+| `POST /content/{id}/request-approval` | Push to the Desk group | jack, abdul, cron |
+| `POST /content/{id}/approve` | Publish gate | **jack only** |
+| `POST /content/{id}/schedule` | Create publish jobs | jack; abdul for non-claim posts |
+| `POST /signals/ingest`, `POST /tv/alert` | EzyAi and TradingView in | scoped keys |
+| `POST /results/{signal}/reply` | Result reply from the board | abdul, cron |
+| `POST /assets/ingest` | Drop-folder export | pc worker |
+| `POST /links` | Named invite or bot link | jack, abdul |
+| `POST /metrics/manual` | Vantage and TikTok weekly numbers | jack, abdul |
+| `POST /imports/telechurn` | Telechurn CSV | jack, pc worker |
+| `GET /friday`, `GET /analytics/*`, `GET /health` | Reports | all |
+| `POST /research/csi`, `GET /research/brief` | Research | jack, abdul |
 
-Never move payments first. Retire old repos only after the destination carries live traffic.
+ABDUL tools mirror these: `twinos_draft`, `twinos_batch`, `twinos_request_approval`, `twinos_schedule`, `twinos_result_reply`, `twinos_link`, `twinos_manual_metrics`, `twinos_friday`, `twinos_health`, `twinos_csi_log`, `twinos_clip`, `twinos_brief`. There is no approve tool.
 
 ---
 
-## 12. Compliance & guardrails
+## 12. Compliance
 
-- **SC Malaysia** revised advertising guidance covers social media and finfluencers — including creators not formally engaged. Even unpaid promotion of capital-market products can fall in scope.
-- **TikTok financial-services policy** has Malaysia-specific requirements (CBM / SC registration) and restricts high-risk/forex trading promotions in many markets.
-- Enforce: every post carries required risk language; losses stay visible; results matched to the board before posting. Automate the disclaimer block so it cannot be omitted.
+**Jack is getting a lawyer's opinion before paid ads (decision 7).** Points to bring to that meeting, from the SC Malaysia documents found during research:
+- SC advertising guidelines (in force 1 Nov 2025) treat self-initiated finfluencers as advertisers, require balance, benefit disclosure and prominent warnings, and bar promoting services from persons the SC hasn't authorised (5.06), which touches broker IB links.
+- SC investment-advice guidance (Jul 2024) treats buy/sell calls in a paid signal group as carrying on advice; a disclaimer doesn't remove the licence question.
+- BNM: forex trading with parties other than licensed onshore banks or approved persons is illegal (FSA 2013 s.214).
+- TikTok: own-business promotion needs the content-disclosure toggle; financial ads in Malaysia only from registered advertisers.
 
----
+**Checks TwinOS runs on every post (Posting Kit checklist + SC points):**
 
-## 13. Risks
-
-| Risk | Mitigation |
+| Check | Pass if |
 |---|---|
-| Stripe/MT5 regression during migration | Move last, parallel-run, keep old bot live until proven |
-| PythonAnywhere free tier buckles | Migrate revenue bot early in the sequence, ahead of volume growth |
-| EzyAi Z3 feed instability persists | Ship Phase 2 health monitoring early — visibility before repair |
-| Lovable output diverges from schema | Schema-first; regenerate screens rather than hand-patching |
-| Scope creep back to 4 brands | Explicit non-goal; revisit only after Phase 4 |
+| Numbers | Every price, level and result matches Jack's input or the board; no `[NEEDED]` left |
+| Words | Nothing from the banned list (kit list + "best", "risk-free", "tanpa risiko") |
+| Risk line | Present on every map, signal, outlook and scorecard |
+| Video warning | Spoken or on-screen risk line inside every video, not caption only |
+| Instagram/Facebook | Warning placed before the "…more" cut |
+| One CTA | At most one; only one offer post per week |
+| Disclosure | Any broker-link mention carries the commission line |
+| Losses | Every signal has its result reply, including SL |
+| Results | Result and scorecard posts reference board rows; past-performance line present |
+| Member results | Written permission recorded; names and account numbers removed; numbers untouched |
+| Format | Under 900 characters unless long form; Telegram bold only on key numbers |
+| Language | Matches the planned slot |
+| TikTok kit | Disclosure-toggle reminder on product posts; "education only" in bio and lives |
 
 ---
 
-## 14. Open decisions
+## 13. Roadmap (aligned with the Growth Plan calendar)
 
-1. **Supabase:** new project or reuse existing EzyMap one?
-2. **Repo structure:** monorepo holding everything, or orchestration + dashboard only while the sales core stays in ASAP-TeleBot until migrated? *(Recommendation: monorepo, importing sales code last.)*
-3. **API runtime:** Supabase Edge Functions (Deno/TS) vs FastAPI on Fly.io *(Recommendation: Edge Functions if logic stays light; FastAPI if you port significant existing Python.)*
-4. **PWA vs native Android:** recommend PWA first.
+| Phase | Dates | TwinOS delivers | Growth Plan milestone it serves | Exit criteria |
+|---|---|---|---|---|
+| **0 — Plan and mind** | 1–7 Oct | Baseline hours week; unified price list and settings; schema written; new Lovable project and backend created; ops bot created; Desk group set up | Week 1: pinned Start here, pledge, Sarah support-only | Schema reviewed; baseline logged |
+| **1 — Desk loop** | 8–21 Oct | Desk drafts with approve buttons; Telegram publisher and scheduler; templates for all 15 post types; signal card from alerts; result replies under signals; stop-if alarm; compliance checks | Week 2: "a signal and its result post without you typing" | Jack approves the map and a signal from his phone; result reply posts by itself |
+| **2 — ABDUL + batch + Friday** | 22–31 Oct | MCP server and ABDUL verbs; Wednesday batch; scorecard image; Friday scoreboard with manual inputs; content log automatic; invite links + Telechurn import | Week 4: scorecard auto-posts Friday; first KPI sheet | Friday report arrives without Jack opening a spreadsheet |
+| **3 — Repurposing** | Nov | Meta app Live; IG/FB/Threads direct; TikTok/YouTube/X publish kits; drop-folder fan-out; YouTube audit applied; metrics pollers | "Social reposts: set up once"; stop hand-posting | One TikTok reaches 7 places with only the TikTok, YouTube and X taps by hand; ≥60% hours cut |
+| **4 — Community + tracking** | Nov–Dec | Moderation, scam watch, repeat-question detector; view snapshots; swap tracker; funnel view; reference benchmarks | Two channel swaps a week; Elite Circle opens | Every swap shows joins and 7-day retention |
+| **5 — Studio + research** | Dec–Jan | Live clipping; TikTok research brief; CSI capture; double-down alerts | TikTok at full pace; lives | A live becomes clips without CapCut; Monday brief every week; ≥70% hours cut |
+| **6 — Pilot readiness** | Jan 2027 | Ad landing attribution checked end to end; cost per FTD per campaign; quarter tracker | Broker pilot starts; EzyAI board goes public | Cost per FTD visible daily |
+| **7 — Q1–Q2 extras** | Feb–Jun 2027 | YouTube long-form from Sunday lives; BM SEO article briefs; WhatsApp retention hooks; annual-plan offer variants | EzyAI launch, YouTube weekly, BM SEO, WhatsApp flows | As per Growth Plan monthly list |
+| **8 — Revenue core** | After Phase 7 | Sales bot migration with parallel running | Bot merge (Growth Plan Q4) is Jack's separate track until then | Payments match the old bot for two weeks |
+
+**Note on the Growth Plan's VPS item:** it suggests a $10–20/month VPS for the bots. TwinOS itself needs no server. The sales bots' hosting is a separate decision for Jack (§16).
 
 ---
 
-## 15. Appendix — tool shortlist
+## 14. Reuse list (ranked)
 
-Retained from the earlier survey; only the parts still relevant to a single-brand EzyMap:
+1. printezy migrations and attribution chain (`supabase/migrations/*`, `lib/analytics.ts`, telegram `webhook.ts`, `bot/meta.server.ts`).
+2. wsapi-dashboard `outboundQueue.js`, `classifyMetaError`, `messageLog.claimWebhookEvent`.
+3. Approval kit: ASAP `handlers/decision.py`, wsapi-dashboard `approvalService` + `telegramAdminBot`, printezy `ebook:approve`, tg-ezy-chatbot `submissionStore.js`, tg_ezy_ai_os `contentStore.ts`.
+4. Posting Kit prompts, rules and checklist (the PDF) as the voice and compliance base.
+5. webcopy `prompts/copy.ts` (humaniser, banned words, platform tone), `formats.ts`, `bulk.ts`.
+6. Disclaimer strings: printezy `translations.ts`, ASAP `content.py`, EzyAi `formatting/message.py`.
+7. printezy EzyAi signal endpoint + `docs/ezyai_signal_client.py`.
+8. EzyAi `health.py`, `admin_alert`, `_send_safe`, `OutcomeStore.stats`, `calendar.py`, `quality.may_emit`.
+9. ASAP `channel_posts`, `build_keyboard`, `start_log.py`, `receipt.py`.
+10. macro-trader `economic_calendar.py`, `scheduler/tasks.py`.
+11. printezy `summarisePerformance` (strict win rate).
+12. Sarah reply CSV tools and printezy `replies*.ts`.
+13. ABDUL `mcp_serve`, `hub_call`, `tell_guest`, `redact`, `research`, `check_monitors`.
+14. viralai carousel renderer.
+15. AiAffil GitHub Actions cron as a free backup scheduler.
 
-- **Topic research:** TikTok Creator Search Insights, TikTok Creative Center — free, native
-- **Editing:** CapCut (templates), Canva (graphics)
-- **Native publishing:** TikTok Studio, Meta Business Suite, YouTube Studio
-- **Scheduling (pick one):** Metricool (analytics-led) or Repurpose.io (video distribution-led)
-- **Telegram analytics/attribution:** Telechurn (invite-link retention), TGStat (discovery), named invite links
-- **Community:** retain Sarah bot for FAQs; Combot only if moderation load grows
-- **Clip extraction:** OpusClip or Vizard, always human-reviewed for financial accuracy
-- **Avoid:** purchased members/views/reactions — they corrupt exactly the metrics this plan depends on
+Outside patterns (no code copied): Postiz provider design, tg-spam rules, OpenShorts layouts, faster-whisper, auto-editor.
+
+---
+
+## 15. Cost
+
+| Item | Cost |
+|---|---|
+| TwinOS backend | Free tier (option A) or Lovable's included usage (option B); check before choosing |
+| Lovable | Jack's existing plan |
+| Telechurn | Jack's existing subscription, kept |
+| Meta, YouTube, Telegram APIs; Search Console, Bing | Free |
+| Local AI and clipping | Electricity |
+| Claude drafts | Through ABDUL's existing Claude route |
+| X | Manual, or about $0.015 per post if Jack chooses |
+| EzyAi on Fly.io | Existing, unchanged |
+
+---
+
+## 16. Open questions for Jack
+
+1. **Backend sub-choice (§8):** new Supabase project connected to Lovable (recommended), or Lovable Cloud?
+2. **Paid services you use today:** besides Telechurn, which ones do you pay for (Combot, TGStat, Metricool, CapCut Pro, Canva Pro, TradingView plan)? Each gets a keep/connect line in §5.
+3. **Reference channels:** which platform and handle for each of 44fx, Callisto Fx, Orient Fx, 10X INTERNATIONAL and GARY GOLD TRADER? What do you like about each?
+4. **TradingView webhooks:** does your TradingView plan include webhook alerts?
+5. **Unified price list:** TradingView Pro at $249 lifetime only, or add $29/mo as the Growth Plan suggests? Trial 3 days everywhere?
+6. **Which bot sells today:** ASAP or the website's bot (Growth Plan asks the same)?
+7. **Telechurn export:** does your plan include CSV export, and do you name your links already? If so, what convention?
+8. **Desk group:** OK to create a private "EzyMap Desk" group with you and the new ops bot?
+9. **Sales bot hosting:** stay on PythonAnywhere free until Phase 8, or the Growth Plan's paid VPS now?
+10. **EzyMap repo:** will you make `printezy247/EzyMap` private this week?
