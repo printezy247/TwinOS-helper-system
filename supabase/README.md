@@ -29,9 +29,44 @@ supabase/
     0008_triggers.sql    action_log trigger, updated_at, approval/publish guards, membership fold
     0009_rls.sql         RLS on every table, policies per role, grants
     0010_cron.sql        pg_cron + pg_net, twinos_cron_call(), example schedules (commented)
+    0011_contract.sql    reconciles the schema with the Edge Functions: the three missing
+                         tables (api_keys, idempotency_keys, tg_updates), the columns the
+                         functions read and write, the post_type rename, the approval
+                         authority, and the views that had to follow
   seed.sql               business inputs from the PDFs and printezy/EzyAi (idempotent)
   tests/smoke.sql        asserts: strict win rate, guards, action_log, stop-if, RLS
 ```
+
+## Why 0011 exists
+
+`0001`–`0010` and `supabase/functions/` were written against two different
+readings of `docs/API.md`. `deno check` passed because the functions are typed
+against their own interfaces rather than against Postgres, and the migrations
+loaded because nothing had ever executed the two together. The first real
+`db push` would have failed on every function call.
+
+`0011_contract.sql` is additive: no earlier migration is rewritten, and every
+column the earlier files use is still there. Where the two sides disagreed on a
+name, the migration keeps its own column and adds the function-side one, with a
+trigger or a generated view keeping them in step. It was verified on a real
+Postgres 17 by loading `0001`–`0011` + `seed.sql` and running `tests/smoke.sql`,
+which CI now does on every push.
+
+Three decisions inside it are worth knowing:
+
+- **`post_type` uses the Posting Kit names** (`signal_card`, `result_reply`,
+  `channel_audit`, `holiday`). Everything that writes a post type is an Edge
+  Function, so the enum follows the functions. The short names are gone, not
+  aliased, so there is one vocabulary.
+- **The approval authority is the `approvals` row**, not
+  `content_variants.approved_by`. `approve/index.ts` writes
+  `{content_id, decision, by_actor, by_subject, via}` and then flips the item
+  status; it never sets `approved_by`. `twinos_approved_for()` is the single
+  predicate both the variant guard and the function path go through.
+- **`board_rule` is a narrow exception, not a hole.** A `via = 'board_rule'`
+  approval (plan §9.N.107, ABDUL may post a result reply that comes straight from
+  the board) is accepted only for a `result_reply` whose variant claims no
+  `price` and no `offer`. Anything with money in it still needs Jack.
 
 ## Apply
 
@@ -42,13 +77,22 @@ empty project created in the Supabase dashboard (§16.3 decides which account).
 cd TwinOS-helper-system
 supabase login
 supabase link --project-ref <ref>        # writes project_id into config.toml
-supabase db push                         # applies migrations/0001..0010 in order
+supabase db push                         # applies migrations/0001..0011 in order
 psql "$(supabase db url)" -v ON_ERROR_STOP=1 -f supabase/seed.sql   # or: supabase db reset --linked (migrations + seed)
 psql "$(supabase db url)" -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql
 ```
 
 Local stack (needs Docker): `supabase start && supabase db reset` applies
 migrations and `seed.sql`, then `psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/tests/smoke.sql`.
+
+A plain Postgres works too — `0001_core.sql` creates `anon`, `authenticated` and
+`service_role` if they are missing, which is what the CI job relies on:
+
+```bash
+for f in supabase/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"; done
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/tests/smoke.sql
+```
 
 Migrations are idempotent where practical (`if not exists`, `create or replace`,
 `drop policy if exists`), so re-running `db push` after an edit is safe. The seed
@@ -88,18 +132,29 @@ Jack and the dashboard get the claim through a Supabase Auth hook
 | `dashboard` | read all; writes only through RPC / Edge Functions |
 | `anon` | `select` on `v_results_board` only |
 
-Guards that no role can bypass (triggers, 0008):
+Guards that no role can bypass (triggers, 0008 and 0011):
 
 - `content_variants.requires_approval` is forced on when `claim_flags` is non-empty
-  or the post type is gold_map, signal, result, scorecard, offer, member_result or outlook.
-- `status → approved` only with `approved_by = 'jack'`, written by `jack` (or the
-  service role acting on Jack's Telegram tap). Same for `approvals.decision`.
-- `status → scheduled/publishing/published` is blocked for result and scorecard
-  posts without `board_refs`, for any unresolved `[NEEDED]` field, and for anything
-  that requires approval but has none.
+  or the post type is gold_map, signal_card, result_reply, scorecard, offer,
+  member_result or outlook.
+- `status → approved` requires a Jack decision: either the variant itself records
+  `approved_by = 'jack'`, or an `approvals` row exists for the item with
+  `decision = 'approve'` and `by_actor = 'jack'`. `twinos_approved_for()` is the
+  one predicate both paths go through. ABDUL, the dashboard and cron cannot
+  supply one.
+- `approvals.decision` is refused for any writer that is not `jack`, with one
+  narrow exception: `via = 'board_rule'`, the plan's §9.N.107 rule that ABDUL may
+  post a result reply built straight from the board. That exception applies only
+  to a `result_reply` whose variant claims no `price` and no `offer`.
+- `status → scheduled/publishing/published` is blocked for result_reply and
+  scorecard posts without `board_refs`, for any unresolved `[NEEDED]` field, and
+  for anything that requires approval but has none.
 - `action_log` is written for every insert/update/delete on `content_variants`,
   `publish_jobs`, `approvals`, `invite_links`, `products`, `settings`, `mod_rules`,
   with the actor taken from the JWT claim (`system` when there is none).
+
+`tests/smoke.sql` asserts each of these, including that a non-Jack `approvals`
+row is refused and that `board_rule` cannot carry a price or an offer.
 
 Tokens never live in tables: `platform_accounts.vault_secret_name` holds the name
 of a Vault secret, Edge Functions read the value.
@@ -131,6 +186,7 @@ against it and must not redesign tables.
 | Object | What it holds |
 |---|---|
 | `settings` | Business constants as jsonb: timezone, channel ids, posting times, IB numbers, trial days, quarter targets; `needs_confirm` flags placeholders |
+| `api_keys` | Scoped keys for ABDUL, the PC worker and EzyAi. Only the SHA-256 of each key is stored; `mint_api_key(name, role)` returns the plain key once |
 | `brand_facts` | Promise, pledge, IB disclosure, strict win-rate rule, hashtag index — locked lines pasted verbatim |
 | `products` | The price list: three ladders with `ladder`, `step`, `billing` (monthly/lifetime/one_time); offer posts may only quote from here |
 | `personas` | The six ICPs with pain points and seed questions (EN/BM/Manglish) |
@@ -181,9 +237,14 @@ against it and must not redesign tables.
 | `v_funnel` | TikTok → bot start → channel join → IB account / depositor per week |
 | `v_quarter_targets` | Growth Plan targets vs actuals |
 | `v_stop_if` | Open stop-if alarms: signal past its window with no result reply, cost per FTD, refund rate |
+| `idempotency_keys` | Stored responses for retried writes, so a repeat replays instead of double-posting |
+| `tg_updates` | Telegram `update_id` de-dupe; Telegram re-sends an update on any non-200 |
 
 ## Not done here (by design)
 
-Edge Functions, the ops bot, the Lovable screens and the MCP server are Phase 1+.
-The migrations have not been run against a live Postgres on this machine (none
-installed); run `tests/smoke.sql` on the first `db push` or local `supabase start`.
+The Edge Functions, the ops bot, the Lovable screens and the MCP server are
+Phase 1+. The migrations, the seed and `tests/smoke.sql` have been run end to end
+against a real Postgres 17 and pass; CI repeats that on every push. What has
+**not** happened yet is a `db push` to Jack's own Supabase project, so nothing
+has been verified against Supabase's own extensions (`pg_cron`, `pg_net`,
+`pgvector`) or a real deployment.

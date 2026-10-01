@@ -7,9 +7,12 @@ Exit: schema reviewed; baseline logged.
 - [ ] Baseline week: hours by task logged (`baseline_hours`) — Jack
 - [ ] Unified monthly-first price list decided (§16 Q2) — Jack
 - [ ] Reference-channel handles given (§16 Q1) — Jack
-- [ ] Schema written and reviewed (`supabase/migrations`) — migrations agent
-- [ ] Seed: settings, products, brand_facts, style_guide, 15 templates, hooks, calendar_slots, personas (`supabase/seed.sql`) — seed agent
-- [ ] Supabase project created in Jack's account, region Singapore; `db push`; seed applied — Jack
+- [x] Schema written and reviewed (`supabase/migrations`, 0001–0011)
+- [x] Schema verified against a real Postgres: migrations + seed + `tests/smoke.sql` load and pass, and CI repeats it on every push
+- [x] Schema reconciled with the Edge Functions (`0011_contract.sql`) — the two halves had drifted and nothing had ever run them together
+- [x] Seed: settings, brand_facts, products, personas, 15 templates, style_guide, hooks, calendar_slots, live_runsheets, mod_rules, benchmarks (`supabase/seed.sql`)
+- [x] MCP `ENDPOINTS` matched to the deployed function routes; 40 tests pass
+- [ ] Supabase project created in Jack's account, region Singapore; `db push`; seed applied — Jack (`docs/SETUP.md`)
 - [ ] `pg_cron`, `pg_net` enabled; `assets` bucket created — Jack
 - [ ] Jack's login created with `twinos_role = jack` — Jack
 - [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / Fly — Jack
@@ -22,6 +25,9 @@ Exit: schema reviewed; baseline logged.
 - [ ] Invite-link naming convention agreed (`src-campaign-yymm`) — Jack
 - [ ] `printezy247/EzyMap` made private — Jack
 - [x] Backend scaffolding: `_shared`, ten functions, PC worker, docs, CI (this repo, Phase 0 commit)
+
+**Phase 1 does not start until Jack confirms the Supabase project exists and the
+functions are deployed.** Until then the work is local only.
 
 ## Phase 1 — Desk loop (8–21 Oct)
 Exit: Jack approves the map and a signal from his phone; a result reply posts by itself.

@@ -146,34 +146,45 @@ Header `X-Telegram-Bot-Api-Secret-Token` = derived secret (see `bots/ops/README.
 
 ## Schema contract these functions assume
 
-Owned by `supabase/migrations` (other agent). Column names used by the functions, so the two stay aligned:
+Owned by `supabase/migrations`. Column names the functions touch, kept in step
+by `0011_contract.sql`; `supabase/tests/smoke.sql` and the CI job assert the two
+still agree. Where an earlier migration used a different name for the same
+value, both exist and a trigger keeps them in step — the column the functions
+read is the one listed here.
 
 | Table | Columns the functions touch |
 |---|---|
-| `settings` | `key` pk, `value` text |
+| `settings` | `key` pk, `value` jsonb |
 | `api_keys` | `id`, `name`, `role`, `key_prefix`, `key_hash` unique, `last_used_at`, `revoked_at`; RPC `mint_api_key(name, role)` returns the plain key once |
 | `idempotency_keys` | `scope`, `key` (pk together), `request_hash`, `status`, `response` jsonb, `created_at` |
-| `action_log` | `actor`, `action`, `target`, `payload` jsonb, `at` |
-| `templates` | `id`, `post_type`, `lang`, `body`, `fields` text[], `required_lines` text[], `char_limit`, `approval_rule`, `active`, `version` |
+| `action_log` | `actor`, `action`, `target_table`, `target_id`, `payload` jsonb, `created_at` |
+| `templates` | `id`, `key` (= post type), `lang`, `body`, `fields` jsonb, `required_lines` text[], `char_limit`, `approval_rule`, `active`, `version` |
 | `content_items` | `id` uuid, `post_type`, `lang`, `pillar`, `icp`, `title`, `status`, `template_id`, `source` jsonb, `signal_id`, `scheduled_at`, `created_by`, `created_at`, `updated_at`, `desk_chat_id`, `desk_message_id`, `desk_state`, `edit_note`, `approved_at`, `published_at`, `published_ref`, `last_error`, `reject_note`, `reply_to_message_id`, `target_chat_id`, `pin`, `result_status` |
-| `content_variants` | `id`, `content_id`, `platform`, `lang`, `body`, `media` jsonb, `buttons` jsonb, `claim_flags` text[], `needed_fields` text[], `compliance` jsonb |
+| `content_variants` | `id`, `content_id` (= `item_id`), `platform`, `lang`, `body`, `media` jsonb, `buttons` jsonb, `claim_flags` text[], `needed_fields` text[], `compliance` jsonb, `status`, `approved_by`, `approved_at` |
 | `compliance_checks` | `variant_id`, `ok`, `needs_approval`, `findings` jsonb |
-| `approvals` | `content_id`, `decision`, `by_actor`, `by_subject`, `via`, `note`, `run_at` |
+| `approvals` | `content_id`, `decision`, `by_actor`, `by_subject`, `via`, `note`, `run_at`, `decided_by`, `decided_at` |
 | `publish_jobs` | `id`, `content_id`, `variant_id` unique, `platform`, `run_at`, `status` (queued/claimed/done/failed), `attempts`, `claimed_at`, `done_at`, `last_error`, `created_by` |
 | `tg_posts` | `chat_id`, `message_id`, `content_id`, `variant_id`, `post_type`, `posted_at` |
 | `tg_updates` | `update_id` pk (webhook de-dupe) |
-| `signals` | `id`, `external_id` unique, `source`, `symbol`, `direction`, `status`, `entry_low`, `entry_high`, `stop_price`, `tp1`, `tp2`, `rr`, `setup`, `setup_score`, `timeframe`, `counter_trend`, `current_price`, `result_r`, `result_pips`, `quality`, `raw`, `opened_at`, `closed_at`, `updated_at` |
-| `signal_outcomes` | `signal_id`, `status`, `result_r`, `result_pips`, `raw`, `at` |
-| `signal_posts` | `signal_id`, `chat_id`, `message_id`, `content_id`, `kind` (signal/result), `status_posted` |
-| `member_events` | `chat_id`, `user_id`, `username`, `event`, `old_status`, `new_status`, `invite_link`, `invite_link_name`, `via_join_request`, `at` |
+| `signals` | `id`, `external_id` unique, `source`, `symbol`, `direction`, `status`, `entry_low`, `entry_high`, `stop_price`, `tp1`, `tp2`, `rr`, `setup`, `timeframe`, `counter_trend`, `result_r`, `result_pips`, `quality`, `raw`, `opened_at`, `closed_at`, `updated_at` — each of these is bridged to its EzyAi-named twin (`pair`, `stop_loss`, `rr_target`, `r_multiple`, `data_source`, `signal_at`, `resolved_at`) by `trg_signal_bridge`, so the board views and EzyAi's own ingest keep their spelling |
+| `signal_outcomes` | `signal_id`, `status_new` (= `status`), `result_r`, `result_pips`, `raw`, `at` |
+| `signal_posts` | `signal_id`, `chat_id`, `message_id`, `content_id`, `kind` (signal/result/card), `status_posted` |
+| `member_events` | `chat_id`, `user_id`, `username`, `event`, `old_status`, `new_status`, `invite_link`, `invite_link_name`, `via_join_request`, `at`; `kind` and `occurred_at` are derived so the membership fold still works |
 | `mod_rules` / `moderation_events` | `kind`, `pattern`, `action`, `enabled` / `chat_id`, `user_id`, `message_id`, `hits` jsonb, `text_excerpt`, `at` |
 | `post_snapshots` | `chat_id`, `message_id`, `kind`, `value`, `detail` jsonb, `at` |
-| `health_checks` | `source`, `status`, `detail` jsonb, `at` |
-| `alerts` | `kind`, `severity`, `message`, `payload`, `at`, `resolved_at` |
+| `health_checks` | `source`, `status` (ok/degraded/down), `detail` jsonb, `at` |
+| `alerts` | `kind`, `severity` (info/medium/high/critical), `message`, `payload`, `at`, `resolved_at`, `dedupe_key` |
 | `jobs` | `id`, `kind`, `payload`, `status`, `priority`, `run_at`, `claimed_by`, `claimed_at`, `attempts`, `result`, `last_error`, `done_at`, `created_by`, `created_at` |
 | `assets` | `id`, `storage_path`, `bucket`, `kind`, `bytes`, `sha256` unique, `source`, `meta`, `created_by` |
 | `telechurn_imports` | `week_start`, `link_name` (unique together), `joins`, `leaves`, `retained`, `raw`, `imported_by` |
-| `manual_metrics` | `week_start`, `source` (unique together), `metrics` jsonb, `entered_by`, `entered_at` |
+| `manual_metrics` | `week_start`, `source` (unique together with a non-null `metrics`), `metrics` jsonb, `entered_by`, `entered_at`; a trigger explodes the bag into the long `(week_start, kind, metric, value)` rows the views read |
 | `v_friday_scoreboard` | view with `week_start` + the §4.8 numbers |
 
 Storage bucket: `assets` (private).
+
+**Two vocabularies worth knowing.** `post_type` is one enum with the Posting Kit
+names (`signal_card`, `result_reply`, `channel_audit`, `holiday`), because the
+functions are what write it. `signal_posts.kind` and `signals` columns each keep
+both spellings because EzyAi's ingest and the board views predate the functions;
+`v_stop_if` and `v_friday_scoreboard` count `kind in ('card', 'signal')` so
+neither writer under-reports.
