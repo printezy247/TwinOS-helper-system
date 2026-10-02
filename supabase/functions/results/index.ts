@@ -206,21 +206,32 @@ serve(async (req) => {
     const hours = Number((await setting(SETTING_KEYS.signalExpiryHours)) ?? 48);
     const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
     const { data: posted } = await db.from("signal_posts").select("signal_id, kind");
-    const withCard = new Set((posted ?? []).filter((p) => p.kind === "signal").map((p) => p.signal_id));
+    // 0011 widened the card kind to 'card' | 'signal'; count both, like v_stop_if.
+    const withCard = new Set((posted ?? []).filter((p) => p.kind === "signal" || p.kind === "card").map((p) => p.signal_id));
     const withResult = new Set((posted ?? []).filter((p) => p.kind === "result").map((p) => p.signal_id));
     const { data: closed } = await db.from("signals").select("id, external_id, status, closed_at, opened_at")
       .or(`closed_at.not.is.null,opened_at.lt.${cutoff}`);
     const missing = (closed ?? []).filter((s) => withCard.has(s.id) && !withResult.has(s.id));
-    if (missing.length) {
-      await db.from("alerts").insert(missing.map((s) => ({
+
+    // One open alert per signal. Without the key this cron tick (every 10 min)
+    // would insert a fresh alert and message Jack again for the same signal.
+    const keys = missing.map((s) => `stop_if:${s.id}`);
+    const { data: open } = keys.length
+      ? await db.from("alerts").select("dedupe_key").in("dedupe_key", keys).is("resolved_at", null)
+      : { data: [] as Array<{ dedupe_key: string | null }> };
+    const known = new Set((open ?? []).map((a) => a.dedupe_key));
+    const fresh = missing.filter((s) => !known.has(`stop_if:${s.id}`));
+    if (fresh.length) {
+      await db.from("alerts").insert(fresh.map((s) => ({
         kind: "stop_if_missing_result", severity: "critical",
-        message: `signal ${s.external_id} (${s.status}) has no result reply`, payload: { signal_id: s.id },
+        message: `signal ${s.external_id} (${s.status}) has no result reply`,
+        dedupe_key: `stop_if:${s.id}`, payload: { signal_id: s.id },
       })));
       const jack = await requireSetting(SETTING_KEYS.jackTelegramId, "TWINOS_JACK_TELEGRAM_ID");
-      await sendMessage(Number(jack), `🚨 STOP-IF: ${missing.length} signal(s) without a result reply:\n` + missing.map((s) => `• ${s.external_id} (${s.status})`).join("\n"));
+      await sendMessage(Number(jack), `🚨 STOP-IF: ${fresh.length} signal(s) without a result reply:\n` + fresh.map((s) => `• ${s.external_id} (${s.status})`).join("\n"));
     }
-    await logAction({ actor: caller.actor, action: "results.stop_if", payload: { missing: missing.length } });
-    return json({ ok: true, missing: missing.map((s) => s.external_id) });
+    await logAction({ actor: caller.actor, action: "results.stop_if", payload: { missing: missing.length, alerted: fresh.length } });
+    return json({ ok: true, missing: missing.map((s) => s.external_id), alerted: fresh.map((s) => s.external_id) });
   }
 
   if (tail[0] === "run") {

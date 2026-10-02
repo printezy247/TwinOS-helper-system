@@ -516,5 +516,28 @@ begin
   raise notice 'ok: a result_reply job is claimed once';
 end $$;
 
+-- 17. a stop-if alert is raised once per signal while it is open (P1.6).
+--     results/stop-if runs every 10 minutes; without dedupe_key it would insert
+--     a new alert and message Jack again on every tick.
+do $$
+declare
+  v_caught boolean := false;
+begin
+  insert into public.alerts (kind, severity, message, dedupe_key)
+    values ('stop_if_missing_result', 'critical', 'smoke stop-if', 'smoke-stopif-1');
+  begin
+    insert into public.alerts (kind, severity, message, dedupe_key)
+      values ('stop_if_missing_result', 'critical', 'smoke stop-if again', 'smoke-stopif-1');
+  exception when unique_violation then
+    v_caught := true;
+  end;
+  assert v_caught, 'a second open alert with the same dedupe_key must be refused';
+
+  update public.alerts set resolved_at = now() where dedupe_key = 'smoke-stopif-1';
+  insert into public.alerts (kind, severity, message, dedupe_key)
+    values ('stop_if_missing_result', 'critical', 'smoke stop-if after resolve', 'smoke-stopif-1');
+  raise notice 'ok: stop-if alerts dedupe while open and can re-fire after resolve';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
