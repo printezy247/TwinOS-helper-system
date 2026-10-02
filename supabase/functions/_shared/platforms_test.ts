@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
-import { adaptCaption, FANOUT_DEFAULT, type FanResult, fanoutSummary, isKit, isKitPlatform, validatePlatform } from "./platforms.ts";
+import { adaptCaption, FANOUT_DEFAULT, type FanResult, fanoutSummary, isKit, isKitPlatform, kitRefuses, validatePlatform } from "./platforms.ts";
 import { hasRiskLine } from "./compliance.ts";
 
 const RISK = "Map only, not financial advice.";
@@ -100,4 +100,13 @@ Deno.test("fanoutSummary: providers say where to approve, kits carry the caption
   assert(text.includes("<pre>Gold &lt;zone&gt; held</pre>"));
   assert(/X[^\n]*(blocked|compliance)/i.test(text), "a kit that fails the checks is not offered for copying");
   assert(!text.includes("<pre>x</pre>"));
+});
+
+Deno.test("kitRefuses: a kit cannot be approved or rescheduled, but it can be rejected", () => {
+  const kit = { via: "fanout", kit: true };
+  assertEquals(kitRefuses(kit, "approve"), true);
+  assertEquals(kitRefuses(kit, "reschedule"), true);
+  assertEquals(kitRefuses(kit, "reject"), false);
+  assertEquals(kitRefuses({ via: "fanout", kit: false }, "approve"), false);
+  assertEquals(kitRefuses(null, "approve"), false);
 });
