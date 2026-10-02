@@ -5,6 +5,7 @@
  *                           (Malaysia, English / Malay / Manglish) → queries + a scored topic_clusters row per seed
  *   POST /research/brief    (cron, Monday 07:00 MYT) next week's 28-day calendar slots with the best fitting
  *                           scored topic for each → briefs, and a short note in the Desk
+ *   POST /research/article  { topic | cluster_id, lang? } a search-article brief (BM first) from the autocomplete suggestions
  *   POST /research/csi      { topic, category?, metric?, value?, trend?, note? } one TikTok Creator Search
  *                           Insights reading Jack typed in → csi_captures
  *
@@ -20,6 +21,7 @@ import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
 import { cycleWeek, nextMonday } from "_shared/batch.ts";
 import { similarity } from "_shared/moderation.ts";
+import { articleBrief } from "_shared/articles.ts";
 import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, scoreTopic, topicRisk } from "_shared/research.ts";
 
 const LANGS = ["en", "ms", "manglish"] as const;
@@ -55,6 +57,25 @@ serve(async (req) => {
     if (error) throw bad(`csi_captures: ${error.message}`);
     await logAction({ actor: caller.actor, action: "research.csi", payload: { topic: row.topic } });
     return json({ ok: true }, 201);
+  }
+
+  if (tail[0] === "article") {
+    requireRole(caller.role, "research.brief");
+    const topic = typeof body.topic === "string" ? body.topic.trim() : "";
+    const { data: cluster } = body.cluster_id
+      ? await db.from("topic_clusters").select("id, name").eq("id", String(body.cluster_id)).maybeSingle()
+      : topic
+      ? await db.from("topic_clusters").select("id, name").eq("name", topic).limit(1).maybeSingle()
+      : { data: null };
+    const name = (cluster?.name as string | undefined) ?? topic;
+    if (!name) throw bad("topic or cluster_id is required");
+    const { data: found } = await db.from("queries").select("term, lang").eq("prefix", name)
+      .order("captured_at", { ascending: false }).limit(60);
+    const ms = (found ?? []).filter((q) => q.lang === "ms").length;
+    const lang = body.lang === "en" || body.lang === "ms" ? body.lang : ms * 2 >= (found ?? []).length ? "ms" : "en";
+    const brief = articleBrief({ topic: name, lang, queries: (found ?? []).map((q) => String(q.term)) });
+    if (cluster) await db.from("topic_clusters").update({ notes: brief.text }).eq("id", cluster.id as string);
+    return json({ ok: true, topic: name, ...brief });
   }
 
   if (tail[0] === "expand") {
