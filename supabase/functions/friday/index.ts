@@ -117,6 +117,17 @@ serve(async (req) => {
       }
       : {};
     const fields: Record<string, unknown> = { week, ...sb, ...weekly, board_url: boardRow?.value ?? "" };
+    // The hours line (P1.10): what the week cost by hand vs what TwinOS did.
+    const [{ data: baseline }, { data: saved }] = await Promise.all([
+      db.from("baseline_hours").select("minutes").eq("week_start", week),
+      db.from("time_saved").select("minutes_saved").gte("occurred_at", `${week}T00:00:00Z`),
+    ]);
+    const baselineMin = (baseline ?? []).reduce((a, r) => a + Number(r.minutes ?? 0), 0);
+    const savedMin = Math.round((saved ?? []).reduce((a, r) => a + Number(r.minutes_saved ?? 0), 0));
+    if (baselineMin > 0 || savedMin > 0) {
+      const h = (n: number) => (n / 60).toFixed(1);
+      fields.hours = `Hours: *${h(baselineMin)}h* logged by hand, TwinOS saved *${h(savedMin)}h*.`;
+    }
     const nums = [...Object.values(sb), ...Object.values(weekly), wk?.best_trade?.r, wk?.worst_trade?.r].map(Number).filter(Number.isFinite);
     const draft = await createDraft({
       post_type: "scorecard", lang: "en", fields, allowed_numbers: nums,

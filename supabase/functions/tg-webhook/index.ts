@@ -20,6 +20,7 @@ import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.t
 import * as tg from "_shared/tg.ts";
 import { createDraft, pushToDesk, resolveShort } from "_shared/content.ts";
 import { check as complianceCheck, type PostType } from "_shared/compliance.ts";
+import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
 import { logAction } from "_shared/log.ts";
 
 const ACTOR = "ops_bot";
@@ -165,6 +166,8 @@ const HELP_TEXT = [
   "",
   "/status - anything broken?",
   "/friday - this week's Friday numbers so far",
+  "/hours &lt;task&gt; &lt;minutes&gt; [note] - log what a task cost by hand",
+  "/hours today - today's total and the week so far",
   "/help - this message",
 ].join("\n");
 
@@ -209,8 +212,52 @@ async function onDeskCommand(m: Message, cmd: string): Promise<void> {
     return;
   }
 
+  if (cmd === "hours") { await onHours(m); return; }
+
   if (cmd === "help" || cmd === "start") { await say(HELP_TEXT); return; }
   await say(`I don't know /${tg.escapeHtml(cmd)}.\n\n${HELP_TEXT}`);
+}
+
+/**
+ * `/hours` — the Week-1 baseline log (decision 6). Jack only: every command in
+ * the Desk already passed the jack-id check in onDeskMessage.
+ */
+async function onHours(m: Message): Promise<void> {
+  const say = (html: string) => tg.sendMessage(m.chat.id, html, { parse_mode: "HTML", reply_to_message_id: m.message_id });
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  const parsed = parseHoursCommand(m.text ?? "");
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD in MYT
+  const week = mondayOf(day);
+  const db = admin();
+
+  if (parsed.kind === "bad") { await say(`✏️ ${tg.escapeHtml(parsed.error)}`); return; }
+
+  if (parsed.kind === "log") {
+    const { error } = await db.from("baseline_hours").insert({
+      week_start: week, day, task: parsed.task, minutes: parsed.minutes, note: parsed.note, logged_by: "jack",
+    });
+    if (error) { await say(`⚠️ Could not log that: ${tg.escapeHtml(error.message)}`); return; }
+    await logAction({ actor: "jack", action: "baseline.hours", payload: { task: parsed.task, minutes: parsed.minutes, day, week } });
+    await say(`✅ Logged <b>${formatMinutes(parsed.minutes)}</b> on <b>${tg.escapeHtml(parsed.task)}</b> for ${day}${parsed.note ? ` — ${tg.escapeHtml(parsed.note)}` : ""}.`);
+    return;
+  }
+
+  const { data } = await db.from("baseline_hours").select("task, minutes").eq("day", day);
+  const byTask = new Map<string, number>();
+  for (const r of data ?? []) byTask.set(r.task as string, (byTask.get(r.task as string) ?? 0) + Number(r.minutes));
+  const todayTotal = [...byTask.values()].reduce((a, b) => a + b, 0);
+
+  const { data: wk } = await db.from("baseline_hours").select("minutes").eq("week_start", week);
+  const weekTotal = (wk ?? []).reduce((a, r) => a + Number(r.minutes), 0);
+
+  const lines = [...byTask.entries()].sort((a, b) => b[1] - a[1]).map(([t, min]) => `· ${tg.escapeHtml(t)}: ${formatMinutes(min)}`);
+  await say([
+    `<b>Hours — ${day}</b>`,
+    ...(lines.length ? lines : ["Nothing logged today yet."]),
+    "",
+    `Today: <b>${formatMinutes(todayTotal)}</b> · week of ${week}: <b>${formatMinutes(weekTotal)}</b>`,
+    "Log with <code>/hours &lt;task&gt; &lt;minutes&gt; [note]</code>.",
+  ].join("\n"));
 }
 
 async function onDeskMessage(m: Message): Promise<void> {

@@ -412,7 +412,8 @@ Total: *{{total_r}}R*
 Top trade: {{?best}}
 Worst trade: {{?worst}}
 
-Every trade is on the board: {{board_url}}$b$ where key = 'scorecard';
+Every trade is on the board: {{board_url}}
+{{?hours}}$b$ where key = 'scorecard';
 update public.templates set fields_list = '{dates,last_week,support,resistance,events,plan}', body = $b$*WEEKLY OUTLOOK | {{dates}}*
 
 {{last_week}}
