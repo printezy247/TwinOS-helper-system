@@ -47,9 +47,13 @@ export function keyboardVerbs(kb: InlineButton[][]): string[] {
         push("nop");
         continue;
       }
-      const item = /^([a-z_]{1,16}):[0-9a-f]{8}$/.exec(d);
+      const item = /^([a-z_]{1,16}):[0-9a-f]{8}(?::[a-z0-9]{1,16})?$/.exec(d);
       if (item) {
         push(item[1]);
+        continue;
+      }
+      if (/^cmd:[a-z_]{1,16}$/.test(d)) {
+        push("cmd");
         continue;
       }
       if (/^nav:[a-z_]{1,16}(?::[a-z0-9_-]{1,16})?@[a-z0-9]{1,8}$/.test(d)) {
@@ -68,7 +72,8 @@ export function keyboardVerbs(kb: InlineButton[][]): string[] {
  * verb without one (Wave 0 fix 5). `cap` is the join-request captcha prefix,
  * handled before the verb parser.
  */
-export const HANDLED_CALLBACK_VERBS = ["ok", "no", "edit", "later", "cancel", "cap", "nav", "pg", "nop"] as const;
+export const HANDLED_CALLBACK_VERBS =
+  ["ok", "no", "edit", "later", "cancel", "cap", "nav", "pg", "nop", "rs", "ed", "vw", "cmd"] as const;
 
 /**
  * Contract for the tg-webhook → approve internal hop (Wave 0 fix 4).
