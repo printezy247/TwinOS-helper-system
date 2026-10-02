@@ -128,9 +128,9 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [x] Dead-button test (every emitted callback verb has a handler) (`HANDLED_CALLBACK_VERBS` vs emitted verbs)
 
 ### Wave 1 — Desk bot navigation
-- [ ] Callback grammar v2 (`nav:` `pg:` `nop` + stale-menu fingerprint)
-- [ ] `/menu` home panel, edit in place, Back + Home on every screen
-- [ ] `setMyCommands` for the Desk, set by `deploy.sh`
+- [x] Callback grammar v2 (`nav:` `pg:` `nop` + stale-menu fingerprint) (`tg.ts` `Callback` union, `NAV_LAYOUT v1`; `nav_test.ts` 5 passed)
+- [x] `/menu` home panel, edit in place, Back + Home on every screen (`onNav`, shared screen texts, unknown → home; tour walks `/menu`)
+- [x] `setMyCommands` for the Desk, set by `deploy.sh` (Desk-chat scope, best effort; consistency guard)
 - [ ] Decision cards collapse to a status button; no extra "Approved" message
 - [ ] `/batch` list with per-item buttons, Refresh, confirm before "Approve ready"
 - [ ] Later quick picks (13:00 · 18:00 · Tomorrow 08:00 · Custom)
