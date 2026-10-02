@@ -34,13 +34,29 @@ export function cancelKeyboard(contentId: string): InlineButton[][] {
   return [[{ text: "✖ Cancel", callback_data: shortCallback("cancel", contentId) }]];
 }
 
-/** Verbs a keyboard can emit (the part before the colon). */
+/** Verbs and nav kinds a keyboard can emit. */
 export function keyboardVerbs(kb: InlineButton[][]): string[] {
   const out: string[] = [];
+  const push = (v: string) => {
+    if (!out.includes(v)) out.push(v);
+  };
   for (const row of kb) {
     for (const b of row) {
-      const m = /^([a-z_]{1,16}):[0-9a-f]{8}$/.exec(b.callback_data ?? "");
-      if (m && !out.includes(m[1])) out.push(m[1]);
+      const d = b.callback_data ?? "";
+      if (d === "nop") {
+        push("nop");
+        continue;
+      }
+      const item = /^([a-z_]{1,16}):[0-9a-f]{8}$/.exec(d);
+      if (item) {
+        push(item[1]);
+        continue;
+      }
+      if (/^nav:[a-z_]{1,16}(?::[a-z0-9_-]{1,16})?@[a-z0-9]{1,8}$/.test(d)) {
+        push("nav");
+        continue;
+      }
+      if (/^pg:[a-z_]{1,16}:\d{1,3}@[a-z0-9]{1,8}$/.test(d)) push("pg");
     }
   }
   return out;
@@ -52,7 +68,7 @@ export function keyboardVerbs(kb: InlineButton[][]): string[] {
  * verb without one (Wave 0 fix 5). `cap` is the join-request captcha prefix,
  * handled before the verb parser.
  */
-export const HANDLED_CALLBACK_VERBS = ["ok", "no", "edit", "later", "cancel", "cap"] as const;
+export const HANDLED_CALLBACK_VERBS = ["ok", "no", "edit", "later", "cancel", "cap", "nav", "pg", "nop"] as const;
 
 /**
  * Contract for the tg-webhook → approve internal hop (Wave 0 fix 4).

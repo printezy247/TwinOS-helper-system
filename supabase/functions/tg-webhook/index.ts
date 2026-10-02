@@ -105,6 +105,14 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
   }
   const parsed = tg.parseCallback(cq.data ?? "");
   if (!parsed) { await tg.answerCallbackQuery(cq.id, "Unknown button."); return; }
+  if (parsed.kind === "nop") {
+    await tg.answerCallbackQuery(cq.id);
+    return;
+  }
+  if (parsed.kind === "nav" || parsed.kind === "page") {
+    await onNav(cq, parsed);
+    return;
+  }
 
   let content_id: string;
   try { content_id = await resolveShort(parsed.short); } catch (err) {
@@ -204,18 +212,7 @@ async function onBatch(m: Message): Promise<void> {
   const batch = await openBatch();
   if (!batch) { await say("No batch yet. It is drafted on Wednesday at 14:30."); return; }
 
-  const db = admin();
-  const ids = batch.items.map((i) => i.id);
-  const { data: variants } = await db.from("content_variants")
-    .select("content_id, needed_fields, claim_flags, compliance").in("content_id", ids);
-  const states: SweepItem[] = batch.items.map((i) => {
-    const v = (variants ?? []).find((x) => x.content_id === i.id);
-    return {
-      id: i.id, n: i.batch_no, status: i.status, when: i.scheduled_at ?? new Date().toISOString(),
-      needed: (v?.needed_fields as string[] | null) ?? [], claims: (v?.claim_flags as string[] | null) ?? [],
-      blocked: v?.compliance?.ok === false, hasJob: false,
-    };
-  });
+  const states = await loadBatchStates(batch);
 
   if (arg === "ok") {
     const jack = await jackId();
@@ -237,14 +234,8 @@ async function onBatch(m: Message): Promise<void> {
     return;
   }
 
-  const asItems = batch.items.map((i) => ({
-    n: i.batch_no, post_type: i.post_type as "lesson", pillar: null, label: i.source?.label ?? i.post_type,
-    title: i.title, when: i.scheduled_at ?? new Date().toISOString(), dow: 0,
-  }));
-  const needed = new Map(states.map((s) => [s.n, s.needed] as [number, string[]]));
-  const lines = summaryLines(asItems, needed, (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur")
-    .map((line, idx) => `${line} [${batch.items[idx].status}]`);
-  await say([`<b>Batch</b> · week of ${batch.week}`, "", ...lines, "", "<code>N: the text</code> fills or edits one. <code>/batch ok</code> approves what is ready."].join("\n"));
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  await say(renderBatchList(batch, states, tz));
 }
 
 /* ------------------------------ Desk group input ------------------------------ */
@@ -272,55 +263,166 @@ const HELP_TEXT = [
   "/batch - the Wednesday batch (<code>/batch ok</code> approves what is ready and claim-free)",
   "/hours &lt;task&gt; &lt;minutes&gt; [note] - log what a task cost by hand",
   "/hours today - today's total and the week so far",
+  "/menu - buttons for Status, Batch, Friday, Hours and Help",
   "/help - this message",
 ].join("\n");
+
+const HOME_TEXT = [
+  "<b>EzyMap Desk</b>",
+  "Status · Batch · Friday · Hours · Help — tap a button.",
+  "Send the chart + raw lines any time; reply to a draft to edit it.",
+].join("\n");
+
+/** Read-only screen texts, shared by the slash commands and the nav panels. */
+async function statusText(): Promise<string> {
+  const db = admin();
+  const since = new Date(Date.now() - 15 * 60_000).toISOString();
+  const [{ data: beats }, { count: openAlerts }] = await Promise.all([
+    db.from("health_checks").select("source, status, at").gte("at", since).order("at", { ascending: false }).limit(100),
+    db.from("alerts").select("id", { count: "exact", head: true }).is("resolved_at", null),
+  ]);
+  const latest = new Map<string, { status: string; at: string }>();
+  for (const b of beats ?? []) if (b.source && !latest.has(b.source)) latest.set(b.source, { status: b.status, at: b.at });
+  const lines = [...latest.entries()].map(([src, b]) => {
+    const mins = Math.max(0, Math.round((Date.now() - new Date(b.at).getTime()) / 60_000));
+    return `${b.status === "ok" ? "✅" : "⚠️"} ${tg.escapeHtml(src)}: ${tg.escapeHtml(b.status)}, ${mins} min ago`;
+  });
+  return [
+    "<b>Status</b>",
+    ...(lines.length ? lines : ["No health beats in the last 15 minutes."]),
+    `Open alerts: ${openAlerts ?? 0}`,
+  ].join("\n");
+}
+
+async function fridayText(): Promise<string> {
+  const { data: w } = await admin().from("v_friday_scoreboard")
+    .select("week_start, channel_members, net_joins, signals_posted, results_posted, strict_win_rate_4w, total_r_4w")
+    .order("week_start", { ascending: false }).limit(1).maybeSingle();
+  if (!w) return "No scoreboard data yet.";
+  const n = (v: unknown) => (v === null || v === undefined ? "-" : String(v));
+  return [
+    `<b>Friday numbers, week of ${tg.escapeHtml(String(w.week_start))}</b>`,
+    `Members: ${n(w.channel_members)} (net joins ${n(w.net_joins)})`,
+    `Signals posted: ${n(w.signals_posted)}, with results: ${n(w.results_posted)}`,
+    `Strict win rate (4 weeks): ${n(w.strict_win_rate_4w)}%, total R: ${n(w.total_r_4w)}`,
+    "TikTok and Vantage numbers are entered by hand.",
+  ].join("\n");
+}
+
+async function hoursTodayText(): Promise<string> {
+  const db = admin();
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD in MYT
+  const week = mondayOf(day);
+  const { data } = await db.from("baseline_hours").select("task, minutes").eq("day", day);
+  const byTask = new Map<string, number>();
+  for (const r of data ?? []) byTask.set(r.task as string, (byTask.get(r.task as string) ?? 0) + Number(r.minutes));
+  const todayTotal = [...byTask.values()].reduce((a, b) => a + b, 0);
+  const { data: wk } = await db.from("baseline_hours").select("minutes").eq("week_start", week);
+  const weekTotal = (wk ?? []).reduce((a, r) => a + Number(r.minutes), 0);
+  const lines = [...byTask.entries()].sort((a, b) => b[1] - a[1]).map(([t, min]) => `· ${tg.escapeHtml(t)}: ${formatMinutes(min)}`);
+  return [
+    `<b>Hours — ${day}</b>`,
+    ...(lines.length ? lines : ["Nothing logged today yet."]),
+    "",
+    `Today: <b>${formatMinutes(todayTotal)}</b> · week of ${week}: <b>${formatMinutes(weekTotal)}</b>`,
+    "Log with <code>/hours &lt;task&gt; &lt;minutes&gt; [note]</code>.",
+  ].join("\n");
+}
+
+async function loadBatchStates(batch: { week: string; items: BatchRow[] }): Promise<SweepItem[]> {
+  const { data: variants } = await admin().from("content_variants")
+    .select("content_id, needed_fields, claim_flags, compliance").in("content_id", batch.items.map((i) => i.id));
+  return batch.items.map((i) => {
+    const v = (variants ?? []).find((x) => x.content_id === i.id);
+    return {
+      id: i.id, n: i.batch_no, status: i.status, when: i.scheduled_at ?? new Date().toISOString(),
+      needed: (v?.needed_fields as string[] | null) ?? [], claims: (v?.claim_flags as string[] | null) ?? [],
+      blocked: v?.compliance?.ok === false, hasJob: false,
+    };
+  });
+}
+
+function renderBatchList(batch: { week: string; items: BatchRow[] }, states: SweepItem[], tz: string): string {
+  const asItems = batch.items.map((i) => ({
+    n: i.batch_no, post_type: i.post_type as "lesson", pillar: null, label: i.source?.label ?? i.post_type,
+    title: i.title, when: i.scheduled_at ?? new Date().toISOString(), dow: 0,
+  }));
+  const needed = new Map(states.map((s) => [s.n, s.needed] as [number, string[]]));
+  const lines = summaryLines(asItems, needed, tz)
+    .map((line, idx) => `${line} [${batch.items[idx].status}]`);
+  return [`<b>Batch</b> · week of ${batch.week}`, "", ...lines, "", "<code>N: the text</code> fills or edits one. <code>/batch ok</code> approves what is ready."].join("\n");
+}
+
+async function batchListText(): Promise<string> {
+  const batch = await openBatch();
+  if (!batch) return "No batch yet. It is drafted on Wednesday at 14:30.";
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  return renderBatchList(batch, await loadBatchStates(batch), tz);
+}
+
+async function navScreenText(screen: string): Promise<string> {
+  switch (screen) {
+    case "status": return await statusText();
+    case "batch": return await batchListText();
+    case "friday": return await fridayText();
+    case "hours": return await hoursTodayText();
+    case "help": return HELP_TEXT;
+    case "home":
+    default: return HOME_TEXT;
+  }
+}
+
+/** A nav/page tap: stale layouts answer outdated, then the screen redraws in place. */
+async function onNav(
+  cq: NonNullable<Update["callback_query"]>,
+  nav: { kind: "nav"; screen: string; arg?: string; fp: string } | { kind: "page"; screen: string; n: number; fp: string },
+): Promise<void> {
+  const chat = cq.message?.chat.id;
+  const mid = cq.message?.message_id;
+  if (!chat || !mid) {
+    await tg.answerCallbackQuery(cq.id, "Open /menu for the panel.");
+    return;
+  }
+  const stale = tg.isStaleFp(nav.fp);
+  const screen = nav.kind === "nav" &&
+      ((tg.MENU_SCREENS as readonly string[]).includes(nav.screen) || nav.screen === "home")
+    ? nav.screen
+    : "home";
+  const text = await navScreenText(screen);
+  await tg.answerCallbackQuery(cq.id, stale ? "Outdated menu — showing the latest." : undefined);
+  try {
+    await tg.editMessageText(chat, mid, text.slice(0, 4096), {
+      parse_mode: "HTML",
+      buttons: screen === "home" ? tg.menuKeyboard() : tg.backHomeRows(),
+    });
+  } catch {
+    await tg.sendMessage(chat, text.slice(0, 4096), { parse_mode: "HTML" });
+  }
+}
 
 /** Slash commands in the Desk group (Jack only; read-only). */
 async function onDeskCommand(m: Message, cmd: string): Promise<void> {
   const say = (html: string) => tg.sendMessage(m.chat.id, html, { parse_mode: "HTML", reply_to_message_id: m.message_id });
-  const db = admin();
 
-  if (cmd === "status") {
-    const since = new Date(Date.now() - 15 * 60_000).toISOString();
-    const [{ data: beats }, { count: openAlerts }] = await Promise.all([
-      db.from("health_checks").select("source, status, at").gte("at", since).order("at", { ascending: false }).limit(100),
-      db.from("alerts").select("id", { count: "exact", head: true }).is("resolved_at", null),
-    ]);
-    const latest = new Map<string, { status: string; at: string }>();
-    for (const b of beats ?? []) if (b.source && !latest.has(b.source)) latest.set(b.source, { status: b.status, at: b.at });
-    const lines = [...latest.entries()].map(([src, b]) => {
-      const mins = Math.max(0, Math.round((Date.now() - new Date(b.at).getTime()) / 60_000));
-      return `${b.status === "ok" ? "✅" : "⚠️"} ${tg.escapeHtml(src)}: ${tg.escapeHtml(b.status)}, ${mins} min ago`;
-    });
-    await say([
-      "<b>Status</b>",
-      ...(lines.length ? lines : ["No health beats in the last 15 minutes."]),
-      `Open alerts: ${openAlerts ?? 0}`,
-    ].join("\n"));
-    return;
-  }
+  if (cmd === "status") { await say(await statusText()); return; }
 
-  if (cmd === "friday") {
-    const { data: w } = await db.from("v_friday_scoreboard")
-      .select("week_start, channel_members, net_joins, signals_posted, results_posted, strict_win_rate_4w, total_r_4w")
-      .order("week_start", { ascending: false }).limit(1).maybeSingle();
-    if (!w) { await say("No scoreboard data yet."); return; }
-    const n = (v: unknown) => (v === null || v === undefined ? "-" : String(v));
-    await say([
-      `<b>Friday numbers, week of ${tg.escapeHtml(String(w.week_start))}</b>`,
-      `Members: ${n(w.channel_members)} (net joins ${n(w.net_joins)})`,
-      `Signals posted: ${n(w.signals_posted)}, with results: ${n(w.results_posted)}`,
-      `Strict win rate (4 weeks): ${n(w.strict_win_rate_4w)}%, total R: ${n(w.total_r_4w)}`,
-      "TikTok and Vantage numbers are entered by hand.",
-    ].join("\n"));
-    return;
-  }
+  if (cmd === "friday") { await say(await fridayText()); return; }
 
   if (cmd === "hours") { await onHours(m); return; }
   if (cmd === "batch") { await onBatch(m); return; }
   if (cmd === "fanout") { await onFanout(m); return; }
 
-  if (cmd === "help" || cmd === "start") { await say(HELP_TEXT); return; }
+  if (cmd === "menu" || cmd === "start") {
+    await tg.sendMessage(m.chat.id, HOME_TEXT, {
+      parse_mode: "HTML",
+      reply_to_message_id: m.message_id,
+      buttons: tg.menuKeyboard(),
+    });
+    return;
+  }
+
+  if (cmd === "help") { await say(HELP_TEXT); return; }
   await say(`I don't know /${tg.escapeHtml(cmd)}.\n\n${HELP_TEXT}`);
 }
 
@@ -348,22 +450,7 @@ async function onHours(m: Message): Promise<void> {
     return;
   }
 
-  const { data } = await db.from("baseline_hours").select("task, minutes").eq("day", day);
-  const byTask = new Map<string, number>();
-  for (const r of data ?? []) byTask.set(r.task as string, (byTask.get(r.task as string) ?? 0) + Number(r.minutes));
-  const todayTotal = [...byTask.values()].reduce((a, b) => a + b, 0);
-
-  const { data: wk } = await db.from("baseline_hours").select("minutes").eq("week_start", week);
-  const weekTotal = (wk ?? []).reduce((a, r) => a + Number(r.minutes), 0);
-
-  const lines = [...byTask.entries()].sort((a, b) => b[1] - a[1]).map(([t, min]) => `· ${tg.escapeHtml(t)}: ${formatMinutes(min)}`);
-  await say([
-    `<b>Hours — ${day}</b>`,
-    ...(lines.length ? lines : ["Nothing logged today yet."]),
-    "",
-    `Today: <b>${formatMinutes(todayTotal)}</b> · week of ${week}: <b>${formatMinutes(weekTotal)}</b>`,
-    "Log with <code>/hours &lt;task&gt; &lt;minutes&gt; [note]</code>.",
-  ].join("\n"));
+  await say(await hoursTodayText());
 }
 
 async function onDeskMessage(m: Message): Promise<void> {
