@@ -8,8 +8,13 @@ const BOT_TOKEN = "test-bot-token-123";
 const NOW = new Date("2026-10-03T12:00:00Z").getTime();
 
 async function signedInitData(userId: number, authDate: number): Promise<string> {
+  // Telegram's algorithm (mirrored, not imported: the test must pin it).
+  const tokenKey = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(BOT_TOKEN), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const secretBytes = await crypto.subtle.sign("HMAC", tokenKey, new TextEncoder().encode("WebAppData"));
   const secret = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    "raw", secretBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
   const user = encodeURIComponent(JSON.stringify({ id: userId, first_name: "Jack" }));
   const check = `auth_date=${authDate}\nuser=${decodeURIComponent(user)}`;
@@ -23,7 +28,9 @@ Deno.test("a signed initData verifies, a flipped bit does not", async () => {
   const raw = await signedInitData(6282941580, authDate);
   const v = await verifyInitData(raw, BOT_TOKEN, NOW);
   assertEquals(v.user.id, 6282941580);
-  await assertRejects(() => verifyInitData(raw.replace(/hash=../, "hash=ff"), BOT_TOKEN, NOW));
+  const last = raw.slice(-1);
+  const flipped = raw.slice(0, -1) + (last === "a" ? "b" : "a"); // same length, surely a mismatch
+  await assertRejects(() => verifyInitData(flipped, BOT_TOKEN, NOW));
   await assertRejects(() => verifyInitData(raw, "wrong-token", NOW));
 });
 

@@ -31,8 +31,9 @@
  * `x-twinos-actor: cron`; the service-role JWT is recognised by its `role`
  * claim and the header picks the actor. Nothing else may claim `cron`.
  */
-import { admin, anonWithJwt } from "./supabase.ts";
+import { admin, anonWithJwt, setting, SETTING_KEYS } from "./supabase.ts";
 import { HttpError } from "./http.ts";
+import { verifySession } from "./miniapp.ts";
 import type { Role } from "./roles.ts";
 
 export interface Caller {
@@ -172,6 +173,14 @@ async function callerFromJwt(req: Request, jwt: string): Promise<Caller> {
   return { role, subject: data.user.id, actor: role };
 }
 
+/** A Mini App session acts as Jack: initData proved the Telegram id at mint. */
+async function callerFromMiniApp(token: string): Promise<Caller> {
+  const { user_id } = await verifySession(token, Deno.env.get("TWINOS_OPS_BOT_TOKEN") ?? "");
+  const jack = await setting(SETTING_KEYS.jackTelegramId);
+  if (!jack || String(user_id) !== jack) throw new HttpError(403, "forbidden", "not Jack's session");
+  return { role: "jack", subject: `tg:${user_id}`, actor: "jack" };
+}
+
 /** Resolve the caller or throw 401. */
 export async function authenticate(req: Request): Promise<Caller> {
   // `await` on every branch, so a rejected callerFromKey/callerFromJwt surfaces
@@ -181,6 +190,7 @@ export async function authenticate(req: Request): Promise<Caller> {
   if (key) return await callerFromKey(key);
   const token = bearer(req);
   if (!token) throw new HttpError(401, "unauthorized", "no bearer token");
+  if (token.startsWith("tma.")) return await callerFromMiniApp(token);
   return await callerFromJwt(req, token);
 }
 
