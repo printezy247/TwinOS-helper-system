@@ -531,8 +531,31 @@ def wave4_calendar() -> None:
     )
 
 
+def wave4_clips() -> None:
+    mig = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted((ROOT / "supabase/migrations").glob("*.sql"))
+    )
+    check(
+        "clips: candidates table with approve/drop states",
+        "public.clip_candidates" in mig and "proposed" in mig,
+        "Wave 4 item 3: moments wait for Jack in clip_candidates",
+    )
+    jobs = read("supabase/functions/jobs/index.ts")
+    check(
+        "clips: candidate answers reach the Desk with use/drop buttons",
+        '"clip_candidates"' in jobs and '"clip:"' in jobs,
+        "Wave 4 item 3: Jack approves moments on the Desk",
+    )
+    webhook = read("supabase/functions/tg-webhook/index.ts")
+    check(
+        "desk: clip use queues the cut, drop discards, clips lists open ones",
+        '"clip"' in webhook and "/clips" in webhook,
+        "Wave 4 item 3: use/drop/list on the Desk",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
