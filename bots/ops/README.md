@@ -26,6 +26,7 @@ Created as `@EzyOps_bot` (`@EzyOpsBot` was taken).
    ```
    status - Anything broken?
    friday - Friday numbers so far
+   hours - Log baseline hours (/hours <task> <minutes>)
    help - What the Desk group understands
    ```
 5. Add the bot to the channel as admin (rights above), to the Desk group as a
@@ -80,6 +81,7 @@ London/NY  TradingView alert → "Signal card #N" draft with buttons (COUNTER-TR
 On hit     result reply under the original signal: automatic, no buttons (board-sourced)
 19:55      bot: evening line reminder
 20:00      Jack: "wrap: held 4590, closed above" → evening_wrap draft → ✅
+any time   Jack: /hours <task> <minutes> [note] logs the Week-1 baseline (decision 6); /hours today shows it
 Wed 14:30  batch of 7 lessons + audit + poll + offer, numbered (Phase 2); "3: soften" edits #3
 Fri 09:00  "Friday numbers" request: Vantage and TikTok, two-minute reply
 ```
