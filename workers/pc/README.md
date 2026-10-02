@@ -30,6 +30,17 @@ Assets over 45 MB are refused (plan §7 storage limit).
 
 ## Setup (Jack, Phase 1)
 
+One command does all of this (folders, unit, enable, linger, self-test, a
+queued test job, and the backup if `db_url` is stored):
+
+```bash
+cd ~/TwinOS-helper-system
+./scripts/install-worker.sh --check    # preflight only, changes nothing
+./scripts/install-worker.sh            # install and verify
+```
+
+The manual steps it replaces:
+
 ```bash
 # 1. Secrets in the keyring, never in files
 ~/TwinOS-helper-system/scripts/mint-keys.sh    # stores url, apikey (anon) and worker_key; prints no secret
@@ -50,6 +61,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now twinos-worker
 journalctl --user -u twinos-worker -f
 ```
+
+Remove the service with `./scripts/install-worker.sh --uninstall`.
 
 Optional extras for clipping: `pip install "faster-whisper>=1.0" "Pillow>=10"`
 (the GTX 1050 Ti handles the `small` model in int8).
