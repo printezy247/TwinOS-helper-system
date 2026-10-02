@@ -1,6 +1,6 @@
 # EzyMap TwinOS — Master Plan v3
 
-**Status:** Master plan, not started · **Owner:** Jack · **Scope:** EzyMap only · **Updated:** 2026-10-01
+**Status:** Phases 0–8 built as far as the repo allows; v4 upgrade (§17) planned · **Owner:** Jack · **Scope:** EzyMap only · **Updated:** 2026-10-02
 **Built from:** v1 (commit `fe035b9`), v2 research (platform APIs and limits verified 2026-10-01, audit of Jack's repos), and three documents dated 30 Sep 2026: *EzyMap Growth Plan 2026-27*, *EzyMap Channel Posting Kit*, *Jack's FYP Content Plan*.
 
 **What TwinOS is for:** the Growth Plan says "Make Telegram run itself" and "anything a script can do, a script does". TwinOS is that script. It runs the channel desk, the repost machine, the tracking and the Friday numbers, so Jack's five hours a day go only to the gold map, TikTok and people.
@@ -568,3 +568,67 @@ All ten questions from v3 were answered on 2026-10-01 (decisions 10–19). Remai
 2. **Monthly price list:** *answered 2026-10-02.* The catalog's monthly prices stand as seeded and TradingView Pro is $29/mo next to $249 lifetime. EzyAI PRO's founding price is deferred to closer to the Q1 2027 launch.
 3. **Supabase account:** *answered 2026-10-01.* The project is "Jack's Twin" (ap-southeast-1, Singapore) in Jack's own account.
 4. **Ops bot name:** *answered.* `@EzyOps_bot` (`@EzyOpsBot` was taken). Jack creates it in @BotFather and stores the token in his keyring; TwinOS never sees it in a file.
+
+---
+
+## 17. Upgrade v4: navigation, UX and functions (added 2026-10-02)
+
+**Why:** Phases 0–8 are built as far as the repo allows and the Desk loop passed live (`scripts/desk-tour.sh`, 2 Oct). What Jack touches every day is still rough: the Desk bot is typed commands with no menu, and the dashboard is flat text links with "Loading…" states. v4 makes both fast to drive with buttons, and adds the function upgrades found in Jack's other repos.
+
+**Sources (read 2026-10-02):** Jack's repos ASAP-TeleBot (bot menus), tg_ezy_ai_os (dashboard flow, channel status), sambangold-products (visual style and motion), wsapi-dashboard (secrets and integrations), webcopy/viralai (prompt generator). Open source: grammY menu (stateless menus with stale-tap detection), aiogram-dialog (screen router, paging), shadcn-admin and cmdk (sidebar, command palette), Postiz (scheduler UX; AGPL, ideas only), OpenShorts (clip pipeline), pgmq / Supabase Queues and Realtime, tma.js (Telegram Mini Apps).
+
+**Defaults until Jack says otherwise:** order is Wave 0 → 1 → 2 → 3 → 4. AI stays off by default and runs only on Jack's local model (NeuraOS / llama-server) through the PC worker; no cloud AI. The Mini App waits for Wave 4. Wave 2 is about 9 Lovable prompts, one per item, checked between prompts.
+
+### Wave 0: fixes (do first)
+- `content_items_desk_state_check` lacks `'kit'`: `fanout.ts` sets it and the update fails silently (6 kits live with no state). Migration adds `'kit'` and any states Waves 1–3 need (`awaiting_slot`), plus `desk_state_at` for a 30-minute expiry.
+- Reschedule clears the card's keyboard though the item is still waiting; keep the buttons.
+- Edit and Later prompts have no cancel and never expire.
+- Contract test for the `tg-webhook` → `approve` hop (the 2 Oct 403 passed every unit test because each side was right alone).
+- Dead-button test: every callback verb a keyboard builder emits has a handler.
+
+### Wave 1: Desk bot navigation
+Rules: callback_data ≤ 64 bytes; only Jack's id may press; the webhook is stateless (state lives in the DB); screens edit the same message in place (`editMessageText` / `editMessageReplyMarkup`); inline keyboards only, no reply keyboards.
+1. Callback grammar v2: keep `verb:<id8>`; add `nav:<screen>[:<arg>]`, `pg:<screen>:<n>`, `nop`, and a short layout fingerprint so a tap on an outdated menu answers "outdated" and redraws (grammY menu pattern).
+2. `/menu` (and `/start`) home panel: Status · Batch · Friday · Hours · Help. Each screen has ⬅️ Back and 🏠 Home rows; unknown routes fall back home (ASAP route table).
+3. `setMyCommands` scoped to the Desk chat, run by `scripts/deploy.sh`.
+4. Decision cards collapse to one status button ("✅ Approved · 08:00", "❌ Rejected", "🕒 13:00"); drop the extra "Approved" message.
+5. `/batch` as a list with buttons per item (approve, edit, preview), 🔄 Refresh and "Approve ready (k)" behind a Yes / Cancel confirm that re-checks the list.
+6. Later becomes quick picks: 13:00 · 18:00 · Tomorrow 08:00 · Custom… (`rs:<id8>:<slot>`).
+7. Edit presets: Soften · BM · Shorter · Write my own, with ✖ Cancel and `force_reply`.
+8. Fan-out button on approved cards (`fan:<id8>`).
+9. Refresh on Status, Friday and Hours with an "updated hh:mm" stamp.
+10. Paging (◀ n/N ▶) for long lists and a "pending drafts" screen.
+11. Action buttons on moderation alerts (Ban · Mute 24 h · Ignore) and repeat questions (Add to FAQ · Dismiss).
+
+### Wave 2: dashboard (Lovable)
+Rules: frontend only; the anon key and the session JWT are the only credentials; writes only through Edge Functions or RPC; approval stays Jack-only with a confirm, never bulk or automatic, never on blocking findings; `[NEEDED:…]` always visible; no framer-motion or other heavy animation; `prefers-reduced-motion` respected; EzyMap green / gold / red, Inter + JetBrains Mono (the design check of 2 Oct agrees: dark slate with a green accent, dense layout, subtle motion).
+1. Shared app-shell layout route: one auth guard, `useRole()`, a "no TwinOS role yet" screen.
+2. Grouped sidebar from the existing shadcn `sidebar.tsx` with lucide icons and a pending badge (Today: Inbox, Calendar · Channel: Signals, Messages · Insights: Friday, Research · System: Health, Settings), collapses with Ctrl+\; bottom nav on phones.
+3. Skeletons, empty states, and errors with Retry (an error never reads as "nothing pending").
+4. Approval Inbox: inline approve/reject with optimistic removal, shadcn Dialog on desktop and Drawer on mobile, keys J/K/A/R/S/Esc and a `?` cheat sheet.
+5. ⌘K command palette (existing `command.tsx`): pages, pending items, Refresh.
+6. Motion and surface tokens from sambangold, recoloured green: card lift and sheen, 3px focus ring, pressed state, a 200–320 ms page fade.
+7. Supabase Realtime instead of 60 s / 30 s polling: live pending badge, "new draft" toast, last-refresh dot.
+8. Health as integration cards with "Check now"; a Settings / Integrations page that shows only "set / not set" and setup steps; never a secret, never reveal or copy.
+9. Stat tiles on Friday and Signals, status tabs with counts on the Inbox, specific toasts ("Approved, posts 14:00 KL"), filter chips on Calendar and Research.
+
+### Wave 3: functions
+1. Integration status in `health`: required secret names per provider, `ready` / `needs-credentials`, names never values (tg_ezy `channels.ts`).
+2. Live provider checks (Telegram `getMe`, Meta token debug), stored, alerting only on a change or a recovery (wsapi `accountHealth.js`).
+3. Error alerts to the Desk with a cooldown per error and a repeat count (wsapi `systemAlert.js`).
+4. Unknown-outcome guard in publish / fan-out: after a timeout, hold the retry and check before posting again (wsapi `outboundQueue.js`).
+5. Hook and CTA library per pillar, platform and language, rotated least-recently-used, no AI.
+6. Optional AI variants as a PC-worker job (`llm_variants`, off by default, local model only): 3 angles per platform as strict JSON (webcopy `copy.ts`), every variant through `compliance`, a blocking number guard (no price or percent that is not in Jack's raw lines), Jack picks on the Desk.
+7. On top of 6: an Adjust button, TikTok / YouTube script kits with the risk line spoken, a grounded Monday brief writer.
+8. Banned words and humanizer rules (EN + BM) in `compliance` as warnings, apart from the blocking financial-claim checks.
+
+### Wave 4: bigger bets (each needs Jack's go)
+1. Telegram Mini App for the Approval Inbox: a route in the same Lovable app, opened from the Desk menu button; an edge function verifies Telegram `initData` (HMAC) and issues the session.
+2. Postiz-style calendar scheduler: per-platform preview, saved templates and signatures, delayed first comment.
+3. Clip pipeline after OpenShorts: scene detection, AI moment scoring, face-following vertical reframe, hook overlay; candidates in a `clip_candidates` table approved on the Desk.
+4. Fan-out on Supabase Queues (pgmq) with retries and a Desk alert on the last failure.
+
+### Never
+No secret in the browser, the repo or chat. No auto-approve or bulk approve. No AI market commentary (tg_ezy `/watch`, `/autopilot`). No reference-channel text fed to any model. No copying AGPL code (Postiz). Nothing posted to @ezymap by tests.
+
+Checklist: `docs/PHASES.md` Phase 9 (Waves 0–4). Builder prompt: `docs/AI-CODER-PROMPT.md`.

@@ -116,3 +116,53 @@ Exit: payments match the old bot for two weeks.
 - [ ] Stars payment idempotency; larger Stripe de-dupe window; service-role key replaced by a narrow read — `docs/PHASE8.md`: no Stars code exists in the site (it is the separate sales bot); the site's Stripe path is de-duplicated by a unique column but has a check-then-insert race and a 1,000-user lookup limit (both written up with fixes); the narrow attribution read is specified
 - [ ] The sales bot migration with parallel running — plan and exit criterion (14 nights with no differences) in `docs/PHASE8.md`; needs the sales bot's repo
 - [ ] Hosting decision for the sales bot (existing host vs VPS) — Jack; criteria and a recommendation (decide after the parallel run) in `docs/PHASE8.md`
+
+## Phase 9 — v4 upgrade: navigation, UX and functions (from Oct 2026)
+Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every function change ends with `scripts/deploy.sh` + `scripts/desk-tour.sh` PASS (Jack runs both).
+
+### Wave 0 — fixes
+- [ ] `desk_state` check allows `'kit'` (+ `awaiting_slot`), `desk_state_at` added; fan-out kits get their state
+- [ ] Reschedule keeps the card's buttons
+- [ ] Edit / Later prompts get ✖ Cancel and expire after 30 minutes
+- [ ] Contract test for the `tg-webhook` → `approve` hop
+- [ ] Dead-button test (every emitted callback verb has a handler)
+
+### Wave 1 — Desk bot navigation
+- [ ] Callback grammar v2 (`nav:` `pg:` `nop` + stale-menu fingerprint)
+- [ ] `/menu` home panel, edit in place, Back + Home on every screen
+- [ ] `setMyCommands` for the Desk, set by `deploy.sh`
+- [ ] Decision cards collapse to a status button; no extra "Approved" message
+- [ ] `/batch` list with per-item buttons, Refresh, confirm before "Approve ready"
+- [ ] Later quick picks (13:00 · 18:00 · Tomorrow 08:00 · Custom)
+- [ ] Edit presets (Soften · BM · Shorter · Write my own) + Cancel
+- [ ] Fan-out button on approved cards
+- [ ] Refresh + "updated hh:mm" on Status, Friday, Hours
+- [ ] Paging for long lists + a pending-drafts screen
+- [ ] Buttons on moderation alerts and repeat questions
+
+### Wave 2 — dashboard (Lovable, one prompt per item)
+- [ ] App-shell layout route, `useRole()`, no-role screen
+- [ ] Grouped sidebar with icons + pending badge; bottom nav on phones
+- [ ] Skeletons, empty states, errors with Retry
+- [ ] Inbox: inline approve/reject (optimistic), Dialog/Drawer, keyboard J/K/A/R/S
+- [ ] ⌘K command palette
+- [ ] Motion and surface tokens (green), focus ring, page fade, reduced motion
+- [ ] Realtime instead of polling; live badge; new-draft toast
+- [ ] Health as integration cards; Settings / Integrations page (status only)
+- [ ] Stat tiles, Inbox status tabs, specific toasts, filter chips
+
+### Wave 3 — functions
+- [ ] Integration status in `health` (secret names only)
+- [ ] Live provider checks, alert on change / recovery
+- [ ] Error alerts to the Desk with cooldown
+- [ ] Unknown-outcome guard in publish / fan-out
+- [ ] Hook and CTA library (no AI)
+- [ ] `llm_variants` PC-worker job (off by default, local model, compliance + number guard)
+- [ ] Adjust button, script kits, grounded Monday brief
+- [ ] Banned words / humanizer rules as compliance warnings
+
+### Wave 4 — bigger bets (each needs Jack's go)
+- [ ] Telegram Mini App approval view (initData → session)
+- [ ] Postiz-style calendar scheduler
+- [ ] Clip pipeline upgrade (scene detection, moment scoring, reframe, `clip_candidates`)
+- [ ] Fan-out on Supabase Queues (pgmq)
