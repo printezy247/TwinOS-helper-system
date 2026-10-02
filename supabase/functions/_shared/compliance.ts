@@ -192,6 +192,63 @@ export function bannedWords(body: string): string[] {
   return [...wordHits(body, BANNED_WORDS_EN), ...wordHits(body, BANNED_WORDS_MS)];
 }
 
+/* ------------------------------------------------------------------------ */
+/* Humanizer rules (plan §17 Wave 3 item 8)                                  */
+/*                                                                           */
+/* AI-tell words from the webcopy humaniser: style warnings only, apart     */
+/* from the blocking financial-claim checks above. A warn never stops       */
+/* publishing; it tells Jack the draft reads machine-written.               */
+
+export const HUMANIZER_WORDS_EN = [
+  "delve",
+  "furthermore",
+  "moreover",
+  "additionally",
+  "in conclusion",
+  "game changer",
+  "game-changer",
+  "unlock",
+  "unleash",
+  "elevate",
+  "tapestry",
+  "vibrant",
+  "dive into",
+  "fast-paced",
+  "fast paced",
+  "seamless",
+  "cutting-edge",
+  "cutting edge",
+  "revolutionize",
+  "revolutionise",
+  "revolutionary",
+  "supercharge",
+  "skyrocket",
+  "embark",
+  "testament",
+  "boast",
+  "showcase",
+  "unparalleled",
+  "ever-evolving",
+  "ever evolving",
+];
+
+export const HUMANIZER_WORDS_MS = [
+  "serba pantas",
+  "sentiasa berubah",
+  "merevolusikan",
+  "merevolusi",
+  "pengubah permainan",
+  "permainan berubah",
+  "tanpa tandingan",
+  "revolusioner",
+  "buka kunci",
+  "melonjak",
+];
+
+export function humanizerHits(body: string): string[] {
+  return [...wordHits(body, HUMANIZER_WORDS_EN), ...wordHits(body, HUMANIZER_WORDS_MS)];
+}
+
 export function neededPlaceholders(body: string): string[] {
   return body.match(NEEDED_RE) ?? [];
 }
@@ -267,10 +324,19 @@ export function check(v: VariantInput): CheckResult {
     });
   }
 
-  // Words
+  // Words: financial-claim words block; humanizer tells only warn.
   const banned = bannedWords(body);
   if (banned.length) {
     f.push({ check: "words", severity: "blocking", message: "banned words present", evidence: banned });
+  }
+  const human = humanizerHits(body);
+  if (human.length) {
+    f.push({
+      check: "humanizer",
+      severity: "warn",
+      message: "reads machine-written; prefer Jack's own phrasing",
+      evidence: human,
+    });
   }
 
   // Risk line

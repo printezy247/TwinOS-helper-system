@@ -22,7 +22,10 @@ import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { setStatus } from "_shared/content.ts";
 import { check as complianceCheck } from "_shared/compliance.ts";
-import { classify, MAX_ATTEMPTS, retryPlan, type Kind } from "_shared/backoff.ts";
+import {
+  classify, duplicateLanded, isUnknownOutcome, MAX_ATTEMPTS, retryPlan, UNKNOWN_HOLD_MS, type Kind,
+} from "_shared/backoff.ts";
+import { deskAlert } from "_shared/alerts.ts";
 import {
   DAILY_CAPS, metaConfigFromEnv, type MetaPlatform, publishFacebookReel, publishInstagram, publishThreads,
 } from "_shared/meta.ts";
@@ -37,6 +40,7 @@ interface Job {
   variant_id: string;
   platform: string;
   attempts: number;
+  result?: { unknown_hold?: boolean; held_at?: string } | null;
 }
 
 interface Variant {
@@ -64,7 +68,7 @@ async function claimOne(): Promise<Job | null> {
   const db = admin();
   const { data: due } = await db
     .from("publish_jobs")
-    .select("id, content_id, variant_id, platform, attempts")
+    .select("id, content_id, variant_id, platform, attempts, result")
     .eq("status", "queued")
     .lte("run_at", new Date().toISOString())
     .order("run_at", { ascending: true })
@@ -187,6 +191,36 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
     return { ok: false, kind: "permanent", reason: "compliance block at publish: " + final.findings.map((f) => f.message).join("; ") };
   }
 
+  // Unknown-outcome guard (Wave 3 item 4): the last attempt may have reached
+  // the platform before it failed. Check for a landed post before sending again.
+  if (job.result?.unknown_hold) {
+    const { data: landed } = await db.from("tg_posts")
+      .select("chat_id, message_id, posted_at")
+      .eq("variant_id", job.variant_id)
+      .order("posted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (landed && duplicateLanded(job.result.held_at, landed.posted_at as string)) {
+      const chatId = landed.chat_id as number;
+      const messageId = landed.message_id as number;
+      await setStatus(item.id, "published", actor, {
+        published_at: new Date().toISOString(),
+        published_ref: `${chatId}:${messageId} (held send had landed)`,
+      });
+      if (item.signal_id) {
+        const { data: sp } = await db.from("signal_posts").select("id").eq("content_id", item.id).limit(1).maybeSingle();
+        if (!sp) {
+          await db.from("signal_posts").insert({
+            signal_id: item.signal_id, chat_id: chatId, message_id: messageId,
+            content_id: item.id, kind: item.post_type === "result_reply" ? "result" : "signal",
+          });
+        }
+      }
+      await logTimeSaved(actor, "content.publish", item.id);
+      return { ok: true, kind: "success", reason: "duplicate suppressed: the held send had already landed" };
+    }
+  }
+
   await setStatus(item.id, "publishing", actor);
   let posted: { chat_id: number; message_id: number } | null = null;
   let externalId: string | null = null;
@@ -255,13 +289,30 @@ serve(async (req) => {
         payload: { job_id: job.id, content_id: job.content_id },
       });
     } else {
-      const plan = retryPlan(job.attempts, r.reason ?? "");
+      // Unknown outcomes hold the retry (no 30 s quick retry into a possible
+      // duplicate), flag the job and tell the Desk once per cooldown. This
+      // covers Telegram and every fan-out child: they share this queue.
+      const reason = r.reason ?? r.kind;
+      const unknown = r.kind === "unknown" && isUnknownOutcome(reason);
+      const plan = unknown ? { delayMs: UNKNOWN_HOLD_MS, burnsAttempt: true } : retryPlan(job.attempts, reason);
       await db.from("publish_jobs").update({
         status: "queued",
         run_at: new Date(Date.now() + plan.delayMs).toISOString(),
-        last_error: r.reason ?? r.kind,
+        last_error: reason,
+        ...(unknown
+          ? { error_class: "unknown", result: { unknown_hold: true, held_at: new Date().toISOString() } }
+          : {}),
         ...(plan.burnsAttempt ? {} : { attempts: Math.max(job.attempts - 1, 0) }),
       }).eq("id", job.id);
+      if (unknown) {
+        await deskAlert({
+          db,
+          key: `unknown:${job.content_id}:${job.platform}`,
+          kind: "publish_unknown",
+          severity: "medium",
+          message: `\u26A0\uFE0F Send to ${job.platform} timed out \u2014 it may already be posted. Check the channel; retry held 10 min.`,
+        });
+      }
     }
     results.push({ job_id: job.id, content_id: job.content_id, platform: job.platform, ...r });
   }

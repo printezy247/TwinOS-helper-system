@@ -44,6 +44,37 @@ export function backoffMs(attempts: number): number {
 /** A job held back by a platform's daily cap waits half an hour and keeps its attempts; anything else backs off. */
 export const CAP_HOLD_MS = 30 * 60_000;
 
+/* ------------------------------------------------------------------------ */
+/* Unknown-outcome guard (plan §17 Wave 3 item 4)                            */
+/*                                                                           */
+/* A transport failure (timeout, reset, fetch abort) may have reached the   */
+/* platform: the post can be out there while we hold an error. Retrying     */
+/* after a 30 s backoff risks a public duplicate, so unknown outcomes hold  */
+/* the retry for UNKNOWN_HOLD_MS and the job is checked for a landed post   */
+/* before anything is sent again.                                            */
+
+export const UNKNOWN_HOLD_MS = 10 * 60_000;
+
+/** Transport-level failures: the request may have reached the platform. */
+export const UNKNOWN_OUTCOME_RE =
+  /timed?\s?out|socket hang up|fetch failed|network(?:[\s_]+(?:error|failure|down|unreachable))?|econnreset|connection (?:reset|refused|aborted|closed)|broken pipe|eai_again|enotfound|abort/i;
+
+export function isUnknownOutcome(reason: string): boolean {
+  return UNKNOWN_OUTCOME_RE.test(reason ?? "");
+}
+
+/** True when a post record landed after the hold began: the timed-out send
+ *  actually went out, so the retry must not send again. */
+export function duplicateLanded(
+  heldAt: string | null | undefined,
+  postedAt: string | null | undefined,
+): boolean {
+  if (!heldAt || !postedAt) return false;
+  const h = Date.parse(heldAt);
+  const p = Date.parse(postedAt);
+  return !Number.isNaN(h) && !Number.isNaN(p) && p >= h;
+}
+
 export function retryPlan(attempts: number, reason: string): { delayMs: number; burnsAttempt: boolean } {
   if (/^capped:/.test(reason)) return { delayMs: CAP_HOLD_MS, burnsAttempt: false };
   return { delayMs: backoffMs(attempts), burnsAttempt: true };

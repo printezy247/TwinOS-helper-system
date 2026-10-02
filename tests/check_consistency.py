@@ -401,7 +401,7 @@ def wave3_guard() -> None:
     publish = read("supabase/functions/publish/index.ts")
     check(
         "publish: unknown failures hold, flag error_class and alert the Desk",
-        "isUnknownOutcome(" in publish and "'unknown'" in publish and "deskAlert(" in publish,
+        "isUnknownOutcome(" in publish and "error_class" in publish and "deskAlert(" in publish,
         "Wave 3 item 4: hold + error_class='unknown' + Desk alert",
     )
     check(

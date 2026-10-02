@@ -155,11 +155,11 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [x] Integration status in `health` (secret names only) (`integrations.ts`; GET carries `integrations` + provider beats)
 - [x] Live provider checks, alert on change / recovery (`providers.ts` getMe + token debug; `provider_*` beats; transitions only)
 - [x] Error alerts to the Desk with cooldown (`alerts.ts` `deskAlert`: one open row per key, repeats counted)
-- [ ] Unknown-outcome guard in publish / fan-out
+- [x] Unknown-outcome guard in publish / fan-out (`backoff.ts` `isUnknownOutcome` + 10-min `UNKNOWN_HOLD_MS`, `duplicateLanded` pre-send check in `publish/index.ts`, `error_class='unknown'`, `deskAlert` to the Desk; `_shared/outcome_test.ts` 4 passed, shared suite 184, consistency 44/44)
 - [ ] Hook and CTA library (no AI)
 - [ ] `llm_variants` PC-worker job (off by default, local model, compliance + number guard)
 - [ ] Adjust button, script kits, grounded Monday brief
-- [ ] Banned words / humanizer rules as compliance warnings
+- [x] Banned words / humanizer rules as compliance warnings (`compliance.ts` `HUMANIZER_WORDS_EN/MS` + `humanizerHits`, warn-level `humanizer` finding apart from the blocking claim checks; `compliance_test.ts` + consistency)
 
 ### Wave 4 — bigger bets (each needs Jack's go)
 - [ ] Telegram Mini App approval view (initData → session)
