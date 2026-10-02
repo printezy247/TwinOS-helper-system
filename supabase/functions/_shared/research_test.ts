@@ -1,6 +1,6 @@
-import { assert, assertEquals } from "std/assert/mod.ts";
+import { assert, assertEquals, assertThrows } from "std/assert/mod.ts";
 import {
-  buildBrief, coreTerms, demandScore, parseSuggest, queryVariants, scoreTopic, topicRisk,
+  buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, scoreTopic, topicRisk,
 } from "./research.ts";
 
 Deno.test("parseSuggest: the suggestion list out of Google's autocomplete answer", () => {
@@ -79,4 +79,20 @@ Deno.test("coreTerms: a long seed question reduced to its meaningful words, in o
   assertEquals(coreTerms("cara trading gold"), "cara trading gold");
   assertEquals(coreTerms("gold"), "gold");
   assertEquals(coreTerms("what is the price of the pro plan", 2), "price pro");
+});
+
+Deno.test("csiRow: ABDUL's field names and the dashboard form's both become a csi_captures row", () => {
+  assertEquals(csiRow({ topic: "gold news today", popularity: 82, trend: "up", gap: true, icp: "beginner", note: "seen on the TikTok app" }), {
+    topic: "gold news today", category: "beginner", metric: "popularity", value: 82, trend: "up", note: "content gap. seen on the TikTok app",
+  });
+  assertEquals(csiRow({ topic: "x", category: "c", metric: "searches", value: "5.5", trend: "flat" }), {
+    topic: "x", category: "c", metric: "searches", value: 5.5, trend: "flat", note: null,
+  });
+  assertEquals(csiRow({ topic: "  just a topic  " }), { topic: "just a topic", category: null, metric: null, value: null, trend: null, note: null });
+});
+
+Deno.test("csiRow: a missing topic, a made-up trend or a non-number is refused", () => {
+  assertThrows(() => csiRow({ topic: "  " }), Error, "topic");
+  assertThrows(() => csiRow({ topic: "x", trend: "sideways" }), Error, "trend");
+  assertThrows(() => csiRow({ topic: "x", popularity: "lots" }), Error, "number");
 });
