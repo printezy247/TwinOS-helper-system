@@ -141,15 +141,16 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [x] Buttons on moderation alerts and repeat questions (`mo:<id8>:<action>`: ban/mute/ignore/faq/drop, recorded)
 
 ### Wave 2 — dashboard (Lovable, one prompt per item)
-- [ ] App-shell layout route, `useRole()`, no-role screen
-- [ ] Grouped sidebar with icons + pending badge; bottom nav on phones
-- [ ] Skeletons, empty states, errors with Retry
-- [ ] Inbox: inline approve/reject (optimistic), Dialog/Drawer, keyboard J/K/A/R/S
-- [ ] ⌘K command palette
-- [ ] Motion and surface tokens (green), focus ring, page fade, reduced motion
-- [ ] Realtime instead of polling; live badge; new-draft toast
-- [ ] Health as integration cards; Settings / Integrations page (status only)
-- [ ] Stat tiles, Inbox status tabs, specific toasts, filter chips
+Built 3 Oct in Lovable, one prompt per item (commits acc4e6e … 6cafec6; type check and the routing test pass after each; project knowledge carries the Wave 2 rules). Not yet seen signed in — Jack checks on desktop and phone.
+- [x] App-shell layout route, `useRole()`, no-role screen (`src/routes/_shell.tsx`, `src/lib/role.tsx`)
+- [x] Grouped sidebar with icons + pending badge; bottom nav on phones; read-only Settings page (`src/components/AppNav.tsx`)
+- [x] Skeletons, empty states, errors with Retry; the Inbox never shows Approve when variants or findings failed to load (`src/components/states.tsx`)
+- [x] Inbox: picked / original variant (never an unpicked AI angle), kits Reject-only, inline approve/reject with confirm (Dialog / Drawer), keyboard J/K/A/R/S/?; every overlay on `ResponsiveDialog`
+- [x] ⌘K command palette (pages, pending posts, safe actions only); Approve wording matches the backend ("right away" when unscheduled)
+- [x] Motion and surface tokens (green), focus ring, page fade, reduced motion (CSS only)
+- [x] Realtime instead of polling (migration 0033 publication); live dot, badge, new-draft and alert toasts; slow fallback only while disconnected
+- [x] Health as integration cards with Check now; Settings integrations section (secret names only)
+- [x] Stat tiles, Inbox status tabs, specific toasts, filter chips with aria-pressed; Friday forms for `jack` only
 
 ### Wave 3 — functions
 - [x] Integration status in `health` (secret names only) (`integrations.ts`; GET carries `integrations` + provider beats)
@@ -162,7 +163,7 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [x] Banned words / humanizer rules as compliance warnings (`compliance.ts` `HUMANIZER_WORDS_EN/MS` + `humanizerHits`, warn-level `humanizer` finding apart from the blocking claim checks; `compliance_test.ts` + consistency)
 
 ### Wave 4 — bigger bets (each needs Jack's go)
-- [ ] Telegram Mini App approval view (initData → session) — backend done, review-fixed 3 Oct (the HMAC key order was swapped, so every real initData failed; now pinned by a Python-signed vector; initData ≤ 1 h, session 2 h, sent in `x-twinos-session` because the gateway admits only JWTs). Left: the Lovable `/mini` route (prompt in `docs/LOVABLE-WAVE4-PROMPTS.md`) and a live test from the Desk menu button. Original note: (`tg-auth/verify` checks the Telegram HMAC and mints a `tma.` session; `auth.ts` accepts it as Jack, re-checked against the id setting; `GET tg-auth/me`; deploys `--no-verify-jwt`; Lovable `/mini` prompt in `docs/LOVABLE-WAVE4-PROMPTS.md`; `miniapp_test.ts` 4 passed incl. a caught key-mixup, shared 195, consistency 56/56)
+- [ ] Telegram Mini App approval view (initData → session) — backend done, review-fixed 3 Oct (the HMAC key order was swapped, so every real initData failed; now pinned by a Python-signed vector; initData ≤ 1 h, session 2 h, sent in `x-twinos-session` because the gateway admits only JWTs). The Lovable `/mini` route is built (3 Oct, commit 9ccc744: Telegram script, `tg-auth/verify` → session in memory, `x-twinos-session` on every call, list from `GET content/pending`, approve/reject with confirm; the gateway admits the publishable key, checked live). Left: publish the dashboard, register the Mini App with @BotFather (Telegram opens Mini Apps from a group only through a t.me/<bot>/<app> link), and one live test — Jack. Original note: (`tg-auth/verify` checks the Telegram HMAC and mints a `tma.` session; `auth.ts` accepts it as Jack, re-checked against the id setting; `GET tg-auth/me`; deploys `--no-verify-jwt`; Lovable `/mini` prompt in `docs/LOVABLE-WAVE4-PROMPTS.md`; `miniapp_test.ts` 4 passed incl. a caught key-mixup, shared 195, consistency 56/56)
 - [x] Postiz-style calendar scheduler (backend: `content_items.first_comment` + delay, `publish_jobs.kind` post/comment sharing the variant, comment posted as a checked reply under the channel post, `platform_signatures` setting; calendar UI prompt 2 in `docs/LOVABLE-WAVE4-PROMPTS.md`; migration 0029 + smoke §22; shared 196, consistency 60/60)
 - [x] Clip pipeline upgrade (scene detection, moment scoring, reframe, `clip_candidates`) (`studio/moments.py`: ffmpeg scene splits, keyword-burst scoring with scene bonus, face-following 1080x1920 reframe, exact-window cut; `clip_candidates` job proposes, Desk Use cuts / Drop discards, `/clips` lists; migration 0030 + smoke §23; worker 60, shared 196, consistency 63/63)
 - [x] Fan-out retries with a Desk alert on the last failure (jobs-table queue + `content/fanout-drain` cron + stuck-backlog alert; pgmq deferred — CI Postgres has no pgmq extension)
