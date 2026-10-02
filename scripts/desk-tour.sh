@@ -32,6 +32,14 @@ query() {
   if ! out="$(supabase db query --linked "$1" 2>&1)"; then
     die "db query failed (is the Supabase CLI logged in and linked? try: supabase projects list)"
   fi
+  # The CLI can exit 0 without rows (an error object, a bare banner). Say what
+  # it said, instead of letting an empty answer look like a missing setting.
+  if ! printf '%s' "$out" | grep -q '"rows"'; then
+    local why
+    why="$(printf '%s' "$out" | sed -n '/^{/,$p' | jq -r '.error.message // .message // empty' 2>/dev/null || true)"
+    [ -n "$why" ] || why="$(printf '%s' "$out" | grep -v '^Initialising' | head -1)"
+    die "the Supabase CLI gave no rows: ${why:-empty answer} (try: supabase projects list)"
+  fi
   printf '%s' "$out"
 }
 
