@@ -19,7 +19,7 @@ import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
-import { buildApprovePayload, isDeskPromptExpired } from "_shared/desk.ts";
+import { buildApprovePayload, promptStateExpired } from "_shared/desk.ts";
 import { createDraft, pushToDesk, resolveShort, resolveVariantShort, setStatus, shortIdRange } from "_shared/content.ts";
 import { check as complianceCheck, ctaCount, extractNumbers, type PostType } from "_shared/compliance.ts";
 import { nextCta, nextHook } from "_shared/hooks.ts";
@@ -1034,7 +1034,7 @@ async function onDeskMessage(m: Message): Promise<void> {
     const { data: item } = await admin().from("content_items")
       .select("id, desk_state, desk_state_at, post_type, lang").eq("desk_message_id", replyId).maybeSingle();
     if (item) {
-      if (item.desk_state && item.desk_state !== "kit" && isDeskPromptExpired(item.desk_state_at as string | null)) {
+      if (promptStateExpired(item.desk_state as string | null, item.desk_state_at as string | null)) {
         await admin().from("content_items").update({ desk_state: null, desk_state_at: null }).eq("id", item.id);
         await tg.sendMessage(m.chat.id, "That prompt expired after 30 minutes. Tap Edit or Later again.", { reply_to_message_id: m.message_id });
         return;

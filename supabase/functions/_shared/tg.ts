@@ -185,19 +185,29 @@ export function sendPoll(
   });
 }
 
-export function editMessageText(
+/** Telegram refuses an edit that changes nothing; the screen is already right. */
+function notModified(err: unknown): boolean {
+  return /message is not modified/i.test(err instanceof Error ? err.message : String(err));
+}
+
+export async function editMessageText(
   chat_id: number | string,
   message_id: number,
   text: string,
   opts: SendOpts = {},
 ) {
-  return call<TgMessage | true>("editMessageText", {
-    chat_id,
-    message_id,
-    text,
-    parse_mode: opts.parse_mode,
-    reply_markup: opts.buttons ? { inline_keyboard: opts.buttons } : undefined,
-  });
+  try {
+    return await call<TgMessage | true>("editMessageText", {
+      chat_id,
+      message_id,
+      text,
+      parse_mode: opts.parse_mode,
+      reply_markup: opts.buttons ? { inline_keyboard: opts.buttons } : undefined,
+    });
+  } catch (err) {
+    if (notModified(err)) return true;
+    throw err;
+  }
 }
 
 export function editMessageCaption(
@@ -215,16 +225,21 @@ export function editMessageCaption(
   });
 }
 
-export function editMessageReplyMarkup(
+export async function editMessageReplyMarkup(
   chat_id: number | string,
   message_id: number,
   buttons: InlineButton[][] | null,
 ) {
-  return call<TgMessage | true>("editMessageReplyMarkup", {
-    chat_id,
-    message_id,
-    reply_markup: buttons ? { inline_keyboard: buttons } : { inline_keyboard: [] },
-  });
+  try {
+    return await call<TgMessage | true>("editMessageReplyMarkup", {
+      chat_id,
+      message_id,
+      reply_markup: buttons ? { inline_keyboard: buttons } : { inline_keyboard: [] },
+    });
+  } catch (err) {
+    if (notModified(err)) return true;
+    throw err;
+  }
 }
 
 export function deleteMessage(chat_id: number | string, message_id: number) {

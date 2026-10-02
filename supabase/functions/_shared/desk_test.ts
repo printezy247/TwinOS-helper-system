@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
 import {
   APPROVE_HOP_HEADERS,
+  promptStateExpired,
   buildApprovePayload,
   cancelKeyboard,
   DESK_STATES,
@@ -65,4 +66,15 @@ Deno.test("contract: the tg-webhook approve hop matches what approve re-checks (
   const payload = buildApprovePayload(ID, "approve", 6282941580, "cb:abc123");
   assertEquals(typeof (payload.telegram as { user_id: string }).user_id, "string");
   assertEquals((payload.telegram as { user_id: string }).user_id, "6282941580");
+});
+
+// Review 3 Oct: a rewritten card (desk_state 'rewritten', no timestamp) was
+// treated as an expired prompt, so Jack's edit to it was refused.
+Deno.test("promptStateExpired: only awaiting_* prompts expire", () => {
+  const now = Date.parse("2026-10-03T10:00:00Z");
+  assertEquals(promptStateExpired("rewritten", null, now), false);
+  assertEquals(promptStateExpired("kit", null, now), false);
+  assertEquals(promptStateExpired("awaiting_edit", null, now), true);
+  assertEquals(promptStateExpired("awaiting_time", "2026-10-03T09:50:00Z", now), false);
+  assertEquals(promptStateExpired("awaiting_slot", "2026-10-03T09:00:00Z", now), true);
 });

@@ -27,6 +27,15 @@ export function isDeskPromptExpired(at: string | null | undefined, now = Date.no
 }
 
 /**
+ * Only the awaiting_* prompts (Edit, Later, Custom time) expire. A rewritten
+ * card or a kit is not waiting on Jack's reply and never times out.
+ */
+export function promptStateExpired(state: string | null | undefined, at: string | null | undefined, now = Date.now()): boolean {
+  if (!state || !state.startsWith("awaiting_")) return false;
+  return isDeskPromptExpired(at, now);
+}
+
+/**
  * Cancel button for the Edit/Later prompts. The verb is routed in
  * tg-webhook onCallback like ok/no/edit/later (Wave 0 fix 5 covers it).
  */
