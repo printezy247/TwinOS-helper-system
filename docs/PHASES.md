@@ -81,11 +81,11 @@ Exit: one TikTok reaches seven places with only the TikTok, YouTube and X taps b
 
 ## Phase 4 — Community + tracking (Nov–Dec)
 Exit: every swap shows joins and 7-day retention.
-- [ ] Discussion group linked; bot admin; `mod_rules` seeded; warn → mute → ban live
-- [ ] Join-request captcha + CAS check
-- [ ] Scam-impersonation watch; repeat-question detector → the FAQ bot's sheet
+- [ ] Discussion group linked; bot admin; `mod_rules` seeded; warn → mute → ban live — the engine is rebuilt and tested (`_shared/moderation.ts`: scam phrases EN/BM, new-member link block with our own domains allowed, impersonation incl. lookalike letters, ladder warn → 24 h mute → ban, admins and Jack exempt). It switches on when Jack links the group: `settings.discussion_group_chat_id` and the bot as admin (delete, restrict, ban). Flood control is NOT enforced yet: it needs a per-message counter that is not stored
+- [x] Join-request captcha + CAS check (`onJoinRequest`: a CAS-banned account is declined and logged `cas_blocked`; otherwise a private "I am a person" button, only that person can press it; needs invite links created with approval)
+- [x] Scam-impersonation watch (flag to the Desk, nothing removed) and repeat-question detector (`v_repeat_questions`, migration 0022; the Desk hears about a question the second time it is asked)
 - [ ] Post view snapshots at +1 h / 24 h / 7 d
-- [ ] Swap tracker (one link per partner) + funnel view (`v_funnel`)
+- [x] Swap tracker (one named link per partner through `POST /links`) + funnel view (`v_funnel`, cost per first-time depositor in `v_stop_if`)
 - [ ] Reference-channel benchmark cards refreshed weekly
 - [ ] Signal board + Inbox screens in Lovable
 
