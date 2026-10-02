@@ -117,7 +117,7 @@ Replays of the same `id` return `200 { "replayed": true }`.
 ## results
 `POST /results` `{ "signal_id": "…" | "external_id": "auto-8841", "status": "tp1", "dry_run": false }`
 → `201 { "ok": true, "content_id": "…", "jobs": 1, "reply_to": 7712, "stats": { "wins": 7, "losses": 3, "be": 2, "win_rate": 0.7, "total_r": 8.4 } }`.
-`409` if the signal card was never posted. `POST /results/stop-if` → `{ "ok": true, "missing": ["auto-8800"] }` and a Telegram alert to Jack.
+`409` if the signal card was never posted. `POST /results/stop-if` → `{ "ok": true, "missing": ["auto-8800"], "alerted": ["auto-8800"] }` and a Telegram alert to Jack. One open alert per signal (`dedupe_key = stop_if:<signal_id>`), so the 10-minute cron does not re-alert or re-message for the same stuck signal; `alerted` lists only the ones raised on this pass.
 `POST /results/run` `{ "limit": 20 }` → `{ "ran": 2, "results": [ { "job_id": "…", "ok": true, "content_id": "…" } ] }`.
 Cron calls it every minute: it drains queued `result_reply` jobs (queued by
 `signals-ingest` when a live signal closes) so a result posts by itself. The job
