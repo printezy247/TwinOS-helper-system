@@ -5,7 +5,7 @@
 #   ./scripts/desk-tour.sh --dry-run  print the payloads, touch nothing
 #
 # What it does, in order:
-#   1. the read-only commands answer: /status, /friday, /hours today, /batch, /menu, /help
+#   1. the read-only commands answer: /status, /friday, /hours today, /batch, /menu, /clips, /help
 #   2. a synthetic Jack message becomes a draft with a Desk message
 #   3. /fanout #<id> copies it to the other platforms
 #   3b. the 🎛 button (callback verb "adj", no-AI path) refreshes the draft
@@ -123,7 +123,7 @@ JSON
 
 # --- 1. read-only commands ------------------------------------------------------
 say "1. read-only commands"
-for cmd in "/status" "/friday" "/hours today" "/batch" "/menu" "/help"; do
+for cmd in "/status" "/friday" "/hours today" "/batch" "/menu" "/clips" "/help"; do
   next; post "$cmd" "$(jack_says "$SEQ" "$cmd")"
 done
 

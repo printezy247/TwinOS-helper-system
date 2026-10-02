@@ -69,5 +69,17 @@ class ReframeTests(unittest.TestCase):
             moments.reframe_filter(1920, 1080, face_box=(0, 0, 0, 0))
 
 
+class WindowCutTests(unittest.TestCase):
+    def test_exact_window_seeks_then_cuts(self):
+        cmd = moments.window_cut_command("ffmpeg", "/tmp/live.mp4", 70.5, 100.0, "/tmp/out.mp4")
+        self.assertEqual(cmd[cmd.index("-ss") + 1], "70.50")
+        self.assertEqual(cmd[cmd.index("-to") + 1], "100.00")
+        self.assertEqual(cmd[-1], "/tmp/out.mp4")
+
+    def test_a_backwards_window_is_refused(self):
+        with self.assertRaises(ValueError):
+            moments.window_cut_command("ffmpeg", "/tmp/live.mp4", 100.0, 70.0, "/tmp/out.mp4")
+
+
 if __name__ == "__main__":
     unittest.main()

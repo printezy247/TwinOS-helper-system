@@ -127,6 +127,11 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
     await onPick(cq, parsed.short);
     return;
   }
+  // Clip candidate taps point at candidates, not items.
+  if (parsed.kind === "item" && parsed.verb === "clip") {
+    await onClipAction(cq, parsed.short, parsed.extra);
+    return;
+  }
 
   let content_id: string;
   try { content_id = await resolveShort(parsed.short); } catch (err) {
@@ -394,6 +399,85 @@ async function onPick(cq: NonNullable<Update["callback_query"]>, short: string):
   }
 }
 
+/**
+ * Clip candidate taps (Wave 4 item 3): `clip:<id8>:use` cuts the window on
+ * the PC, `clip:<id8>:drop` discards it. Nothing is cut before the tap.
+ */
+async function onClipAction(
+  cq: NonNullable<Update["callback_query"]>,
+  short: string,
+  action: string | undefined,
+): Promise<void> {
+  const chat = cq.message?.chat.id;
+  const mid = cq.message?.message_id;
+  const db = admin();
+  let from = "";
+  let to = "";
+  try {
+    ({ from, to } = shortIdRange(short));
+  } catch {
+    await tg.answerCallbackQuery(cq.id, "That moment is gone.", true);
+    return;
+  }
+  const { data } = await db.from("clip_candidates")
+    .select("id, source_path, start_s, end_s, status").gte("id", from).lte("id", to).limit(2);
+  if (!data?.length || data.length > 1) {
+    await tg.answerCallbackQuery(cq.id, "That moment is gone.", true);
+    return;
+  }
+  const c = data[0];
+  if (action === "drop") {
+    await db.from("clip_candidates").update({ status: "dropped", decided_by: "jack" }).eq("id", c.id);
+    await logAction({ actor: "jack", action: "clip.drop", target: String(c.id) });
+    await tg.answerCallbackQuery(cq.id, "Dropped.");
+    if (chat && mid) {
+      await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton("Dropped")]]).catch(() => null);
+    }
+    return;
+  }
+  if (action !== "use") {
+    await tg.answerCallbackQuery(cq.id, "Unknown button.", true);
+    return;
+  }
+  if (c.status !== "proposed") {
+    await tg.answerCallbackQuery(cq.id, "Already handled.", true);
+    return;
+  }
+  await db.from("clip_candidates").update({ status: "approved", decided_by: "jack" }).eq("id", c.id);
+  await db.from("jobs").insert({
+    kind: "clip",
+    payload: {
+      path: String(c.source_path ?? ""),
+      clip_start: Number(c.start_s),
+      clip_end: Number(c.end_s),
+      max_clips: 1,
+    },
+    status: "queued",
+    created_by: "jack",
+  });
+  await logAction({ actor: "jack", action: "clip.use", target: String(c.id) });
+  await tg.answerCallbackQuery(cq.id, "Cutting that window on the PC…");
+  if (chat && mid) {
+    await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton("🎬 Cutting…")]]).catch(() => null);
+  }
+}
+
+/** `/clips` lists the open clip candidates (read-only; Use/Drop live on the candidates message). */
+async function onClips(m: Message): Promise<void> {
+  const { data } = await admin().from("clip_candidates")
+    .select("id, start_s, end_s, score, reason, hook_text")
+    .eq("status", "proposed").order("score", { ascending: false }).limit(5);
+  const stamp = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const lines = (data ?? []).map((c) => {
+    const short = String(c.id).replace(/-/g, "").slice(0, 8);
+    return `🎬 <code>${short}</code> ${stamp(Number(c.start_s))}–${stamp(Number(c.end_s))} (score ${Number(c.score)}): ` +
+      `${tg.escapeHtml(String(c.reason ?? "")).slice(0, 160)}`;
+  });
+  await tg.sendMessage(m.chat.id, lines.length ? `<b>Clip candidates</b>\n${lines.join("\n")}\nTap Use / Drop on the candidates message.` : "No open clip candidates.", {
+    parse_mode: "HTML", reply_to_message_id: m.message_id,
+  });
+}
+
 /** `/fanout` as a reply to a draft, or `/fanout #abcd1234`. */
 async function onFanout(m: Message): Promise<void> {
   const say = (html: string) => tg.sendMessage(m.chat.id, html, { parse_mode: "HTML", reply_to_message_id: m.message_id });
@@ -573,6 +657,7 @@ const HELP_TEXT = [
   "/hours &lt;task&gt; &lt;minutes&gt; [note] - log what a task cost by hand",
   "/hours today - today's total and the week so far",
   "/menu - buttons for Status, Batch, Friday, Hours and Help",
+  "/clips - open clip candidates (Use taps cut on the PC)",
   "/help - this message",
 ].join("\n");
 
@@ -855,6 +940,7 @@ async function onDeskCommand(m: Message, cmd: string): Promise<void> {
   if (cmd === "hours") { await onHours(m); return; }
   if (cmd === "batch") { await onBatch(m); return; }
   if (cmd === "fanout") { await onFanout(m); return; }
+  if (cmd === "clips") { await onClips(m); return; }
 
   if (cmd === "menu" || cmd === "start") {
     await tg.sendMessage(m.chat.id, HOME_TEXT, {
