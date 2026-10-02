@@ -102,6 +102,15 @@ Deno.test("fanoutSummary: providers say where to approve, kits carry the caption
   assert(!text.includes("<pre>x</pre>"));
 });
 
+Deno.test("fanoutSummary: a failed platform says retry queued, not approved", () => {
+  const results: FanResult[] = [
+    { platform: "threads", content_id: "", kit: false, body: "", notes: [], findings: [], complianceOk: false, retryQueued: true },
+  ];
+  const text = fanoutSummary("abcd1234", results);
+  assert(/Threads[^\n]*retry queued/i.test(text));
+  assert(!/approve/i.test(text));
+});
+
 Deno.test("kitRefuses: a kit cannot be approved or rescheduled, but it can be rejected", () => {
   const kit = { via: "fanout", kit: true };
   assertEquals(kitRefuses(kit, "approve"), true);

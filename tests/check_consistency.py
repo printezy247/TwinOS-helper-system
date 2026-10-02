@@ -554,8 +554,29 @@ def wave4_clips() -> None:
     )
 
 
+def wave4_fanout() -> None:
+    fanout = read("supabase/functions/_shared/fanout.ts")
+    check(
+        "fanout: a failed platform is queued for retry, not dropped",
+        "enqueueRetry" in fanout and "fanout_platform" in fanout,
+        "Wave 4 item 4: retries with a Desk alert on the last failure",
+    )
+    content = read("supabase/functions/content/index.ts")
+    check(
+        "fanout: a drain route works the retry queue",
+        "fanout-drain" in content and "deskAlert(" in content,
+        "Wave 4 item 4: cron drains, the Desk hears the last failure",
+    )
+    jobs = read("supabase/functions/jobs/index.ts")
+    check(
+        "jobs: the fan-out retry kind is claimable",
+        '"fanout_platform"' in jobs,
+        "Wave 4 item 4: retries ride the jobs table (pgmq deferred: no pgmq in CI Postgres)",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
