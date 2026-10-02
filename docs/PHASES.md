@@ -152,9 +152,9 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [ ] Stat tiles, Inbox status tabs, specific toasts, filter chips
 
 ### Wave 3 — functions
-- [ ] Integration status in `health` (secret names only)
-- [ ] Live provider checks, alert on change / recovery
-- [ ] Error alerts to the Desk with cooldown
+- [x] Integration status in `health` (secret names only) (`integrations.ts`; GET carries `integrations` + provider beats)
+- [x] Live provider checks, alert on change / recovery (`providers.ts` getMe + token debug; `provider_*` beats; transitions only)
+- [x] Error alerts to the Desk with cooldown (`alerts.ts` `deskAlert`: one open row per key, repeats counted)
 - [ ] Unknown-outcome guard in publish / fan-out
 - [ ] Hook and CTA library (no AI)
 - [ ] `llm_variants` PC-worker job (off by default, local model, compliance + number guard)
