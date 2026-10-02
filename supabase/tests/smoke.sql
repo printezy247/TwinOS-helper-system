@@ -463,5 +463,32 @@ begin
   raise notice 'ok: login roles come from app_metadata only';
 end $$;
 
+-- 15. one publish job per variant: enqueuePublish() upserts with
+--     onConflict=variant_id, ignoreDuplicates, so an approve that is retried
+--     (or a cron tick that re-enqueues) cannot post the same draft twice (P1.2)
+do $$
+declare
+  v_item uuid;
+  v_var uuid;
+begin
+  insert into public.content_items (post_type, title, status)
+    values ('gold_map', 'smoke publish idempotency', 'approved')
+    returning id into v_item;
+  insert into public.content_variants (item_id, body)
+    values (v_item, 'GOLD MAP. Not financial advice.')
+    returning id into v_var;
+
+  insert into public.publish_jobs (content_id, variant_id, platform, run_at, status, attempts, created_by)
+    values (v_item, v_var, 'telegram', now(), 'queued', 0, 'smoke');
+  -- the retry: same upsert, must be a no-op
+  insert into public.publish_jobs (content_id, variant_id, platform, run_at, status, attempts, created_by)
+    values (v_item, v_var, 'telegram', now(), 'queued', 0, 'smoke')
+    on conflict (variant_id) do nothing;
+
+  assert (select count(*) from public.publish_jobs where variant_id = v_var) = 1,
+    'enqueuePublish must keep one publish job per variant, even when retried';
+  raise notice 'ok: publish_jobs is idempotent per variant';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
