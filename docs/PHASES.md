@@ -19,7 +19,7 @@ Exit: schema reviewed; baseline logged.
 - [x] Supabase project created in Jack's account (`cdnyybrfoclexjlroqcf`, Singapore); migrations + seed applied and fingerprint-checked; smoke test green
 - [x] `pg_cron`, `pg_net` (in `extensions`), pgvector enabled; private `assets` bucket created (45 MB limit)
 - [x] Jack's login created with `twinos_role = jack`
-- [ ] API keys minted for pc_worker, abdul, ezyai; stored in keyring / on the host — Jack: `./scripts/mint-keys.sh` (helper + `rotate_api_key()` shipped; keys ride on `X-TwinOS-Key`)
+- [x] API keys minted for pc_worker, abdul, ezyai (2 Oct, `./scripts/mint-keys.sh`; keys live in the keyring and ride on `X-TwinOS-Key`). The ezyai key still has to be copied to the signal bot host by Jack
 - [x] @EzyOps_bot created; token in keyring and function secrets
 - [x] EzyMap Desk group created (Jack + bot); chat ids in `settings`
 - [x] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean (redeploy with `scripts/deploy.sh` after each merge that touches functions)
@@ -32,7 +32,7 @@ Exit: schema reviewed; baseline logged.
 
 **Phase 1 is live.** Jack confirmed the Supabase project and the functions are
 deployed (`cdnyybrfoclexjlroqcf`, all 11 at v8 as of 2 Oct); migrations
-`0001`–`0019` are applied live and match the repo. What remains unverified is
+`0001`–`0020` are applied live and match the repo. What remains unverified is
 anything that needs a real Telegram tap or a real posted signal: the Desk loop
 end to end, a result reply under a posted card, and the TradingView/signal-bot
 handoffs.
@@ -59,14 +59,14 @@ Exit: Jack approves the map and a signal from his phone; a result reply posts by
 
 ## Phase 2 — ABDUL + batch + Friday (22–31 Oct)
 Exit: Friday report arrives without Jack opening a spreadsheet.
-- [ ] MCP server in `apps/mcp/` with the twelve verbs (no approve) — registered next to `abdul mcp`
+- [x] MCP server in `apps/mcp/` with the verbs (no approve; `FORBIDDEN_PATH` guard, 40 tests). Registering it next to `abdul mcp` is Jack's one command (`claude mcp add twinos -- python3 ~/TwinOS-helper-system/apps/mcp/twinos_mcp.py`)
 - [ ] `twinos_call()` in ABDUL with the key from the keyring
-- [ ] Wednesday 14:30 batch (7 lessons + audit + poll + offer), numbered, edits by "N: instruction"
-- [ ] Thursday auto-scheduling of the approved batch
-- [ ] Scorecard image renderer (`studio/scorecard.py`, port of the sales bot's `receipt.py`)
+- [x] Wednesday 14:30 batch: 7 lessons (5 skill + 2 Start Safe), audit, poll, offer, numbered by `batch_no`, edits by "N: text" (`content/batch`, `_shared/batch.ts`, 15 tests; cron `twinos-wednesday-batch` live; the function needs `scripts/deploy.sh`)
+- [x] Thursday sweep (`content/batch-sweep`, cron `twinos-thursday-sweep` Thu 09:00 MYT): queues approved-but-unscheduled posts, nudges the Desk about the rest. `/batch ok` approves what is ready and claim-free
+- [x] Scorecard image renderer (`workers/pc/studio/scorecard.py`, Pillow; `test_scorecard.py`)
 - [ ] Friday scoreboard with Vantage + TikTok manual inputs; `v_friday_scoreboard` complete
 - [ ] Content log rows automatic + Sheet export
-- [ ] Named invite links through the bot (`POST /links`); weekly Telechurn numbers imported
+- [x] Named invite links through TwinOS (`POST /links`, `src-campaign-yymm` enforced). Weekly Telechurn import: the worker handler exists, it needs Jack's weekly CSV in `~/EzyMap/telechurn/`
 - [ ] Content Calendar, Health, Analytics/Friday screens in Lovable
 
 ## Phase 3 — Repurposing (November)

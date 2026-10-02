@@ -153,3 +153,85 @@ export function summaryLines(plan: BatchItem[], needed: Map<number, string[]>, t
     return `${i.n}. ${day} ${hm} · ${esc(i.label)}${i.title ? ` — ${esc(i.title)}` : ""} · ${state}`;
   });
 }
+
+/** The Monday of the week an ISO date falls in. */
+export function mondayOf(iso: string): string {
+  return addDays(iso, 1 - dowOf(iso));
+}
+
+/** ISO week number (1-53) of an ISO date. */
+function isoWeek(iso: string): number {
+  const [y, m, d] = parseIso(iso);
+  const thursday = new Date(Date.UTC(y, m - 1, d + (4 - dowOf(iso))));
+  const jan1 = Date.UTC(thursday.getUTCFullYear(), 0, 1);
+  return Math.floor((thursday.getTime() - jan1) / 86_400_000 / 7) + 1;
+}
+
+/** Which week (1-4) of the 28-day TikTok calendar the week starting `monday` falls on. */
+export function cycleWeek(monday: string): number {
+  return ((isoWeek(monday) - 1) % 4) + 1;
+}
+
+/** "L (Start Safe): 3 scam red flags" -> "3 scam red flags". Calendar topics carry a pillar prefix. */
+export function topicTitle(topic: string | null | undefined): string | null {
+  if (!topic) return null;
+  return topic.replace(/^[A-Z]{1,3}(?: \([^)]*\))?:\s*/, "").trim() || null;
+}
+
+export interface ReadyState {
+  status: string;
+  needed: string[];
+  claims: string[];
+  blocked: boolean;
+}
+
+/**
+ * `/batch ok` may approve this item. Claims (a price, a level, a result, an
+ * offer) are always Jack's own tap, a [NEEDED] field means not ready, and a
+ * blocking finding means it must be edited first. The approve function still
+ * runs its own gate on every call; this only decides who is worth asking it about.
+ */
+export function readyToApprove(s: ReadyState): boolean {
+  return (s.status === "draft" || s.status === "pending_approval") &&
+    s.needed.length === 0 && s.claims.length === 0 && !s.blocked;
+}
+
+export interface SweepItem extends ReadyState {
+  id: string;
+  n: number;
+  when: string;
+  hasJob: boolean;
+}
+
+export interface SweepResult {
+  /** Approved, slot still ahead, but no publish job: queue one. */
+  enqueue: string[];
+  /** Still waiting on Jack, with the reason in a few words. */
+  nudge: Array<{ n: number; why: string }>;
+  /** The slot has already gone and nothing was queued. */
+  missed: number[];
+}
+
+/** The Thursday sweep over the batch: self-heal what is approved, nudge what is not. */
+export function sweepPlan(items: SweepItem[], now: Date): SweepResult {
+  const out: SweepResult = { enqueue: [], nudge: [], missed: [] };
+  for (const i of items) {
+    const gone = new Date(i.when).getTime() < now.getTime();
+    if (i.status === "approved" || i.status === "scheduled") {
+      if (i.hasJob) continue;
+      if (gone) out.missed.push(i.n);
+      else out.enqueue.push(i.id);
+    } else if (i.status === "draft" || i.status === "pending_approval") {
+      if (gone) { out.missed.push(i.n); continue; }
+      const why = i.needed.length
+        ? `needs ${i.needed.join(", ")}`
+        : i.blocked
+        ? "blocked by a check"
+        : i.claims.length
+        ? "needs your tap"
+        : "ready: /batch ok";
+      out.nudge.push({ n: i.n, why });
+    }
+  }
+  return out;
+}

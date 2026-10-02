@@ -1,5 +1,8 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
-import { type BatchSlot, nextMonday, planBatch, slotToInstant, summaryLines } from "./batch.ts";
+import {
+  type BatchSlot, cycleWeek, mondayOf, nextMonday, planBatch, readyToApprove, slotToInstant, summaryLines,
+  sweepPlan, topicTitle,
+} from "./batch.ts";
 
 const TZ = "Asia/Kuala_Lumpur";
 
@@ -97,4 +100,57 @@ Deno.test("summaryLines: one numbered line per item, with what is still open, HT
   assert(lines[0].includes("09:00"));
   assert(lines[1].includes("needs: text"));
   assert(lines[1].includes("stops &lt;and&gt; risk"));
+});
+
+Deno.test("mondayOf: any day snaps to that week's Monday", () => {
+  assertEquals(mondayOf("2026-10-14"), "2026-10-12");
+  assertEquals(mondayOf("2026-10-12"), "2026-10-12");
+  assertEquals(mondayOf("2026-10-18"), "2026-10-12");
+});
+
+Deno.test("cycleWeek: the 28-day TikTok calendar's week (1-4) for a Monday", () => {
+  assertEquals(cycleWeek("2026-10-05"), 1); // ISO week 41
+  assertEquals(cycleWeek("2026-10-12"), 2);
+  assertEquals(cycleWeek("2026-10-19"), 3);
+  assertEquals(cycleWeek("2026-11-02"), 1); // week 45 wraps round
+});
+
+Deno.test("topicTitle: drops the calendar's pillar prefix", () => {
+  assertEquals(topicTitle("L: where your stop goes on gold"), "where your stop goes on gold");
+  assertEquals(topicTitle("L (Start Safe): 3 scam red flags"), "3 scam red flags");
+  assertEquals(topicTitle("no prefix here"), "no prefix here");
+  assertEquals(topicTitle(null), null);
+});
+
+Deno.test("readyToApprove: only a claim-free, unblocked, complete draft", () => {
+  const ok = { status: "draft", needed: [] as string[], claims: [] as string[], blocked: false };
+  assertEquals(readyToApprove(ok), true);
+  assertEquals(readyToApprove({ ...ok, status: "pending_approval" }), true);
+  assertEquals(readyToApprove({ ...ok, needed: ["text"] }), false); // [NEEDED] means not ready
+  assertEquals(readyToApprove({ ...ok, claims: ["level"] }), false); // claims are Jack's own tap
+  assertEquals(readyToApprove({ ...ok, blocked: true }), false);
+  assertEquals(readyToApprove({ ...ok, status: "approved" }), false);
+  assertEquals(readyToApprove({ ...ok, status: "rejected" }), false);
+});
+
+Deno.test("sweepPlan: queue what is approved but unscheduled, nudge what waits, flag what was missed", () => {
+  const now = new Date("2026-10-15T01:00:00Z");
+  const base = { needed: [] as string[], claims: [] as string[], blocked: false, hasJob: false };
+  const plan = sweepPlan([
+    { id: "a", n: 1, status: "approved", when: "2026-10-16T05:00:00Z", ...base },
+    { id: "b", n: 2, status: "approved", when: "2026-10-16T05:00:00Z", ...base, hasJob: true },
+    { id: "c", n: 3, status: "draft", when: "2026-10-17T05:00:00Z", ...base, needed: ["text"] },
+    { id: "d", n: 4, status: "pending_approval", when: "2026-10-17T05:00:00Z", ...base, claims: ["level"] },
+    { id: "e", n: 5, status: "draft", when: "2026-10-18T05:00:00Z", ...base },
+    { id: "f", n: 6, status: "draft", when: "2026-10-14T05:00:00Z", ...base }, // slot already gone
+    { id: "g", n: 7, status: "approved", when: "2026-10-14T05:00:00Z", ...base }, // slot gone, never queued
+    { id: "h", n: 8, status: "rejected", when: "2026-10-17T05:00:00Z", ...base },
+  ], now);
+  assertEquals(plan.enqueue, ["a"]);
+  assertEquals(plan.nudge, [
+    { n: 3, why: "needs text" },
+    { n: 4, why: "needs your tap" },
+    { n: 5, why: "ready: /batch ok" },
+  ]);
+  assertEquals(plan.missed, [6, 7]);
 });
