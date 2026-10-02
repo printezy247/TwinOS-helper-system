@@ -3,6 +3,7 @@
  *
  *   POST /content/draft                     { post_type, lang, fields, platform?, pillar?, icp?,
  *                                             media?, allowed_numbers?, push_to_desk? }
+ *   POST /content/annual-offer              { sku? }   annual-plan offer drafts from the products table (list without a sku)
  *   POST /content/batch                     { for?: YYYY-MM-DD, only?: ["lesson", ...] }   Wednesday 14:30 MYT
  *   POST /content/batch-sweep               {}                                             Thursday 09:00 MYT
  *   POST /content/{id}/fanout               { platforms?: [...], asset_id? }   one master -> a copy per platform
@@ -19,6 +20,7 @@ import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, enqueuePublish, loadContent, pushToDesk } from "_shared/content.ts";
 import { fanOut } from "_shared/fanout.ts";
+import { annualOffers, offerText, type ProductRow } from "_shared/offers.ts";
 import { fanoutSummary } from "_shared/platforms.ts";
 import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
@@ -232,6 +234,30 @@ serve(async (req) => {
     }
     await logAction({ actor: caller.actor, action: "content.batch_sweep", payload: { monday, enqueued: plan.enqueue.length, nudged: plan.nudge.length, missed: plan.missed.length } });
     return remember(idem, 200, { ok: true, monday, ...plan });
+  }
+
+  // POST /content/annual-offer { sku? } — an annual-plan offer drafted from the products table (Phase 7).
+  // Without a sku it only lists what could be offered. The numbers are the table's, worked out, never typed;
+  // a price is a claim, so the draft waits for Jack's approval like every offer.
+  if (tail[0] === "annual-offer") {
+    requireRole(caller.role, "content.draft");
+    const { data: rows } = await admin().from("products").select("sku, name, billing, price_usd, term_months, active");
+    const offers = annualOffers((rows ?? []) as ProductRow[]);
+    const sku = typeof body.sku === "string" ? body.sku.trim() : "";
+    if (!sku) return json({ ok: true, offers });
+    const offer = offers.find((o) => o.monthlySku === sku || o.annualSku === sku);
+    if (!offer) throw notFound("annual offer for that sku");
+    const day = new Date().toISOString().slice(0, 10);
+    const idem = { scope: "content.annual-offer", key: `${offer.annualSku}:${day}`, requestHash: "-" };
+    const hit = await replay(idem);
+    if (hit) return hit;
+    const draft = await createDraft({
+      post_type: "offer", lang: "en", fields: { offer_text: offerText(offer) },
+      allowed_numbers: [offer.monthly, offer.annual, offer.twelveMonths, offer.saves, offer.savesPct],
+      title: `Annual plan: ${offer.name}`, source: { via: "annual_offer", sku: offer.annualSku }, actor: caller.actor,
+    });
+    const desk = await pushToDesk(draft, { heading: "Annual-plan offer", actor: caller.actor });
+    return remember(idem, 201, { ok: true, content_id: draft.content_id, desk, needed: draft.needed });
   }
 
   // POST /content/draft

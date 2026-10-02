@@ -106,10 +106,10 @@ Exit: cost per FTD visible daily.
 - [ ] Lawyer's opinion on compliance obtained before paid ads (decision 7) — Jack
 
 ## Phase 7 — Q1–Q2 extras (Feb–Jun 2027)
-- [ ] YouTube long-form from Sunday lives
-- [ ] BM SEO article briefs
-- [ ] WhatsApp retention hooks
-- [ ] Annual-plan offer variants
+- [ ] YouTube long-form from Sunday lives — the pick (the 8-20 minute window with the most chart talk) and the YouTube chapter list are built and tested (`studio/longform.py`, `run_long`); wiring it to the queued clip job and the first real run on Jack's PC are still to do
+- [x] BM SEO article briefs (`POST /research/article`: title options, the questions people ask as headings, keywords, the rules a financial article keeps; built from the stored autocomplete suggestions, Malay first; a person writes the article and Jack reviews)
+- [ ] WhatsApp retention hooks — not built: there is no WhatsApp sending channel and no spec for the messages yet. It starts when Jack picks the channel (WhatsApp Business API or a broadcast list) and the moments to nudge (7 days before expiry is already in the Friday numbers)
+- [x] Annual-plan offer variants (`POST /content/annual-offer`: pairs each `*_1m` product with its `*_1y` twin, works out the saving from the table, drafts the offer for Jack's approval; with no sku it only lists what could be offered. A dearer annual price is no offer)
 
 ## Phase 8 — Revenue core (after Phase 7)
 Exit: payments match the old bot for two weeks.
