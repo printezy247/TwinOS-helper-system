@@ -1,5 +1,6 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { backoffMs, classify, MAX_ATTEMPTS } from "./backoff.ts";
+import { backoffMs, classify, MAX_ATTEMPTS, retryPlan } from "./backoff.ts";
+import { MetaError } from "./meta.ts";
 import { TgError } from "./tg.ts";
 
 Deno.test("backoff doubles from 30 s and caps at 15 min", () => {
@@ -37,4 +38,18 @@ Deno.test("an unrecognised throw is unknown (retry), never a silent success", ()
 
 Deno.test("MAX_ATTEMPTS matches the docs (4 tries, then a failed job + alert)", () => {
   assertEquals(MAX_ATTEMPTS, 4);
+});
+
+Deno.test("a Meta rate limit retries; a bad token or a bad parameter fails the job", () => {
+  assertEquals(classify(new MetaError("slow down", 400, 4, null)).kind, "throttled");
+  assertEquals(classify(new MetaError("boom", 503, null, null)).kind, "throttled");
+  const auth = classify(new MetaError("Invalid OAuth access token.", 400, 190, null));
+  assertEquals(auth.kind, "permanent");
+  assertEquals(auth.reason.startsWith("auth:"), true);
+  assertEquals(classify(new MetaError("bad param", 400, 100, null)).kind, "permanent");
+});
+
+Deno.test("retryPlan: a daily-cap hold waits half an hour and does not use up an attempt", () => {
+  assertEquals(retryPlan(2, "capped: instagram has reached 100 posts in 24 h"), { delayMs: 30 * 60_000, burnsAttempt: false });
+  assertEquals(retryPlan(2, "network down"), { delayMs: backoffMs(2), burnsAttempt: true });
 });
