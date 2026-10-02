@@ -30,13 +30,17 @@ Exit: schema reviewed; baseline logged.
 - [ ] The EzyMap indicator repo made private — Jack
 - [x] Backend scaffolding: `_shared`, ten functions, PC worker, docs, CI (this repo, Phase 0 commit)
 
-**Phase 1 does not start until Jack confirms the Supabase project exists and the
-functions are deployed.** Until then the work is local only.
+**Phase 1 is live.** Jack confirmed the Supabase project and the functions are
+deployed (`cdnyybrfoclexjlroqcf`, all 11 at v8 as of 2 Oct); migrations
+`0001`–`0019` are applied live and match the repo. What remains unverified is
+anything that needs a real Telegram tap or a real posted signal: the Desk loop
+end to end, a result reply under a posted card, and the TradingView/signal-bot
+handoffs.
 
 Everything above the Jack items is verified against a real Postgres 17 and a real
-Deno 2.9.6, and CI repeats all of it on every push. What remains unverified is
-anything that needs a live Supabase project: the `pg_cron`, `pg_net` and
-pgvector extensions, a real deployment, and the Telegram webhook.
+Deno 2.9.7, and CI repeats all of it on every push. The `pg_cron`, `pg_net` and
+pgvector extensions are enabled, the functions are deployed and the Telegram
+webhook is set.
 
 ## Phase 1 — Desk loop (8–21 Oct)
 Exit: Jack approves the map and a signal from his phone; a result reply posts by itself.
@@ -45,11 +49,12 @@ Exit: Jack approves the map and a signal from his phone; a result reply posts by
 - [x] Templates for all 15 post types seeded and rendering without `[NEEDED]` on the daily ones (`templates.body`; `tests/check_templates.ts` renders all 15 through the compliance engine in CI)
 - [ ] TradingView alert → signal card draft (COUNTER-TREND line kept); alert JSON set in TradingView — Jack
 - [ ] The signal bot pushing to `signals-ingest` (key on its host) — Jack + signal bot repo
-- [ ] Result replies under signals from board status changes
-- [ ] Stop-if alarm firing on a test signal with no result
-- [ ] Compliance checks on every variant; evidence trail in `compliance_checks`
-- [ ] PC worker installed as a user service; `--self-test` green; nightly backup file appears
-- [ ] 07:40 / 19:55 reminders (cron → content)
+- [ ] Result replies under signals from board status changes (`results/run` drains the queued `result_reply` jobs and is scheduled every minute; needs a **posted** signal card to prove end to end, which needs a real approved signal)
+- [ ] Stop-if alarm firing on a test signal with no result (route deployed, `v_stop_if` + dedupe covered by `smoke.sql` §4/§17, cron live; not yet fired on a real signal)
+- [x] Compliance checks on every variant; evidence trail in `compliance_checks` (the rewrite path in `jobs` now checks and logs like `createDraft` and the Desk edit; `check_consistency.py` fails if any variant-body write skips `compliance_checks`)
+- [ ] PC worker installed as a user service; `--self-test` green; nightly backup file appears (service installed, enabled, lingering; `--self-test` 200; a queued job claimed and finished live. The nightly backup file needs keyring `db_url` — Jack)
+- [x] 07:40 / 19:55 reminders (cron → content) (`content/remind-map` + `content/remind-wrap` deployed; `twinos-map-reminder` `40 23 * * 0-4` and `twinos-evening-reminder` `55 11 * * 1-5` live; once per MYT day, only when nothing arrived; `_shared/time_test.ts` covers the day boundary)
+- [x] Baseline hours `/hours` in the Desk (deployed; `_shared/hours_test.ts`; Friday scorecard gains an hours line)
 - [x] Approval Inbox screen in Lovable (jack-only Approve) — built 2 Oct; Jack to sign in and confirm with a real draft
 
 ## Phase 2 — ABDUL + batch + Friday (22–31 Oct)
