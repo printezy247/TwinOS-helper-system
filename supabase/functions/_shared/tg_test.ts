@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "std/assert/mod.ts";
-import { call, TgError } from "./tg.ts";
+import { answerCallbackQuery, call, TgError } from "./tg.ts";
 
 // A token-shaped value would trip the CI secret grep; the client never
 // validates its shape, so anything non-empty works.
@@ -67,6 +67,24 @@ Deno.test("a permanent error (403) is not retried at all", async () => {
   try {
     await assertRejects(() => call("sendMessage", { chat_id: 1, text: "x" }), TgError);
     assertEquals(state.calls, 1, "a 403 must fail the job, not be retried");
+  } finally {
+    restore(state);
+  }
+});
+
+Deno.test("answerCallbackQuery: an expired or unknown query id is not fatal (the tap's decision must still run)", async () => {
+  const state = stubFetch([{ status: 400, body: { ok: false, error_code: 400, description: "Bad Request: query is too old and response timeout expired or query ID is invalid" } }]);
+  try {
+    assertEquals(await answerCallbackQuery("expired-id", "Rejected."), false);
+  } finally {
+    restore(state);
+  }
+});
+
+Deno.test("answerCallbackQuery: a good answer is true", async () => {
+  const state = stubFetch([ok(true)]);
+  try {
+    assertEquals(await answerCallbackQuery("live-id"), true);
   } finally {
     restore(state);
   }

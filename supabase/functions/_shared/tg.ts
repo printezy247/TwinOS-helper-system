@@ -243,12 +243,23 @@ export function unpinChatMessage(chat_id: number | string, message_id: number) {
   return call<true>("unpinChatMessage", { chat_id, message_id });
 }
 
-export function answerCallbackQuery(
+/**
+ * The toast on Jack's screen. Telegram refuses it once the query is ~15 s old
+ * (or the id is synthetic, as in scripts/desk-tour.sh); that must never stop
+ * the decision the tap carries, so a refusal is logged and returned as false.
+ */
+export async function answerCallbackQuery(
   callback_query_id: string,
   text?: string,
   show_alert = false,
-) {
-  return call<true>("answerCallbackQuery", { callback_query_id, text, show_alert });
+): Promise<boolean> {
+  try {
+    await call<true>("answerCallbackQuery", { callback_query_id, text, show_alert });
+    return true;
+  } catch (err) {
+    console.warn("[tg] answerCallbackQuery refused", err instanceof Error ? err.message : err);
+    return false;
+  }
 }
 
 export function getChatMemberCount(chat_id: number | string) {
