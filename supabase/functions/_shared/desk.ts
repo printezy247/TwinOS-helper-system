@@ -114,3 +114,28 @@ export function buildApprovePayload(
     ...rest,
   };
 }
+
+type Btn = { text: string; callback_data?: string };
+
+/**
+ * After a tap, change only the tapped item's rows when the keyboard is shared
+ * (a drafts panel, angles, clip candidates); a card that holds one item
+ * collapses to the replacement as before.
+ */
+export function replaceRowsFor<B extends Btn>(keyboard: B[][] | undefined, short: string, replacement: B[][]): B[][] {
+  if (!keyboard?.length) return replacement;
+  const idOf = (b: Btn) => /^[a-z_]{1,16}:([0-9a-f]{8})/.exec(b.callback_data ?? "")?.[1];
+  const ids = new Set(keyboard.flat().map(idOf).filter((x): x is string => !!x));
+  if (ids.size <= 1) return replacement;
+  const out: B[][] = [];
+  let placed = false;
+  for (const row of keyboard) {
+    if (row.some((b) => idOf(b) === short)) {
+      if (!placed) out.push(...replacement);
+      placed = true;
+    } else {
+      out.push(row);
+    }
+  }
+  return out;
+}

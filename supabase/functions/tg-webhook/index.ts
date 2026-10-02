@@ -19,7 +19,7 @@ import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
-import { buildApprovePayload, promptStateExpired } from "_shared/desk.ts";
+import { buildApprovePayload, PROMPT_TTL_MS, promptStateExpired, replaceRowsFor } from "_shared/desk.ts";
 import { createDraft, pushToDesk, resolveShort, resolveVariantShort, setStatus, shortIdRange } from "_shared/content.ts";
 import { check as complianceCheck, ctaCount, extractNumbers, type PostType } from "_shared/compliance.ts";
 import { nextCta, nextHook } from "_shared/hooks.ts";
@@ -47,6 +47,7 @@ interface Message {
   photo?: Array<{ file_id: string; width: number; height: number }>;
   video?: { file_id: string };
   reply_to_message?: Message;
+  reply_markup?: { inline_keyboard: tg.InlineButton[][] };
   entities?: Array<{ type: string; offset: number; length: number }>;
   caption_entities?: Array<{ type: string }>;
   new_chat_members?: User[];
@@ -96,6 +97,18 @@ function largestPhoto(m: Message): string | undefined {
 }
 
 /* ------------------------------ callback buttons ------------------------------ */
+/** Swap only the tapped item's rows on a shared keyboard (one card: all of it). */
+function collapseTapped(
+  cq: NonNullable<Update["callback_query"]>,
+  short: string,
+  replacement: tg.InlineButton[][],
+): Promise<unknown> {
+  const m = cq.message;
+  if (!m) return Promise.resolve(null);
+  return tg.editMessageReplyMarkup(m.chat.id, m.message_id, replaceRowsFor(m.reply_markup?.inline_keyboard, short, replacement))
+    .catch(() => null);
+}
+
 async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<void> {
   if (cq.data?.startsWith("cap:")) { await onCaptcha(cq); return; }
   const jack = await jackId();
@@ -153,10 +166,10 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       const r = await callApprove(buildApprovePayload(content_id, "approve", cq.from.id, `cb:${cq.id}`, { callback_id: cq.id }));
       await tg.answerCallbackQuery(cq.id, r.ok ? "Approved. Publishing on schedule." : `Not approved: ${r.message ?? r.error}`, !r.ok);
       if (chat && mid && r.ok) {
-        await tg.editMessageReplyMarkup(chat, mid, [
+        await collapseTapped(cq, parsed.short, [
           [tg.nopButton(await approvedStamp(content_id))],
           [{ text: "📣 Fan out", callback_data: tg.shortCallback("fan", content_id) }],
-        ]).catch(() => null);
+        ]);
       }
       return;
     }
@@ -164,7 +177,7 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       const r = await callApprove(buildApprovePayload(content_id, "reject", cq.from.id, `cb:${cq.id}`));
       await tg.answerCallbackQuery(cq.id, r.ok ? "Rejected." : `Failed: ${r.message ?? r.error}`, !r.ok);
       if (chat && mid && r.ok) {
-        await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton("❌ Rejected")]]).catch(() => null);
+        await collapseTapped(cq, parsed.short, [[tg.nopButton("❌ Rejected")]]);
       }
       return;
     }
@@ -229,7 +242,7 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
           await tg.sendMessage(chat, results.length ? fanoutSummary(content_id.slice(0, 8), results) : "Already copied to every platform.", { parse_mode: "HTML", reply_to_message_id: mid });
         }
         if (chat && mid) {
-          await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton("📣 Fanned out")]]).catch(() => null);
+          await collapseTapped(cq, parsed.short, [[tg.nopButton("📣 Fanned out")]]);
         }
       } catch (err) {
         if (chat) {
@@ -330,7 +343,7 @@ async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: s
     const { data: variants } = await db.from("content_variants").select("platform").eq("content_id", content_id);
     const platforms = [...new Set((variants ?? []).map((v) => String(v.platform)))];
     const body = String(primary.body ?? "");
-    await db.from("jobs").insert({
+    const { error: jobErr } = await db.from("jobs").insert({
       kind: "llm_variants",
       payload: {
         content_id,
@@ -343,6 +356,10 @@ async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: s
       status: "queued",
       created_by: "jack",
     });
+    if (jobErr) {
+      await tg.answerCallbackQuery(cq.id, "Could not queue the angles. Try again in a minute.", true);
+      return;
+    }
     await logAction({ actor: "jack", action: "content.adjust_llm", target: content_id, payload: { angles } });
     await tg.answerCallbackQuery(cq.id, `Angles cooking on the PC (${angles} each) — I'll bring them here.`);
     return;
@@ -432,7 +449,7 @@ async function onPick(cq: NonNullable<Update["callback_query"]>, short: string):
   await logAction({ actor: "jack", action: "content.pick", target: String(v.content_id), payload: { variant_id: variantId } });
   await tg.answerCallbackQuery(cq.id, "Angle live on the draft. Tap ✅ to approve.");
   if (chat && mid) {
-    await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton(`\u2705 Angle live · ${v.platform}`)]]).catch(() => null);
+    await collapseTapped(cq, short, [[tg.nopButton(`\u2705 Angle live · ${v.platform}`)]]);
   }
 }
 
@@ -464,11 +481,17 @@ async function onClipAction(
   }
   const c = data[0];
   if (action === "drop") {
-    await db.from("clip_candidates").update({ status: "dropped", decided_by: "jack" }).eq("id", c.id);
+    // Only an open moment can be dropped: never overwrite one already cut.
+    const { data: dropped } = await db.from("clip_candidates").update({ status: "dropped", decided_by: "jack" })
+      .eq("id", c.id).eq("status", "proposed").select("id");
+    if (!dropped?.length) {
+      await tg.answerCallbackQuery(cq.id, "Already handled.", true);
+      return;
+    }
     await logAction({ actor: "jack", action: "clip.drop", target: String(c.id) });
     await tg.answerCallbackQuery(cq.id, "Dropped.");
     if (chat && mid) {
-      await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton("Dropped")]]).catch(() => null);
+      await collapseTapped(cq, short, [[tg.nopButton("Dropped")]]);
     }
     return;
   }
@@ -480,8 +503,14 @@ async function onClipAction(
     await tg.answerCallbackQuery(cq.id, "Already handled.", true);
     return;
   }
-  await db.from("clip_candidates").update({ status: "approved", decided_by: "jack" }).eq("id", c.id);
-  await db.from("jobs").insert({
+  // Claim it atomically: a double tap must not queue two cuts.
+  const { data: claimed } = await db.from("clip_candidates").update({ status: "approved", decided_by: "jack" })
+    .eq("id", c.id).eq("status", "proposed").select("id");
+  if (!claimed?.length) {
+    await tg.answerCallbackQuery(cq.id, "Already handled.", true);
+    return;
+  }
+  const { error: jobErr } = await db.from("jobs").insert({
     kind: "clip",
     payload: {
       path: String(c.source_path ?? ""),
@@ -492,10 +521,15 @@ async function onClipAction(
     status: "queued",
     created_by: "jack",
   });
+  if (jobErr) {
+    await db.from("clip_candidates").update({ status: "proposed", decided_by: null }).eq("id", c.id);
+    await tg.answerCallbackQuery(cq.id, "Could not queue the cut. Try again in a minute.", true);
+    return;
+  }
   await logAction({ actor: "jack", action: "clip.use", target: String(c.id) });
   await tg.answerCallbackQuery(cq.id, "Cutting that window on the PC…");
   if (chat && mid) {
-    await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton("🎬 Cutting…")]]).catch(() => null);
+    await collapseTapped(cq, short, [[tg.nopButton("🎬 Cutting…")]]);
   }
 }
 
@@ -551,7 +585,7 @@ async function openBatch(): Promise<{ week: string; items: BatchRow[] } | null> 
   return items?.length ? { week: latest.batch_week as string, items: items as BatchRow[] } : null;
 }
 
-/** `/batch` lists the open batch; `/batch ok` approves what is ready and claim-free. Jack only (the Desk handler already checked). */
+/** `/batch` lists the open batch; `/batch ok` asks Yes/Cancel, then approves what is ready and claim-free. Jack only (the Desk handler already checked). */
 async function onBatch(m: Message): Promise<void> {
   const say = (html: string) => tg.sendMessage(m.chat.id, html, { parse_mode: "HTML", reply_to_message_id: m.message_id });
   const arg = (m.text ?? m.caption ?? "").replace(/^\/batch(?:@\w+)?\s*/i, "").trim().toLowerCase();
@@ -561,8 +595,18 @@ async function onBatch(m: Message): Promise<void> {
   const states = await loadBatchStates(batch);
 
   if (arg === "ok") {
-    const { done, refused } = await approveReadyBatch(states, await jackId());
-    await say(batchResultLines(states, done, refused).join("\n"));
+    // Same confirm as the panel's "Approve ready" button: nothing is
+    // approved until Jack taps Yes.
+    const ready = states.filter(readyToApprove);
+    if (!ready.length) { await say("Nothing is ready to approve."); return; }
+    await tg.sendMessage(m.chat.id, `Approve ${ready.map((st) => st.n).join(", ")}? They go out at their slot.`, {
+      parse_mode: "HTML",
+      reply_to_message_id: m.message_id,
+      buttons: [[
+        { text: "✅ Yes, approve", callback_data: tg.cmdCallback("batchyes") },
+        { text: "Cancel", callback_data: tg.cmdCallback("batchno") },
+      ]],
+    });
     return;
   }
 
@@ -690,7 +734,7 @@ const HELP_TEXT = [
   "/status - anything broken?",
   "/friday - this week's Friday numbers so far",
   "/fanout - reply to a draft (or add its #id): copy it to Instagram, Facebook, Threads, TikTok, YouTube and X",
-  "/batch - the Wednesday batch (<code>/batch ok</code> approves what is ready and claim-free)",
+  "/batch - the Wednesday batch (<code>/batch ok</code> asks, then approves what is ready and claim-free)",
   "/hours &lt;task&gt; &lt;minutes&gt; [note] - log what a task cost by hand",
   "/hours today - today's total and the week so far",
   "/menu - buttons for Status, Batch, Friday, Hours and Help",
@@ -1031,8 +1075,18 @@ async function onDeskMessage(m: Message): Promise<void> {
   // Reply to a draft message → edit or reschedule
   const replyId = m.reply_to_message?.message_id;
   if (replyId) {
-    const { data: item } = await admin().from("content_items")
+    let { data: item } = await admin().from("content_items")
       .select("id, desk_state, desk_state_at, post_type, lang").eq("desk_message_id", replyId).maybeSingle();
+    // A reply to the bot's Edit/Later prompt (not the card itself): use the
+    // one item that is waiting on Jack, if there is exactly one.
+    if (!item && m.reply_to_message?.from?.is_bot) {
+      const { data: waiting } = await admin().from("content_items")
+        .select("id, desk_state, desk_state_at, post_type, lang")
+        .like("desk_state", "awaiting_%")
+        .gte("desk_state_at", new Date(Date.now() - PROMPT_TTL_MS).toISOString())
+        .limit(2);
+      if (waiting?.length === 1) item = waiting[0];
+    }
     if (item) {
       if (promptStateExpired(item.desk_state as string | null, item.desk_state_at as string | null)) {
         await admin().from("content_items").update({ desk_state: null, desk_state_at: null }).eq("id", item.id);
@@ -1116,7 +1170,11 @@ async function applyEdit(content_id: string, post_type: PostType, lang: "en" | "
   const short = instruction.length <= 40 && !/\n/.test(instruction);
   if (short) {
     // Short instruction: queue a rewrite job for ABDUL / the PC worker (Phase 2 voice module).
-    await db.from("jobs").insert({ kind: "rewrite", payload: { content_id, variant_id: v.id, instruction, lang }, status: "queued", created_by: ACTOR });
+    const { error: jobErr } = await db.from("jobs").insert({ kind: "rewrite", payload: { content_id, variant_id: v.id, instruction, lang }, status: "queued", created_by: ACTOR });
+    if (jobErr) {
+      await tg.sendMessage(m.chat.id, "⚠️ Could not queue that rewrite. Try again in a minute.", { reply_to_message_id: m.message_id });
+      return;
+    }
     await db.from("content_items").update({ desk_state: null, desk_state_at: null, edit_note: instruction }).eq("id", content_id);
     await tg.sendMessage(m.chat.id, `✏️ Noted: "${tg.escapeHtml(instruction)}". A rewrite is queued; you'll get the new draft here.`, { parse_mode: "HTML", reply_to_message_id: m.message_id });
     return;
