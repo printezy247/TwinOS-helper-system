@@ -22,7 +22,18 @@ async function readBody(res: Response): Promise<{ ok?: boolean; description?: st
   };
 }
 
-const errText = (err: unknown) => String(err instanceof Error ? err.message : err).slice(0, 120);
+/**
+ * Network errors quote the request URL, and both provider URLs carry a token
+ * (Telegram in the path, Meta as access_token). Strip them before any text is
+ * stored, returned, or sent to the Desk.
+ */
+export function redactSecrets(text: string): string {
+  return text
+    .replace(/bot\d+:[\w-]+/g, "bot<redacted>")
+    .replace(/(access_token=)[^&\s)]+/gi, "$1<redacted>");
+}
+
+const errText = (err: unknown) => redactSecrets(String(err instanceof Error ? err.message : err)).slice(0, 160);
 
 export async function checkTelegram(token: string | undefined, fetchFn: FetchFn = globalThis.fetch): Promise<ProviderResult> {
   if (!token) return { provider: "telegram", ok: false, detail: "needs-credentials" };

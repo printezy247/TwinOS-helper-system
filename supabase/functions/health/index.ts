@@ -16,7 +16,7 @@ import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import { logAction } from "_shared/log.ts";
 import { tokenWarnings } from "_shared/meta.ts";
-import { sendMessage } from "_shared/tg.ts";
+import { escapeHtml, sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
 import { runProviderChecks } from "_shared/providers.ts";
 import { deskAlert, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
@@ -145,7 +145,7 @@ serve(async (req) => {
       if (r.ok) {
         await deskAlert({ db, key: src, kind: "provider_recovery", severity: "info", message: `✅ ${r.provider} is back.` });
       } else {
-        await deskAlert({ db, key: src, kind: "provider_down", severity: "high", message: `⚠️ ${r.provider} check failed: ${r.detail}` });
+        await deskAlert({ db, key: src, kind: "provider_down", severity: "high", message: `⚠️ ${r.provider} check failed: ${escapeHtml(r.detail)}` });
       }
     }
     // A channel that goes quiet loses members (2026 research): past the gap,
