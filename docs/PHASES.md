@@ -72,9 +72,9 @@ Exit: Friday report arrives without Jack opening a spreadsheet.
 ## Phase 3 — Repurposing (November)
 Exit: one TikTok reaches seven places with only the TikTok, YouTube and X taps by hand; ≥60% hours cut.
 - [ ] Meta app Live, Standard Access — Jack (docs/SETUP.md 3.1). Providers are written and tested against a stand-in Graph API (`_shared/meta.ts`: Instagram Reels/photo, Facebook Reels, Threads; 24 h caps 100/30/250 hold a job for 30 min without using an attempt); they switch on when the secrets exist
-- [ ] Drop-folder fan-out: asset → per-platform caption variants + publish kits (TikTok, YouTube, X)
+- [x] Fan-out: one master post becomes a child item per platform (`POST /content/{id}/fanout`, Desk `/fanout`); captions adapted per platform, TikTok/YouTube/X as copy-paste kits sent to the Desk, approvals stay per platform in the dashboard. The worker drop folder already ingests the asset; attach it with `asset_id`
 - [ ] YouTube API project; audit form submitted; private uploads until it passes
-- [ ] Per-platform validator (caption length, hashtags, duration, size)
+- [x] Per-platform validator (`_shared/platforms.ts`: media needed, video length and size, hashtag count, caption length; conservative limits in one table) and the caption adapter (risk line kept in front of any cut)
 - [ ] Metrics pollers (IG/FB/Threads/YouTube) — Meta token-expiry watch is done (`health` warns 7 days ahead and alerts once a day); the pollers wait for the Meta tokens
 - [x] "All platforms posted" Friday report line (`v_fanout_week` + `fanoutLine`, migration 0021, in the scorecard `hours` field)
 - [ ] Hours cut ≥60% vs baseline — measured by `v_hours_cut` (saved minutes per KL week against the first baseline week) and printed on the Friday scorecard; it needs the baseline week Jack logs from Mon 5 Oct, then a real week of use

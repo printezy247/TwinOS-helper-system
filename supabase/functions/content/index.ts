@@ -5,6 +5,7 @@
  *                                             media?, allowed_numbers?, push_to_desk? }
  *   POST /content/batch                     { for?: YYYY-MM-DD, only?: ["lesson", ...] }   Wednesday 14:30 MYT
  *   POST /content/batch-sweep               {}                                             Thursday 09:00 MYT
+ *   POST /content/{id}/fanout               { platforms?: [...], asset_id? }   one master -> a copy per platform
  *   POST /content/{id}/request-approval     {}
  *   POST /content/{id}/schedule             { run_at }   (claim posts: jack only)
  *   GET  /content/{id}                      → item + variants + checks
@@ -17,6 +18,8 @@ import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, enqueuePublish, loadContent, pushToDesk } from "_shared/content.ts";
+import { fanOut } from "_shared/fanout.ts";
+import { fanoutSummary } from "_shared/platforms.ts";
 import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
 import { startOfDayInTz } from "_shared/time.ts";
@@ -267,6 +270,25 @@ serve(async (req) => {
   if (tail.length === 2) {
     const id = tail[0];
     const item = await loadContent(id);
+
+    if (tail[1] === "fanout") {
+      requireRole(caller.role, "content.draft");
+      const platforms = Array.isArray(body.platforms) ? (body.platforms as unknown[]).map(String) : undefined;
+      const assetId = typeof body.asset_id === "string" && body.asset_id ? body.asset_id : null;
+      const idem = { scope: "content.fanout", key: `${id}:${[...(platforms ?? [])].sort().join(",")}:${assetId ?? ""}`, requestHash: "-" };
+      const hit = await replay(idem);
+      if (hit) return hit;
+      const results = await fanOut(id, { platforms, assetId, actor: caller.actor });
+      if (results.length) {
+        const deskId = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
+        await sendMessage(deskId, fanoutSummary(id.slice(0, 8), results), { parse_mode: "HTML", disable_web_page_preview: true });
+      }
+      await logAction({ actor: caller.actor, action: "content.fanout", target: id, payload: { platforms: results.map((r) => r.platform) } });
+      return remember(idem, 201, {
+        ok: true, master: id,
+        results: results.map((r) => ({ platform: r.platform, content_id: r.content_id, kit: r.kit, compliance_ok: r.complianceOk, findings: r.findings })),
+      });
+    }
 
     if (tail[1] === "request-approval") {
       requireRole(caller.role, "content.request_approval");

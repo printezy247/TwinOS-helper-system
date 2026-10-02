@@ -80,3 +80,11 @@ Deno.test("locked brand lines satisfy the detectors", () => {
   ]) assertEquals(hasPastPerformanceLine(line), true, line);
   assertEquals(hasDisclosure("Honest note: we earn a commission when you trade through the link."), true);
 });
+
+Deno.test("the everyday risk lines are recognised: not financial advice, not investment advice, not advice", () => {
+  for (const line of [
+    "Not financial advice.", "Map only, not financial advice.", "This is not investment advice.", "Not advice, just a map.",
+    "Bukan nasihat kewangan.",
+  ]) assert(hasRiskLine(line), line);
+  assert(!hasRiskLine("A note about advice for beginners."));
+});
