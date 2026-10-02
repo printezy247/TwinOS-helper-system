@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "std/assert/mod.ts";
-import { pickLines, render, requiredLineFacts, shortIdRange } from "./content.ts";
+import { buildCommentJobs, pickLines, render, requiredLineFacts, shortIdRange } from "./content.ts";
 
 Deno.test("a Desk short id becomes a uuid range (Postgres has no LIKE on uuid)", () => {
   assertEquals(shortIdRange("C0203593"), {
@@ -47,4 +47,18 @@ Deno.test("brand-fact keys resolve to the locked line, Malay when there is one",
   const facts = new Map([["risk_line_map", "EN risk"], ["risk_line_map_ms", "MS risk"], ["education_line", "EN edu"]]);
   assertEquals(pickLines(["risk_line_map", "education_line"], "en", facts), ["EN risk", "EN edu"]);
   assertEquals(pickLines(["risk_line_map", "education_line"], "ms", facts), ["MS risk", "EN edu"]);
+});
+
+Deno.test("first-comment jobs: telegram only, delayed, carrying the comment", () => {
+  const rows = buildCommentJobs("cid", [
+    { id: "v-tg", platform: "telegram" },
+    { id: "v-ig", platform: "instagram" },
+  ], "2026-10-04T08:00:00.000Z", "Results get posted here.", 30, "jack");
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].kind, "comment");
+  assertEquals(rows[0].variant_id, "v-tg");
+  assertEquals(rows[0].run_at, "2026-10-04T08:30:00.000Z");
+  assertEquals((rows[0].result as { first_comment: string }).first_comment, "Results get posted here.");
+  assertEquals(buildCommentJobs("cid", [{ id: "v-tg", platform: "telegram" }], "2026-10-04T08:00:00.000Z", null, 30, "jack"), []);
+  assertEquals(buildCommentJobs("cid", [{ id: "v-ig", platform: "instagram" }], "2026-10-04T08:00:00.000Z", "Hi.", 30, "jack"), []);
 });

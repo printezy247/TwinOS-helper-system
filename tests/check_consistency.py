@@ -501,8 +501,38 @@ def wave4_miniapp() -> None:
     )
 
 
+def wave4_calendar() -> None:
+    mig = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted((ROOT / "supabase/migrations").glob("*.sql"))
+    )
+    check(
+        "calendar: items carry a delayed first comment, jobs have kinds",
+        "first_comment" in mig and "first_comment_delay_min" in mig
+        and "variant_id, kind" in mig,
+        "Wave 4 item 2: comment jobs share the variant, kinds keep them apart",
+    )
+    publish = read("supabase/functions/publish/index.ts")
+    check(
+        "publish: comment jobs reply under the posted message, checked first",
+        '"comment"' in publish and "reply_to_message_id" in publish,
+        "Wave 4 item 2: the delayed first comment posts as a reply",
+    )
+    content = read("supabase/functions/content/index.ts")
+    check(
+        "schedule: first_comment rides the schedule call",
+        "first_comment" in content,
+        "Wave 4 item 2: the calendar sets the comment at schedule time",
+    )
+    seed = read("supabase/seed.sql")
+    check(
+        "signatures: per-platform sign-off lines live in settings",
+        "platform_signatures" in seed,
+        "Wave 4 item 2: the calendar appends saved signatures",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
