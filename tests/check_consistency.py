@@ -328,6 +328,18 @@ def desk_state_wave0() -> None:
         'decision !== "reschedule"' in approve or "decision !== 'reschedule'" in approve,
         "the keyboard clear must skip reschedule",
     )
+    tg = read("supabase/functions/_shared/tg.ts")
+    check(
+        "desk nav: grammar v2 parses nav, page and nop",
+        '"nav"' in tg and '"page"' in tg and '"nop"' in tg and "NAV_LAYOUT" in tg,
+        "Wave 1 item 1: nav:<screen>[@fp], pg:<screen>:<n>, nop + fingerprint",
+    )
+    deploy = read("scripts/deploy.sh")
+    check(
+        "deploy: sets the Desk setMyCommands",
+        "setMyCommands" in deploy,
+        "Wave 1 item 3: scoped to the Desk chat, run by deploy.sh",
+    )
 
 
 def main() -> int:

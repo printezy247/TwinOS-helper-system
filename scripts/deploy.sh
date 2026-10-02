@@ -59,5 +59,25 @@ else
   echo "skip API-key probe (no anon key in the keyring yet; run ./scripts/mint-keys.sh)"
 fi
 [ "$fail" -eq 0 ] || die "a function did not answer as expected"
+
+say "desk commands"
+# setMyCommands scoped to the Desk chat (plan §17 Wave 1 item 3). Best effort:
+# a miss here never fails the deploy; the bot still answers every command.
+if TOKEN="$(secret-tool lookup service twinos key ops_bot_token 2>/dev/null)" && [ -n "$TOKEN" ]; then
+  DESK_ID="$(supabase db query --linked --output-format json "select value::text as v from settings where key='desk_group_chat_id'" 2>/dev/null | sed -n '/^[[{]/,$p' | jq -r '(.rows? // .) | .[0].v // .[0] // empty' 2>/dev/null || true)"
+  if [ -n "${DESK_ID:-}" ]; then
+    COMMANDS='[{"command":"menu","description":"Button panel"},{"command":"status","description":"Anything broken?"},{"command":"friday","description":"Friday numbers so far"},{"command":"batch","description":"The Wednesday batch"},{"command":"hours","description":"Log baseline hours"},{"command":"help","description":"What the Desk understands"}]'
+    if curl -s -X POST "https://api.telegram.org/bot$TOKEN/setMyCommands" -H 'content-type: application/json' -d "{\"commands\":$COMMANDS,\"scope\":{\"type\":\"chat\",\"chat_id\":$DESK_ID}}" | grep -q '"ok":true'; then
+      echo "ok   setMyCommands scoped to the Desk chat"
+    else
+      echo "WARN setMyCommands failed (the bot still works; rerun this step by hand)"
+    fi
+  else
+    echo "skip setMyCommands (desk_group_chat_id unset; docs/SETUP.md 0.6)"
+  fi
+  TOKEN=""
+else
+  echo "skip setMyCommands (no ops_bot_token in the keyring yet; docs/SETUP.md 0.5)"
+fi
 say "done"
 supabase functions list 2>&1 | sed -n "1,14p" || true

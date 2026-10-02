@@ -328,17 +328,87 @@ export function escapeHtml(s: string): string {
  * The Desk looks the full id up by prefix; collisions among open drafts are
  * practically impossible and are refused by the resolver when they happen.
  */
-export function shortCallback(verb: string, id: string): string {
-  const data = `${verb}:${id.replace(/-/g, "").slice(0, 8)}`;
+function checkCallbackLen(data: string): string {
   if (new TextEncoder().encode(data).length > CALLBACK_LIMIT_BYTES) {
     throw new HttpError(500, "internal", "callback data over 64 bytes");
   }
   return data;
 }
 
-export function parseCallback(data: string): { verb: string; short: string } | null {
-  const m = /^([a-z_]{1,16}):([0-9a-f]{8})$/.exec(data);
-  return m ? { verb: m[1], short: m[2] } : null;
+export function shortCallback(verb: string, id: string): string {
+  return checkCallbackLen(`${verb}:${id.replace(/-/g, "").slice(0, 8)}`);
+}
+
+/**
+ * Callback grammar v2 (plan §17 Wave 1 item 1). Item taps stay
+ * `<verb>:<id8>`; navigation adds `nav:<screen>[:<arg>]@<fp>`,
+ * `pg:<screen>:<n>@<fp>` and the `nop` no-op. `<fp>` is the layout
+ * fingerprint: a tap rendered under an older layout answers "outdated"
+ * and redraws (grammY menu pattern). All screens edit the same message
+ * in place; the webhook keeps no memory between calls.
+ */
+export const NAV_LAYOUT = "v1";
+
+export type Callback =
+  | { kind: "item"; verb: string; short: string }
+  | { kind: "nav"; screen: string; arg?: string; fp: string }
+  | { kind: "page"; screen: string; n: number; fp: string }
+  | { kind: "nop" };
+
+export function navCallback(screen: string, arg?: string, fp = NAV_LAYOUT): string {
+  return checkCallbackLen(arg ? `nav:${screen}:${arg}@${fp}` : `nav:${screen}@${fp}`);
+}
+
+export function pageCallback(screen: string, n: number, fp = NAV_LAYOUT): string {
+  return checkCallbackLen(`pg:${screen}:${n}@${fp}`);
+}
+
+export function nopButton(text: string): InlineButton {
+  return { text, callback_data: "nop" };
+}
+
+export function isStaleFp(fp: string): boolean {
+  return fp !== NAV_LAYOUT;
+}
+
+export function parseCallback(data: string): Callback | null {
+  if (data === "nop") return { kind: "nop" };
+  let m = /^nav:([a-z_]{1,16})(?::([a-z0-9_-]{1,16}))?@([a-z0-9]{1,8})$/.exec(data);
+  if (m) return { kind: "nav", screen: m[1], arg: m[2], fp: m[3] };
+  m = /^pg:([a-z_]{1,16}):(\d{1,3})@([a-z0-9]{1,8})$/.exec(data);
+  if (m) return { kind: "page", screen: m[1], n: Number(m[2]), fp: m[3] };
+  m = /^([a-z_]{1,16}):([0-9a-f]{8})$/.exec(data);
+  return m ? { kind: "item", verb: m[1], short: m[2] } : null;
+}
+
+/**
+ * /menu home panel (Wave 1 item 2): the five screens. Every other screen
+ * carries backHomeRows; both land on home (one-level nav, thumb reach).
+ * Unknown screens fall back home.
+ */
+export const MENU_SCREENS = ["status", "batch", "friday", "hours", "help"] as const;
+
+export function menuKeyboard(fp = NAV_LAYOUT): InlineButton[][] {
+  return [
+    [
+      { text: "📊 Status", callback_data: navCallback("status", undefined, fp) },
+      { text: "🗂 Batch", callback_data: navCallback("batch", undefined, fp) },
+    ],
+    [
+      { text: "📈 Friday", callback_data: navCallback("friday", undefined, fp) },
+      { text: "⏱ Hours", callback_data: navCallback("hours", undefined, fp) },
+    ],
+    [{ text: "❓ Help", callback_data: navCallback("help", undefined, fp) }],
+  ];
+}
+
+export function backHomeRows(fp = NAV_LAYOUT): InlineButton[][] {
+  return [
+    [
+      { text: "⬅️ Back", callback_data: navCallback("home", undefined, fp) },
+      { text: "🏠 Home", callback_data: navCallback("home", undefined, fp) },
+    ],
+  ];
 }
 
 /**
