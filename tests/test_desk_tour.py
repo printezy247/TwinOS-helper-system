@@ -58,7 +58,7 @@ class DeskTourTest(unittest.TestCase):
     def test_dry_run_tours_every_new_command(self):
         r = dry_run()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        for cmd in ("/status", "/friday", "/hours today", "/batch", "/fanout #"):
+        for cmd in ("/status", "/friday", "/hours today", "/batch", "/menu", "/fanout #"):
             self.assertIn(cmd, r.stdout, cmd)
         self.assertIn('"data":"no:', r.stdout)
         self.assertNotIn('"data":"ok:', r.stdout)

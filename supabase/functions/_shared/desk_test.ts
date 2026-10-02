@@ -9,7 +9,7 @@ import {
   keyboardVerbs,
   PROMPT_TTL_MS,
 } from "./desk.ts";
-import { approvalKeyboard } from "./tg.ts";
+import { approvalKeyboard, menuKeyboard } from "./tg.ts";
 
 const ID = "6f1c2b3a-4d5e-6f70-8192-a3b4c5d6e7f8";
 
@@ -43,7 +43,11 @@ Deno.test("edit/later prompts carry a Cancel button under 64 bytes (Wave 0 fix 3
 });
 
 Deno.test("dead buttons: every emitted callback verb has a handler (Wave 0 fix 5)", () => {
-  const emitted = new Set([...keyboardVerbs(approvalKeyboard(ID)), ...keyboardVerbs(cancelKeyboard(ID))]);
+  const emitted = new Set([
+    ...keyboardVerbs(approvalKeyboard(ID)),
+    ...keyboardVerbs(cancelKeyboard(ID)),
+    ...keyboardVerbs(menuKeyboard()),
+  ]);
   const missing = [...emitted].filter((v) => !(HANDLED_CALLBACK_VERBS as readonly string[]).includes(v));
   assertEquals(missing, [], `unhandled callback verbs: ${missing.join(", ")}`);
 });
