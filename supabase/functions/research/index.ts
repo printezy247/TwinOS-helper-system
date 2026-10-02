@@ -23,6 +23,7 @@ import { cycleWeek, nextMonday } from "_shared/batch.ts";
 import { similarity } from "_shared/moderation.ts";
 import { articleBrief } from "_shared/articles.ts";
 import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, scoreTopic, topicRisk } from "_shared/research.ts";
+import { nextHook } from "_shared/hooks.ts";
 
 const LANGS = ["en", "ms", "manglish"] as const;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -152,6 +153,13 @@ serve(async (req) => {
     const { data: clusters } = await db.from("topic_clusters").select("id, name, pillar, icp, total_score, status")
       .in("status", ["new", "proposed"]).order("total_score", { ascending: false }).limit(80);
     const { data: personas } = await db.from("personas").select("id, key");
+    // Grounded (Wave 3 item 7): one hook-bank line per pillar, rotated LRU.
+    const pillars = [...new Set((slots ?? []).map((s) => s.pillar as string | null))];
+    const hooks: Array<{ pillar: string | null; text: string }> = [];
+    for (const pillar of pillars) {
+      const h = await nextHook(db, { pillar, lang: "en" });
+      if (h) hooks.push({ pillar, text: h.text });
+    }
     const brief = buildBrief({
       week, cycleWeek: cycle,
       slots: (slots ?? []).map((s) => ({ dow: Number(s.dow), pillar: s.pillar as string | null, topic: s.topic as string | null })),
@@ -159,6 +167,7 @@ serve(async (req) => {
         name: c.name as string, pillar: c.pillar as string | null, score: Number(c.total_score ?? 0),
         persona: (personas ?? []).find((p) => p.id === c.icp)?.key as string | null ?? null,
       })),
+      hooks,
     });
 
     const row = { week_start: week, body: brief.body, proposed_slots: brief.proposed_slots, status: "sent", created_by: caller.actor };

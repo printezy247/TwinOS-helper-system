@@ -156,6 +156,8 @@ export interface FanResult {
   findings: PlatformFinding[];
   /** The compliance engine's verdict on the adapted caption. */
   complianceOk: boolean;
+  /** TikTok / YouTube shooting script (Wave 3 item 7), rendered for the Desk. */
+  script_kit?: string | null;
 }
 
 const NAMES: Record<string, string> = {
@@ -178,6 +180,7 @@ export function fanoutSummary(masterShort: string, results: FanResult[]): string
     } else if (r.kit) {
       lines.push(`• ${name} — caption below, post it by hand${note}`);
       kits.push(`<b>${name}</b>\n<pre>${esc(r.body)}</pre>`);
+      if (r.script_kit) kits.push(`<b>${name} script</b>\n<pre>${esc(r.script_kit)}</pre>`);
     } else {
       lines.push(`• ${name} — ready to approve in the dashboard${note}`);
     }

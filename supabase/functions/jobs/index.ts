@@ -14,19 +14,20 @@
  * reports nothing for 30 min is requeued by the next claim call. Kinds the
  * Phase 1 worker understands: drop_folder_watch, telechurn_import, backup,
  * clip, research_batch, rewrite, result_reply (handled by cron, not the PC),
- * scorecard_image.
+ * scorecard_image, llm_variants (local model only, off by default).
  */
 import { serve, json, readJson, routeOf, reqString, bad, notFound, optString } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
-import { admin } from "_shared/supabase.ts";
-import { check as complianceCheck } from "_shared/compliance.ts";
+import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
+import { aiNumberGuard, check as complianceCheck } from "_shared/compliance.ts";
 import { logAction } from "_shared/log.ts";
+import * as tg from "_shared/tg.ts";
 
 export const JOB_KINDS = [
   "drop_folder_watch", "telechurn_import", "backup", "clip", "research_batch",
-  "rewrite", "result_reply", "scorecard_image", "thumbnail",
+  "rewrite", "result_reply", "scorecard_image", "thumbnail", "llm_variants",
 ] as const;
 const ASSETS_BUCKET = "assets";
 const STALE_CLAIM_MIN = 30;
@@ -117,6 +118,65 @@ serve(async (req) => {
           variant_id: variantId, ok: checked.ok, needs_approval: checked.needs_approval, findings: checked.findings,
         });
         await db.from("content_items").update({ status: "draft", desk_state: "rewritten" }).eq("id", contentId);
+      }
+      // An llm_variants answer re-enters as candidate angles: every variant
+      // runs the checklist plus the blocking AI number guard, and Jack picks
+      // one on the Desk. Blocked angles are stored flagged but get no button.
+      if (ok && job.kind === "llm_variants" && Array.isArray(result.variants)) {
+        const p = job.payload as Record<string, unknown>;
+        const contentId = String(p.content_id ?? "");
+        const lang = p.lang === "ms" ? "ms" : "en";
+        const allowed = Array.isArray(p.allowed_numbers)
+          ? (p.allowed_numbers as unknown[]).map(Number).filter((n) => Number.isFinite(n))
+          : undefined;
+        const { data: it } = await db.from("content_items")
+          .select("post_type").eq("id", contentId).maybeSingle();
+        const lines: string[] = [];
+        const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+        let shown = 0;
+        for (const v of (result.variants as Array<Record<string, unknown>>).slice(0, 12)) {
+          const platform = String(v.platform ?? "telegram");
+          const body = String(v.body ?? "").trim();
+          if (!body) continue;
+          const angle = Number(v.angle ?? 0) || 0;
+          const checked = complianceCheck({
+            post_type: ((it?.post_type ?? "gold_map") as never),
+            platform: (platform as never),
+            lang,
+            body,
+            long_form: ["lesson", "start_here", "channel_audit"].includes(String(it?.post_type)),
+            allowed_numbers: allowed,
+          });
+          const guard = aiNumberGuard(body, allowed);
+          const findings = [...checked.findings, ...guard];
+          const pass = checked.ok && guard.length === 0;
+          const { data: row } = await db.from("content_variants").insert({
+            content_id: contentId, item_id: contentId, platform, lang, body,
+            claim_flags: checked.claim_flags, needed_fields: [],
+            compliance: { ok: pass, needs_approval: true, findings, claim_flags: checked.claim_flags },
+            source: { via: "llm_variants", angle, picked: false, blocked: !pass },
+          }).select("id").maybeSingle();
+          if (row?.id) {
+            await db.from("compliance_checks").insert({
+              variant_id: row.id, ok: pass, needs_approval: true, findings,
+            });
+          }
+          shown += 1;
+          const label = `angle ${angle || shown} · ${platform}`;
+          const preview = body.length > 120 ? body.slice(0, 120) + "…" : body;
+          lines.push(`${pass ? "\u2705" : "\uD83D\uDEAB"} ${tg.escapeHtml(label)}: ${tg.escapeHtml(preview)}`);
+          if (pass && typeof row?.id === "string") {
+            buttons.push([{ text: `Use ${label}`.slice(0, 40), callback_data: tg.shortCallback("pk", row.id) }]);
+          }
+        }
+        if (shown) {
+          const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
+          await tg.sendMessage(
+            desk,
+            `<b>${shown} angles</b> from the local model for <code>#${tg.escapeHtml(contentId.slice(0, 8))}</code> (blocked ones kept out):\n${lines.join("\n")}`,
+            { parse_mode: "HTML", buttons: buttons.slice(0, 6) },
+          );
+        }
       }
       await logAction({ actor: caller.actor, action: `job.${final}`, target: job_id, payload: { kind: job.kind, error } });
       return json({ ok: true, status: final });

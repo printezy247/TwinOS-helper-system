@@ -298,6 +298,42 @@ export function foreignNumbers(body: string, allowed: number[] | undefined): str
   });
 }
 
+/** Every price/level number and every percent in the body, years excluded. */
+export function extractNumbers(body: string): number[] {
+  const prices = (body.match(/\b\d{3,5}(?:\.\d{1,2})?\b/g) ?? []).map(Number);
+  const pcts = (body.match(/\b\d{1,3}(?:\.\d+)?\s?%/g) ?? []).map((s) => Number(s.replace(/[%\s]/g, "")));
+  const out = new Set<number>();
+  for (const n of [...prices, ...pcts]) {
+    if (Number.isInteger(n) && n >= 2020 && n <= 2035) continue; // a year, not a number
+    out.add(n);
+  }
+  return [...out];
+}
+
+/**
+ * Blocking number guard for AI variants (plan §17 Wave 3 item 6): no price
+ * or percent that is not in Jack's raw lines. Without grounding numbers the
+ * variant is refused outright.
+ */
+export function aiNumberGuard(body: string, allowed: number[] | undefined): Finding[] {
+  if (!allowed) {
+    return [{
+      check: "numbers",
+      severity: "blocking",
+      message: "AI variants need Jack's numbers to check against",
+    }];
+  }
+  const set = new Set(allowed.map((n) => Number(n)));
+  const foreign = extractNumbers(body).filter((n) => !set.has(n));
+  if (!foreign.length) return [];
+  return [{
+    check: "numbers",
+    severity: "blocking",
+    message: "AI invented numbers outside Jack's raw lines",
+    evidence: foreign.map(String),
+  }];
+}
+
 export function boldCount(body: string): number {
   return (body.match(/<b>|\*\*|(?<!\*)\*(?!\*)/g) ?? []).length;
 }

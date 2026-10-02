@@ -54,7 +54,8 @@ VIDEO_EXT = {".mp4", ".mov", ".webm"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 # Live recordings are often OBS .mkv; they live in LIVES_DIR, not the drop folder, so VIDEO_EXT stays as it is.
 LIVE_EXT = VIDEO_EXT | {".mkv", ".flv", ".ts"}
-KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "research_batch", "scorecard_image"]
+KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "research_batch", "scorecard_image", "llm_variants"]
+LLM_ANGLES = 3
 
 
 # --------------------------------------------------------------------------- #
@@ -288,6 +289,93 @@ def job_scorecard_image(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     return scorecard.render(payload.get("scoreboard", {}), week=payload.get("week", ""))
 
 
+def build_variants_prompt(raw_lines: list[str], platforms: list[str], lang: str, angles: int = LLM_ANGLES) -> str:
+    """Strict-JSON prompt for the local model (plan §17 Wave 3 item 6).
+
+    Three angles per platform, grounded in Jack's raw lines only: the only
+    numbers the draft may quote ride along, and the model is told to invent
+    none. No market commentary is asked for, ever.
+    """
+    plats = ", ".join(platforms)
+    lines = "\n".join(f"- {ln}" for ln in raw_lines)
+    return (
+        f"Rewrite the draft below into {angles} different angles for each of: {plats} "
+        f"(language: {lang}). Keep every fact from Jack's lines; use only these "
+        f"numbers and no others. Do not invent prices, percents, results or offers. "
+        f"Do not add market commentary. Reply with JSON ONLY, no other text, "
+        f"in exactly this shape: "
+        f'{{"variants": [{{"platform": "<one of {plats}>", "angle": <1-{angles}>, "body": "<the post text>"}}]}} '
+        f"with {angles} angles per platform.\nJack's lines:\n{lines}"
+    )
+
+
+def parse_variants(text: str, platforms: list[str], angles: int = LLM_ANGLES) -> list[dict[str, Any]]:
+    """Strict parse of the model's answer: every angle per platform, bodies non-empty."""
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"llm_variants: not JSON: {e}") from e
+    rows = doc.get("variants") if isinstance(doc, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("llm_variants: need a non-empty 'variants' list")
+    want = {(p, a) for p in platforms for a in range(1, angles + 1)}
+    got = set()
+    for r in rows:
+        if not isinstance(r, dict) or not isinstance(r.get("body"), str) or not r["body"].strip():
+            raise ValueError("llm_variants: every variant needs a non-empty body")
+        if r.get("platform") not in platforms:
+            raise ValueError(f"llm_variants: unknown platform {r.get('platform')!r}")
+        try:
+            angle = int(r.get("angle"))
+        except (TypeError, ValueError):
+            raise ValueError("llm_variants: angle must be a number") from None
+        got.add((r["platform"], angle))
+    if got != want:
+        raise ValueError(f"llm_variants: want {sorted(want)}, got {sorted(got)}")
+    return [{"platform": r["platform"], "angle": int(r["angle"]), "body": r["body"].strip()} for r in rows]
+
+
+def _loopback_only(url: str) -> str:
+    """The model runs on Jack's PC (NeuraOS / llama-server): refuse anything but loopback."""
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        raise RuntimeError(f"llm_variants: refusing non-local model at {host or url}")
+    return url.rstrip("/")
+
+
+def job_llm_variants(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
+    """Wave 3 item 6: 3 angles per platform from the LOCAL model as strict JSON.
+
+    Off by default: the Desk only enqueues this when llm_variants_enabled is
+    true, so a stray job means someone turned it on. The result goes back
+    through jobs/result, where the edge function runs every variant through
+    compliance plus the blocking number guard before Jack ever sees it.
+    """
+    import urllib.parse  # noqa: WPS433 - lazy like the other optional imports
+
+    raw_lines = [str(x) for x in (payload.get("raw_lines") or []) if str(x).strip()]
+    if not raw_lines:
+        raise RuntimeError("llm_variants: no raw lines to ground the angles in")
+    platforms = [str(x) for x in (payload.get("platforms") or ["telegram"])]
+    lang = str(payload.get("lang") or "en")
+    angles = int(payload.get("angles") or LLM_ANGLES)
+    base = _loopback_only(str(payload.get("llama_url") or os.environ.get("TWINOS_LLAMA_URL", "http://127.0.0.1:8080")))
+    prompt = build_variants_prompt(raw_lines, platforms, lang, angles)
+    req = urllib.request.Request(
+        f"{base}/v1/chat/completions",
+        data=json.dumps({"messages": [{"role": "user", "content": prompt}], "temperature": 0.7}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300) as res:
+            doc = json.load(res)
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"llm_variants: local model unreachable: {e}") from e
+    text = (((doc.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    variants = parse_variants(text, platforms, angles)
+    return {"variants": variants}
+
+
 HANDLERS: dict[str, Callable[[Api, dict[str, Any]], dict[str, Any]]] = {
     "drop_folder_watch": job_drop_folder_watch,
     "telechurn_import": job_telechurn_import,
@@ -295,6 +383,7 @@ HANDLERS: dict[str, Callable[[Api, dict[str, Any]], dict[str, Any]]] = {
     "clip": job_clip,
     "research_batch": job_research_batch,
     "scorecard_image": job_scorecard_image,
+    "llm_variants": job_llm_variants,
 }
 
 

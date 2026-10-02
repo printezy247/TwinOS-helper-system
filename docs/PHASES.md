@@ -157,8 +157,8 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [x] Error alerts to the Desk with cooldown (`alerts.ts` `deskAlert`: one open row per key, repeats counted)
 - [x] Unknown-outcome guard in publish / fan-out (`backoff.ts` `isUnknownOutcome` + 10-min `UNKNOWN_HOLD_MS`, `duplicateLanded` pre-send check in `publish/index.ts`, `error_class='unknown'`, `deskAlert` to the Desk; `_shared/outcome_test.ts` 4 passed, shared suite 184, consistency 44/44)
 - [x] Hook and CTA library (no AI) (`_shared/hooks.ts` `pickLru`/`nextHook`/`nextCta` over the `hooks` bank + new `ctas` table, migration 0027, 28 lines 7 platforms x en/ms, smoke §21; `hooks_test.ts` 3 passed, shared 187, consistency 46/46)
-- [ ] `llm_variants` PC-worker job (off by default, local model, compliance + number guard)
-- [ ] Adjust button, script kits, grounded Monday brief
+- [x] `llm_variants` PC-worker job (off by default, local model, compliance + number guard) (worker `job_llm_variants`: loopback llama-server only, strict-JSON 3 angles/platform; `jobs/result` ingests each through `compliance` + blocking `aiNumberGuard`, Desk pick buttons `pk:`; `compliance_test.ts` + `test_worker.py` 5 passed, shared 191, consistency 52/52)
+- [x] Adjust button, script kits, grounded Monday brief (🎛 on decision cards: AI-on queues the job, AI-off refreshes hook+CTA from the library; `_shared/kits.ts` TikTok/YouTube kits with spoken risk line, attached to fan-out kits + `fanoutSummary`; `buildBrief` carries hook evidence per day; tour walks `adj:` reject-only)
 - [x] Banned words / humanizer rules as compliance warnings (`compliance.ts` `HUMANIZER_WORDS_EN/MS` + `humanizerHits`, warn-level `humanizer` finding apart from the blocking claim checks; `compliance_test.ts` + consistency)
 
 ### Wave 4 — bigger bets (each needs Jack's go)

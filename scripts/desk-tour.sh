@@ -8,6 +8,7 @@
 #   1. the read-only commands answer: /status, /friday, /hours today, /batch, /menu, /help
 #   2. a synthetic Jack message becomes a draft with a Desk message
 #   3. /fanout #<id> copies it to the other platforms
+#   3b. the 🎛 button (callback verb "adj", no-AI path) refreshes the draft
 #   4. the ❌ button (callback verb "no") rejects the draft and every copy
 #   5. all of them are rejected and nothing was queued to publish
 #
@@ -113,6 +114,13 @@ jack_rejects() {
 JSON
 }
 
+jack_adjusts() {
+  # jack_adjusts <seq> <id8> <desk message id>  -> the 🎛 tap (no-AI hook+CTA refresh)
+  cat <<JSON
+{"update_id":$((BASE + $1)),"callback_query":{"id":"tour-$BASE-$1","from":{"id":$JACK_ID,"is_bot":false},"data":"adj:$2","message":{"message_id":$3,"chat":{"id":$DESK_ID,"type":"supergroup"},"date":$(date +%s)}}}
+JSON
+}
+
 # --- 1. read-only commands ------------------------------------------------------
 say "1. read-only commands"
 for cmd in "/status" "/friday" "/hours today" "/batch" "/menu" "/help"; do
@@ -164,6 +172,10 @@ if [ "$DRY" = no ]; then
   # No copies is reported below, after the draft itself has been rejected.
   say "   copies: $(printf '%s' "$KIDS" | tr ',' '\n' | grep -c . || true)"
 fi
+
+# --- 3b. adjust (no-AI path only; the draft is still rejected below) ------------
+say "3b. tap Adjust on the draft (hook+CTA refresh, never approve)"
+next; post "adjust #$SHORT" "$(jack_adjusts "$SEQ" "$SHORT" "$DMID")"
 
 # --- 4. reject everything -------------------------------------------------------
 say "4. tap ❌ on the draft and every copy (callback verb \"no\" only)"

@@ -435,8 +435,47 @@ def wave3_library() -> None:
     )
 
 
+def wave3_finale() -> None:
+    compliance = read("supabase/functions/_shared/compliance.ts")
+    check(
+        "variants: a blocking number guard for AI text",
+        "aiNumberGuard(" in compliance and "extractNumbers(" in compliance,
+        "Wave 3 item 6: no price or percent outside Jack's lines",
+    )
+    jobs = read("supabase/functions/jobs/index.ts")
+    check(
+        "variants: the worker job is ingested with compliance + the guard",
+        '"llm_variants"' in jobs and "aiNumberGuard(" in jobs,
+        "Wave 3 item 6: every variant checked, Desk picks",
+    )
+    webhook = read("supabase/functions/tg-webhook/index.ts")
+    check(
+        "desk: Adjust and Pick buttons on drafts",
+        '"adj"' in webhook and '"pk"' in webhook,
+        "Wave 3 items 6-7: Adjust queues variants (or no-AI hook+CTA), Pick uses an angle",
+    )
+    kits = read("supabase/functions/_shared/kits.ts")
+    check(
+        "kits: TikTok/YouTube script kits with the risk line spoken",
+        "scriptKit(" in kits and "spoken_warning" in kits,
+        "Wave 3 item 7: hook + beats + spoken risk + caption",
+    )
+    research = read("supabase/functions/_shared/research.ts")
+    check(
+        "brief: grounded in scored topics and hook lines",
+        "buildBrief(" in research and "hook" in research,
+        "Wave 3 item 7: each day carries its evidence",
+    )
+    tour = read("scripts/desk-tour.sh")
+    check(
+        "tour: the Adjust tap is walked and still only rejects",
+        '"data":"adj:' in tour and '"data":"ok:' not in tour,
+        "Wave 3 item 7: tour covers the new button, reject-only",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()

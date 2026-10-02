@@ -79,7 +79,10 @@ insert into public.settings (key, value, description, needs_confirm) values
       "x": "screenshot for recaps; 3-post thread for Channel Audits; one strong line, no hashtag spam",
       "telegram": "Saturday video of the week and lesson clips, tied to the lesson or scorecard",
       "youtube_long": "Sunday live recording, trimmed; Gold weekly outlook, [date]; from Q2 2027"
-    }', 'FYP §08 one TikTok becomes seven posts.', false)
+    }', 'FYP §08 one TikTok becomes seven posts.', false),
+  ('llm_variants_enabled', 'false', 'Wave 3 item 6: queue the local-model variant job from the Desk Adjust button. Off until Jack turns it on.', false),
+  ('llm_angles', '3', 'Wave 3 item 6: angles per platform the local model writes.', false),
+  ('llm_local_url', '"http://127.0.0.1:8080"', 'Wave 3 item 6: Jack''s local llama-server (OpenAI-compatible /v1). Loopback only.', false)
 on conflict (key) do update set value = excluded.value, description = excluded.description, needs_confirm = excluded.needs_confirm;
 
 -- ===========================================================================
