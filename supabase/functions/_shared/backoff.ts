@@ -10,6 +10,7 @@
  *   unknown   → try again, like throttled
  */
 import * as tg from "./tg.ts";
+import { classifyMeta, MetaError } from "./meta.ts";
 
 export const MAX_ATTEMPTS = 4;
 export const BACKOFF_BASE_MS = 30_000;
@@ -28,12 +29,22 @@ export function classify(err: unknown): { kind: Kind; reason: string } {
     }
     return { kind: "permanent", reason: err.message };
   }
+  if (err instanceof MetaError) return classifyMeta(err);
   const msg = err instanceof Error ? err.message : String(err);
   if (/permanent:/.test(msg)) return { kind: "permanent", reason: msg };
+  if (/^capped:/.test(msg)) return { kind: "throttled", reason: msg };
   return { kind: "unknown", reason: msg };
 }
 
 /** 30 s, 60 s, 120 s, 240 s … capped at 15 min. `attempts` is 1-based. */
 export function backoffMs(attempts: number): number {
   return Math.min(BACKOFF_BASE_MS * 2 ** Math.max(attempts - 1, 0), BACKOFF_CAP_MS);
+}
+
+/** A job held back by a platform's daily cap waits half an hour and keeps its attempts; anything else backs off. */
+export const CAP_HOLD_MS = 30 * 60_000;
+
+export function retryPlan(attempts: number, reason: string): { delayMs: number; burnsAttempt: boolean } {
+  if (/^capped:/.test(reason)) return { delayMs: CAP_HOLD_MS, burnsAttempt: false };
+  return { delayMs: backoffMs(attempts), burnsAttempt: true };
 }

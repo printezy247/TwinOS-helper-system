@@ -11,8 +11,10 @@
  * the content item, and on failure reschedules with exponential backoff
  * (ported from the ops dashboard's outboundQueue + classifyMetaError).
  *
- * Phase 1: Telegram only. Instagram / Facebook / Threads are stubs that fail
- * the job as `permanent: provider not enabled` so nothing silently queues.
+ * Telegram, Instagram, Facebook Reels and Threads are providers (the Meta ones
+ * live in _shared/meta.ts and need their secrets; without them the job fails as
+ * `permanent: … is not configured`, so nothing silently queues). YouTube, TikTok
+ * and X are publish kits, never providers.
  */
 import { serve, json, readJson, bad } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
@@ -20,7 +22,10 @@ import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { setStatus } from "_shared/content.ts";
 import { check as complianceCheck } from "_shared/compliance.ts";
-import { backoffMs, classify, MAX_ATTEMPTS, type Kind } from "_shared/backoff.ts";
+import { classify, MAX_ATTEMPTS, retryPlan, type Kind } from "_shared/backoff.ts";
+import {
+  DAILY_CAPS, metaConfigFromEnv, type MetaPlatform, publishFacebookReel, publishInstagram, publishThreads,
+} from "_shared/meta.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
 import * as tg from "_shared/tg.ts";
 
@@ -39,7 +44,7 @@ interface Variant {
   body: string;
   platform: string;
   lang: "en" | "ms";
-  media: Array<{ kind: "photo" | "video"; url?: string; file_id?: string; caption?: string }>;
+  media: Array<{ kind: "photo" | "video"; url?: string; file_id?: string; asset_id?: string; caption?: string }>;
   buttons?: Array<{ label: string; url: string }>;
   compliance?: { ok: boolean };
   needed_fields?: string[];
@@ -112,25 +117,50 @@ async function sendTelegram(item: Item, v: Variant): Promise<{ chat_id: number; 
   return { chat_id: msg.chat.id, message_id: msg.message_id };
 }
 
-/* ---------- Phase 3 stubs (limits verified 2026-10-01, plan §6/§9.F) ---------- */
-// TODO(phase3): Instagram Reels/feed via Graph API content_publishing.
-//   Limit: 100 API-published posts per 24 h per account. Needs Meta app in Live
-//   mode with Standard Access; token in function secrets (TWINOS_META_TOKEN).
-//   Flow: POST /{ig-user-id}/media (video_url, media_type=REELS, caption)
-//         → poll status_code until FINISHED → POST /{ig-user-id}/media_publish.
-function sendInstagram(_item: Item, _v: Variant): Promise<never> {
-  return Promise.reject(new Error("permanent: instagram provider not enabled until Phase 3"));
+/* ---------- Instagram, Facebook Reels, Threads (_shared/meta.ts) ---------- */
+// Secrets: TWINOS_META_IG_*, TWINOS_META_PAGE_*, TWINOS_THREADS_* (docs/SETUP.md 3.1).
+// A provider with no credentials fails its job as permanent, with the secret names in the message.
+const meta = metaConfigFromEnv((k) => Deno.env.get(k));
+
+/** A URL Meta can fetch: the one stored on the variant, else a one-hour signed link to the private asset. */
+async function mediaUrl(v: Variant, kind: "photo" | "video"): Promise<string | undefined> {
+  const m = (v.media ?? []).find((x) => x.kind === kind);
+  if (!m) return undefined;
+  if (m.url) return m.url;
+  if (!m.asset_id) return undefined;
+  const db = admin();
+  const { data: a } = await db.from("assets").select("storage_bucket, bucket, storage_path").eq("id", m.asset_id).maybeSingle();
+  const bucket = a?.bucket ?? a?.storage_bucket;
+  if (!bucket || !a?.storage_path) return undefined;
+  const { data } = await db.storage.from(bucket).createSignedUrl(a.storage_path, 3600);
+  return data?.signedUrl;
 }
-// TODO(phase3): Facebook Page Reels via /{page-id}/video_reels (upload phase
-//   start → upload → finish with description). Limit: 30 reels per 24 h per Page.
-//   Posts from a development-mode app are not public; app must be Live.
-function sendFacebook(_item: Item, _v: Variant): Promise<never> {
-  return Promise.reject(new Error("permanent: facebook provider not enabled until Phase 3"));
+
+/** Hold the job when the platform's 24 h API cap is used up (it retries in half an hour). */
+async function underCap(platform: MetaPlatform): Promise<void> {
+  const { count } = await admin().from("publish_jobs").select("id", { count: "exact", head: true })
+    .eq("platform", platform).eq("status", "done").gte("done_at", new Date(Date.now() - 86_400_000).toISOString());
+  if ((count ?? 0) >= DAILY_CAPS[platform]) {
+    throw new Error(`capped: ${platform} has reached ${DAILY_CAPS[platform]} posts in 24 h`);
+  }
 }
-// TODO(phase3): Threads via /{threads-user-id}/threads (text ≤500 chars, or
-//   IMAGE/VIDEO with media url) → /threads_publish. Limit: 250 posts per 24 h.
-function sendThreads(_item: Item, _v: Variant): Promise<never> {
-  return Promise.reject(new Error("permanent: threads provider not enabled until Phase 3"));
+
+async function sendInstagram(_item: Item, v: Variant): Promise<{ id: string }> {
+  if (!meta.instagram) throw new Error("permanent: instagram is not configured (TWINOS_META_IG_USER_ID, TWINOS_META_IG_TOKEN)");
+  await underCap("instagram");
+  return await publishInstagram(meta.instagram, { caption: v.body, videoUrl: await mediaUrl(v, "video"), imageUrl: await mediaUrl(v, "photo") });
+}
+async function sendFacebook(_item: Item, v: Variant): Promise<{ id: string }> {
+  if (!meta.facebook) throw new Error("permanent: facebook is not configured (TWINOS_META_PAGE_ID, TWINOS_META_PAGE_TOKEN)");
+  const videoUrl = await mediaUrl(v, "video");
+  if (!videoUrl) throw new Error("permanent: a facebook reel needs a video");
+  await underCap("facebook");
+  return await publishFacebookReel(meta.facebook, { description: v.body, videoUrl });
+}
+async function sendThreads(_item: Item, v: Variant): Promise<{ id: string }> {
+  if (!meta.threads) throw new Error("permanent: threads is not configured (TWINOS_THREADS_USER_ID, TWINOS_THREADS_TOKEN)");
+  await underCap("threads");
+  return await publishThreads(meta.threads, { text: v.body, videoUrl: await mediaUrl(v, "video"), imageUrl: await mediaUrl(v, "photo") });
 }
 // YouTube, TikTok and X are publish kits (plan §6): never a provider here.
 
@@ -159,12 +189,13 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
 
   await setStatus(item.id, "publishing", actor);
   let posted: { chat_id: number; message_id: number } | null = null;
+  let externalId: string | null = null;
   try {
     switch (job.platform) {
       case "telegram": posted = await sendTelegram(item as Item, variant as Variant); break;
-      case "instagram": await sendInstagram(item as Item, variant as Variant); break;
-      case "facebook": await sendFacebook(item as Item, variant as Variant); break;
-      case "threads": await sendThreads(item as Item, variant as Variant); break;
+      case "instagram": externalId = (await sendInstagram(item as Item, variant as Variant)).id; break;
+      case "facebook": externalId = (await sendFacebook(item as Item, variant as Variant)).id; break;
+      case "threads": externalId = (await sendThreads(item as Item, variant as Variant)).id; break;
       default: throw new Error(`permanent: ${job.platform} is a publish kit, not a provider`);
     }
   } catch (err) {
@@ -189,7 +220,7 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
   }
   await setStatus(item.id, "published", actor, {
     published_at: new Date().toISOString(),
-    published_ref: posted ? `${posted.chat_id}:${posted.message_id}` : null,
+    published_ref: posted ? `${posted.chat_id}:${posted.message_id}` : externalId,
   });
   await logTimeSaved(actor, "content.publish", item.id);
   await logTimeSaved(actor, "log.row", item.id);
@@ -216,7 +247,7 @@ serve(async (req) => {
     const r = await run(job, caller.actor);
     if (r.ok) {
       await db.from("publish_jobs").update({ status: "done", done_at: new Date().toISOString(), last_error: null }).eq("id", job.id);
-    } else if (r.kind === "permanent" || job.attempts >= MAX_ATTEMPTS) {
+    } else if (r.kind === "permanent" || (job.attempts >= MAX_ATTEMPTS && retryPlan(job.attempts, r.reason ?? "").burnsAttempt)) {
       await db.from("publish_jobs").update({ status: "failed", last_error: r.reason ?? r.kind }).eq("id", job.id);
       await db.from("alerts").insert({
         kind: "publish_failed", severity: "high",
@@ -224,10 +255,12 @@ serve(async (req) => {
         payload: { job_id: job.id, content_id: job.content_id },
       });
     } else {
+      const plan = retryPlan(job.attempts, r.reason ?? "");
       await db.from("publish_jobs").update({
         status: "queued",
-        run_at: new Date(Date.now() + backoffMs(job.attempts)).toISOString(),
+        run_at: new Date(Date.now() + plan.delayMs).toISOString(),
         last_error: r.reason ?? r.kind,
+        ...(plan.burnsAttempt ? {} : { attempts: Math.max(job.attempts - 1, 0) }),
       }).eq("id", job.id);
     }
     results.push({ job_id: job.id, content_id: job.content_id, platform: job.platform, ...r });

@@ -348,7 +348,14 @@ key from 0.4. Same contract as printezy (`docs/API.md`).
 1. https://developers.facebook.com → **Create app** → use case *"Other"* → type **Business**.
 2. Add products: **Instagram** (choose the **Instagram API with Instagram Login** path, not Facebook Login), **Threads API**, and for Facebook Reels the **Pages** permissions (`pages_manage_posts`, `pages_read_engagement`).
 3. App settings → Basic → fill privacy URL (printezy.money/privacy) → **App Mode: Live**. Standard Access is enough for Jack's own accounts; no App Review.
-4. Generate long-lived tokens for the IG professional account, the Page and the Threads account (Graph API Explorer → exchange). Store: `supabase secrets set TWINOS_META_IG_TOKEN=… TWINOS_META_PAGE_TOKEN=… TWINOS_THREADS_TOKEN=…` (from the keyring, as in 0.7). Tokens expire in 60 days; `health` warns at 7 days left.
+4. Generate long-lived tokens for the IG professional account, the Page and the Threads account (Graph API Explorer → exchange), and note each account's numeric id. Store all of it as function secrets, nothing in a file or the repo (values from the keyring, never typed into a command that is saved in history):
+   ```bash
+   supabase secrets set \
+     TWINOS_META_IG_USER_ID=… TWINOS_META_IG_TOKEN=… TWINOS_META_IG_EXPIRES=YYYY-MM-DD \
+     TWINOS_META_PAGE_ID=…    TWINOS_META_PAGE_TOKEN=… TWINOS_META_PAGE_EXPIRES=YYYY-MM-DD \
+     TWINOS_THREADS_USER_ID=… TWINOS_THREADS_TOKEN=… TWINOS_THREADS_EXPIRES=YYYY-MM-DD
+   ```
+   Tokens last 60 days. The `*_EXPIRES` dates are what lets `health` warn 7 days before one lapses (a Desk message and a dashboard alert, once a day). A provider with no id and token is simply off: its jobs fail as `permanent: … is not configured`, they never queue silently.
 5. Limits to remember: IG 100 posts/24 h, FB Reels 30/24 h, Threads 250/24 h. Comment webhooks need Advanced Access → polled every 15 min instead.
 
 ### 3.2 YouTube API project + audit

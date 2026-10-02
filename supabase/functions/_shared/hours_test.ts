@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { formatMinutes, HOUR_TASKS, mondayOf, parseHoursCommand } from "./hours.ts";
+import { formatMinutes, HOUR_TASKS, mondayOf, parseHoursCommand, fanoutLine, hoursCutLine } from "./hours.ts";
 
 Deno.test("/hours <task> <minutes> logs it", () => {
   assertEquals(parseHoursCommand("/hours map 45"), { kind: "log", task: "map", minutes: 45, note: null });
@@ -50,4 +50,21 @@ Deno.test("minutes format for a human", () => {
   assertEquals(formatMinutes(60), "1h 00m");
   assertEquals(formatMinutes(185), "3h 05m");
   assertEquals(formatMinutes(0), "0m");
+});
+
+Deno.test("hoursCutLine: what TwinOS saved against the baseline week, as a percentage", () => {
+  assertEquals(hoursCutLine(600, 360), "Hours: TwinOS saved *6.0h* against a *10.0h* baseline week, a *60%* cut.");
+  assertEquals(hoursCutLine(600, 0), "Hours: TwinOS saved *0.0h* against a *10.0h* baseline week, a *0%* cut.");
+  assertEquals(hoursCutLine(0, 120), null); // no baseline logged: nothing honest to compare with
+  assertEquals(hoursCutLine(-5, 120), null);
+});
+
+Deno.test("hoursCutLine: a cut over 100% is shown as it is, never clipped", () => {
+  assertEquals(hoursCutLine(100, 150), "Hours: TwinOS saved *2.5h* against a *1.7h* baseline week, a *150%* cut.");
+});
+
+Deno.test("fanoutLine: how many posts reached every platform this week", () => {
+  assertEquals(fanoutLine(3, 2), "All platforms posted: *2 of 3* posts reached every platform.");
+  assertEquals(fanoutLine(1, 1), "All platforms posted: *1 of 1* posts reached every platform.");
+  assertEquals(fanoutLine(0, 0), null); // nothing was fanned out
 });
