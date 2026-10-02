@@ -100,7 +100,7 @@ Exit: a live becomes clips without CapCut's help for the cut list; Monday brief 
 
 ## Phase 6 — Pilot readiness (January 2027)
 Exit: cost per FTD visible daily.
-- [ ] Ad landing attribution checked end to end (printezy read endpoint)
+- [ ] Ad landing attribution checked end to end (printezy read endpoint) — the endpoint's contract is specified in `docs/PHASE8.md`; it has to be built in the site's own Lovable project (a separate repo TwinOS never writes to)
 - [x] Cost per first-time depositor per campaign (`POST /friday/campaign`, `v_campaign_cost`, migration 0025: spend, accounts and depositors per campaign, kept apart from the weekly totals so nothing double-counts; the week's ad spend is an optional Friday source `ads`). It fills as Jack enters numbers
 - [x] Quarter target tracker + stop-if alarms (`v_quarter_targets`: Q4 2026 / Q1 / Q2 targets and days left read live; `v_stop_if`: no-result signal, cost per depositor over $120 two weeks running, refunds over 3%, none flagged yet). Actuals follow the data
 - [ ] Lawyer's opinion on compliance obtained before paid ads (decision 7) — Jack
@@ -113,6 +113,6 @@ Exit: cost per FTD visible daily.
 
 ## Phase 8 — Revenue core (after Phase 7)
 Exit: payments match the old bot for two weeks.
-- [ ] Stars payment idempotency; larger Stripe de-dupe window; service-role key replaced by a narrow read
-- [ ] The sales bot migration with parallel running
-- [ ] Hosting decision for the sales bot (existing host vs VPS)
+- [ ] Stars payment idempotency; larger Stripe de-dupe window; service-role key replaced by a narrow read — `docs/PHASE8.md`: no Stars code exists in the site (it is the separate sales bot); the site's Stripe path is de-duplicated by a unique column but has a check-then-insert race and a 1,000-user lookup limit (both written up with fixes); the narrow attribution read is specified
+- [ ] The sales bot migration with parallel running — plan and exit criterion (14 nights with no differences) in `docs/PHASE8.md`; needs the sales bot's repo
+- [ ] Hosting decision for the sales bot (existing host vs VPS) — Jack; criteria and a recommendation (decide after the parallel run) in `docs/PHASE8.md`
