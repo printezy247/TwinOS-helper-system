@@ -109,7 +109,9 @@ serve(async (req) => {
   }
 
   // Remove the buttons from the Desk message so a second tap cannot happen.
-  if (item.desk_chat_id && item.desk_message_id) {
+  // Reschedule keeps them: the item is still waiting and Jack may approve,
+  // edit or reschedule again from the same card (Wave 0 fix 2).
+  if (decision !== "reschedule" && item.desk_chat_id && item.desk_message_id) {
     try {
       await editMessageReplyMarkup(item.desk_chat_id, item.desk_message_id, null);
     } catch (err) {

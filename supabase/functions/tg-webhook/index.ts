@@ -18,6 +18,7 @@ import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
+import { buildApprovePayload, cancelKeyboard, isDeskPromptExpired } from "_shared/desk.ts";
 import { createDraft, pushToDesk, resolveShort } from "_shared/content.ts";
 import { check as complianceCheck, type PostType } from "_shared/compliance.ts";
 import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
@@ -121,29 +122,37 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
 
   switch (parsed.verb) {
     case "ok": {
-      const r = await callApprove({ content_id, decision: "approve", via: "telegram", telegram: { user_id: cq.from.id, callback_id: cq.id }, idempotency_key: `cb:${cq.id}` });
+      const r = await callApprove(buildApprovePayload(content_id, "approve", cq.from.id, `cb:${cq.id}`, { callback_id: cq.id }));
       await tg.answerCallbackQuery(cq.id, r.ok ? "Approved. Publishing on schedule." : `Not approved: ${r.message ?? r.error}`, !r.ok);
       if (chat && mid && r.ok) await tg.sendMessage(chat, `✅ Approved <code>#${content_id.slice(0, 8)}</code>`, { parse_mode: "HTML", reply_to_message_id: mid });
       return;
     }
     case "no": {
-      const r = await callApprove({ content_id, decision: "reject", via: "telegram", telegram: { user_id: cq.from.id }, idempotency_key: `cb:${cq.id}` });
+      const r = await callApprove(buildApprovePayload(content_id, "reject", cq.from.id, `cb:${cq.id}`));
       await tg.answerCallbackQuery(cq.id, r.ok ? "Rejected." : `Failed: ${r.message ?? r.error}`, !r.ok);
       return;
     }
     case "edit": {
-      await admin().from("content_items").update({ desk_state: "awaiting_edit" }).eq("id", content_id);
+      await admin().from("content_items").update({ desk_state: "awaiting_edit", desk_state_at: new Date().toISOString() }).eq("id", content_id);
       await tg.answerCallbackQuery(cq.id);
       if (chat && mid) {
-        await tg.sendMessage(chat, `✏️ Reply to the draft with the new text, or a one-liner like <code>soften</code> / <code>BM</code> / <code>shorter</code>.`, { parse_mode: "HTML", reply_to_message_id: mid });
+        await tg.sendMessage(chat, `✏️ Reply to the draft with the new text, or a one-liner like <code>soften</code> / <code>BM</code> / <code>shorter</code>.`, { parse_mode: "HTML", reply_to_message_id: mid, buttons: cancelKeyboard(content_id) });
       }
       return;
     }
     case "later": {
-      await admin().from("content_items").update({ desk_state: "awaiting_time" }).eq("id", content_id);
+      await admin().from("content_items").update({ desk_state: "awaiting_time", desk_state_at: new Date().toISOString() }).eq("id", content_id);
       await tg.answerCallbackQuery(cq.id);
       if (chat && mid) {
-        await tg.sendMessage(chat, `🕒 Reply with a time, e.g. <code>13:00</code> or <code>tomorrow 08:00</code> (MYT).`, { parse_mode: "HTML", reply_to_message_id: mid });
+        await tg.sendMessage(chat, `🕒 Reply with a time, e.g. <code>13:00</code> or <code>tomorrow 08:00</code> (MYT).`, { parse_mode: "HTML", reply_to_message_id: mid, buttons: cancelKeyboard(content_id) });
+      }
+      return;
+    }
+    case "cancel": {
+      await admin().from("content_items").update({ desk_state: null, desk_state_at: null }).eq("id", content_id);
+      await tg.answerCallbackQuery(cq.id, "Cancelled.");
+      if (chat && mid) {
+        await tg.editMessageReplyMarkup(chat, mid, null).catch(() => null);
       }
       return;
     }
@@ -214,7 +223,7 @@ async function onBatch(m: Message): Promise<void> {
     const refused: string[] = [];
     for (const s of states) {
       if (!readyToApprove(s)) continue;
-      const r = await callApprove({ content_id: s.id, decision: "approve", via: "telegram", telegram: { user_id: jack }, idempotency_key: `batch-ok:${s.id}` });
+      const r = await callApprove(buildApprovePayload(s.id, "approve", jack, `batch-ok:${s.id}`));
       if (r.ok) done.push(s.n); else refused.push(`${s.n} (${tg.escapeHtml(String(r.message ?? r.error))})`);
     }
     const left = sweepPlan(states.filter((s) => !done.includes(s.n)), new Date(0)).nudge
@@ -370,12 +379,17 @@ async function onDeskMessage(m: Message): Promise<void> {
   const replyId = m.reply_to_message?.message_id;
   if (replyId) {
     const { data: item } = await admin().from("content_items")
-      .select("id, desk_state, post_type, lang").eq("desk_message_id", replyId).maybeSingle();
+      .select("id, desk_state, desk_state_at, post_type, lang").eq("desk_message_id", replyId).maybeSingle();
     if (item) {
+      if (item.desk_state && item.desk_state !== "kit" && isDeskPromptExpired(item.desk_state_at as string | null)) {
+        await admin().from("content_items").update({ desk_state: null, desk_state_at: null }).eq("id", item.id);
+        await tg.sendMessage(m.chat.id, "That prompt expired after 30 minutes. Tap Edit or Later again.", { reply_to_message_id: m.message_id });
+        return;
+      }
       if (item.desk_state === "awaiting_time" || parseTime(text, tz)) {
         const when = parseTime(text, tz);
         if (!when) { await tg.sendMessage(m.chat.id, "I need a time like 13:00.", { reply_to_message_id: m.message_id }); return; }
-        const r = await callApprove({ content_id: item.id, decision: "reschedule", run_at: when, via: "telegram", telegram: { user_id: jack } });
+        const r = await callApprove(buildApprovePayload(item.id, "reschedule", jack, undefined, { run_at: when }));
         await tg.sendMessage(m.chat.id, r.ok ? `🕒 Rescheduled to ${text}` : `Failed: ${r.message ?? r.error}`, { reply_to_message_id: m.message_id });
         return;
       }
@@ -450,14 +464,14 @@ async function applyEdit(content_id: string, post_type: PostType, lang: "en" | "
   if (short) {
     // Short instruction: queue a rewrite job for ABDUL / the PC worker (Phase 2 voice module).
     await db.from("jobs").insert({ kind: "rewrite", payload: { content_id, variant_id: v.id, instruction, lang }, status: "queued", created_by: ACTOR });
-    await db.from("content_items").update({ desk_state: null, edit_note: instruction }).eq("id", content_id);
+    await db.from("content_items").update({ desk_state: null, desk_state_at: null, edit_note: instruction }).eq("id", content_id);
     await tg.sendMessage(m.chat.id, `✏️ Noted: "${tg.escapeHtml(instruction)}". A rewrite is queued; you'll get the new draft here.`, { parse_mode: "HTML", reply_to_message_id: m.message_id });
     return;
   }
   const result = complianceCheck({ post_type, platform: v.platform, lang, body: instruction });
   await db.from("content_variants").update({ body: instruction, compliance: result, claim_flags: result.claim_flags, needed_fields: [] }).eq("id", v.id);
   await db.from("compliance_checks").insert({ variant_id: v.id, ok: result.ok, needs_approval: result.needs_approval, findings: result.findings });
-  await db.from("content_items").update({ desk_state: null, status: "draft" }).eq("id", content_id);
+  await db.from("content_items").update({ desk_state: null, desk_state_at: null, status: "draft" }).eq("id", content_id);
   await logAction({ actor: "jack", action: "content.edit", target: content_id, payload: { via: "desk" } });
   await pushToDesk({ content_id, variant_id: v.id, body: instruction, status: "draft", compliance: result, needed: [] }, { heading: "Edited draft", actor: ACTOR });
 }
