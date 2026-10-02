@@ -474,8 +474,35 @@ def wave3_finale() -> None:
     )
 
 
+def wave4_miniapp() -> None:
+    lib = read("supabase/functions/_shared/miniapp.ts")
+    check(
+        "miniapp: initData HMAC verify plus short sessions",
+        "verifyInitData(" in lib and "mintSession(" in lib and "verifySession(" in lib,
+        "Wave 4 item 1: Telegram initData in, Jack session out",
+    )
+    auth = read("supabase/functions/_shared/auth.ts")
+    check(
+        "auth: the mini-app session acts as Jack",
+        "tma." in auth and '"jack"' in auth,
+        "Wave 4 item 1: tma bearer verified against the Jack id setting",
+    )
+    fn = read("supabase/functions/tg-auth/index.ts")
+    check(
+        "tg-auth: verify is public initData, me is authenticated",
+        "verifyInitData(" in fn and "authenticate(" in fn,
+        "Wave 4 item 1: no JWT needed to prove Telegram id, JWT/session to read self",
+    )
+    deploy = read("scripts/deploy.sh")
+    check(
+        "deploy: tg-auth ships with the other secret-carrying webhooks",
+        "tg-auth" in deploy and "setMyCommands" in deploy,
+        "Wave 4 item 1: --no-verify-jwt, Mini Apps carry no Supabase JWT",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
