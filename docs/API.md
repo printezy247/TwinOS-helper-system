@@ -27,7 +27,7 @@ POSTs that create or change something accept `Idempotency-Key: <id>`
 | `POST /results/{signal}/reply` | `POST /results` | abdul, cron, ezyai, jack |
 | (result drain) | `POST /results/run` | cron, abdul, jack |
 | `POST /assets/ingest` | `POST /jobs/asset` (+ `jobs/upload-url`) | pc_worker, jack |
-| `POST /links` | Phase 2 | jack, abdul |
+| `POST /links` | `POST /links` | jack, abdul |
 | `POST /metrics/manual` | `POST /friday/manual` | jack, abdul |
 | `POST /imports/telechurn` | `POST /jobs/telechurn` | jack, pc_worker |
 | `GET /friday`, `GET /health`, `GET /jobs` | same | all logged-in / keyed |
@@ -120,6 +120,11 @@ A status change to tp/tp1/tp2/be/sl on a `live` signal queues a `result_reply` j
 ```
 → `201 { "ok": true, "signal_id": "…", "content_id": "…", "desk": {…}, "counter_trend": true }`.
 Replays of the same `id` return `200 { "replayed": true }`.
+
+## links
+`POST /links` `{ "source": "tt", "campaign": "live", "yymm": "2610", "creates_join_request": false, "member_limit": 500 }`
+→ `201 { "ok": true, "link": { "name": "tt-live-2610", "link": "https://t.me/+…", … } }`.
+Creates the Telegram invite link and stores it. `source` ∈ tt · ig · fb · yt · threads · x · swap · ad · referral · bio · bot; `name` is built as `source-campaign-yymm` (or sent as `name` and checked against the same shape). The same name on the same chat returns the existing row with `"existing": true`. `GET /links?source=&campaign=&active=1` lists them.
 
 ## results
 `POST /results` `{ "signal_id": "…" | "external_id": "auto-8841", "status": "tp1", "dry_run": false }`
