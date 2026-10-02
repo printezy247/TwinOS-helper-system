@@ -60,7 +60,8 @@ Roles come from the login claim `app_metadata.twinos_role`:
 - `jack` — Jack's login. The only role that can **approve** or schedule a post
   carrying a claim (price, level, result, offer, member result, scorecard).
 - `dashboard` — a login whose `app_metadata.twinos_role` is `dashboard`. Read
-  everything, draft, request approval, enter manual numbers. Never approve.
+  everything, draft, request approval. Never approve, and no Friday manual or
+  campaign forms (the backend allows those to `jack` only).
   A login with no `twinos_role` at all reads nothing (RLS returns no rows);
   show "This account has no TwinOS role yet" instead of an empty list.
 - Keys (`abdul`, `pc_worker`, `ezyai`) are for machines; the UI never uses them.
@@ -109,6 +110,26 @@ Also a thin **Settings** page that only reads `settings` (editing stays in SQL f
 - Mobile first: Jack approves from his phone. The Approval Inbox must work at 390 px.
 - Malay is `ms`, never `my`. Times shown in `Asia/Kuala_Lumpur`.
 - No emojis in UI chrome; emojis inside post bodies are content and stay.
+
+## Wave 2 rules (navigation, feedback, motion)
+
+- One app-shell layout route owns the login check and the role (`useRole()`);
+  pages never repeat it. No role → "This account has no TwinOS role yet".
+- Show the variant Jack will publish: `source.picked = true`, else the oldest
+  variant whose `source.via` is not `llm_variants`. Unpicked AI angles are
+  never shown as the draft and never block or allow Approve.
+- Fan-out kits (`content_items.source.kit = true`) show a "Copy-paste kit"
+  badge and only Reject.
+- An error never reads as "nothing pending": show the message and Retry, and
+  never show Approve when the item's variants or findings did not load.
+- shadcn Dialog on desktop, Drawer under 768 px, for every overlay (focus
+  trap, Esc, focus returns). Icon-only buttons have an aria-label.
+- Keyboard shortcuts ignore keys typed in input, textarea and contenteditable.
+- Motion: CSS only (no framer-motion), 150–320 ms, and none at all under
+  `prefers-reduced-motion: reduce`.
+- Realtime: subscribe in an effect and remove the channel on cleanup.
+- The Mini App session lives in memory only and rides in the
+  `x-twinos-session` header; never replace the default Authorization header.
 
 ## The approval guardrail (read twice)
 
