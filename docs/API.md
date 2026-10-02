@@ -61,6 +61,13 @@ Missing template fields become `[NEEDED:field]` and block publishing.
 
 ### POST /content/{id}/request-approval → `{ "ok": true, "desk": {…} }`
 
+### POST /content/remind-map · POST /content/remind-wrap
+The 07:40 / 19:55 MYT nudges, called by cron. Once per day (the idempotency key
+is the MYT date) and only when nothing arrived: `remind-map` is skipped when a
+`gold_map` already exists today, `remind-wrap` when an `evening_wrap` does.
+→ `{ "ok": true, "reminded": true, "day": "2026-10-02" }`, or
+`{ "ok": true, "skipped": "a gold_map already arrived today" }`.
+
 ### POST /content/{id}/schedule
 `{ "run_at": "2026-10-02T00:00:00Z" }` → `{ "ok": true, "jobs": 1, "run_at": "…" }`.
 Requires status `approved`. If the variant carries a claim flag the caller must be `jack`.
