@@ -48,7 +48,10 @@ def settings_keys() -> None:
         p.read_text(encoding="utf-8") for p in sorted((ROOT / "supabase/migrations").glob("*.sql"))
     )
 
-    declared = dict(re.findall(r'^\s*(\w+):\s*"([a-z_]+)",', supabase, re.M))
+    # Only the SETTING_KEYS block declares seed keys (SETTING_TYPES below it
+    # maps the same keys to their shapes and must not match this regex).
+    block = re.search(r"SETTING_KEYS = \{(.*?)\} as const", supabase, re.S)
+    declared = dict(re.findall(r"(\w+):\s*\"([a-z_]+)\"", block.group(1) if block else ""))
 
     seeded = set(re.findall(r"^\s*\('([a-z_]+)',\s*(?:'|\d|null|\{|\[)", seed, re.M))
     sql_read = set(re.findall(r"setting(?:_text)?\('([a-z_]+)'\)", migrations))
@@ -575,8 +578,64 @@ def wave4_fanout() -> None:
     )
 
 
+def next_fixes() -> None:
+    mig = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted((ROOT / "supabase/migrations").glob("*.sql"))
+    )
+    check(
+        "flood: the per-sender counter is a real table, not recent=1",
+        "public.flood_counters" in mig and "flood_counters" in read("supabase/functions/tg-webhook/index.ts"),
+        "flood control needs stored rows per sender inside the window",
+    )
+    health = read("supabase/functions/health/index.ts")
+    check(
+        "webhook: repeated update failures page the Desk",
+        "tg.update_failed" in health and "deskAlert(" in health,
+        "more than 3 tg.update_failed rows in an hour must alert",
+    )
+    content = read("supabase/functions/content/index.ts")
+    check(
+        "fanout: a backlog past the threshold pages the Desk",
+        "isStuckQueue" in content and "fanout-stuck" in content,
+        "the drain must notice when failures outpace it",
+    )
+    supabase = read("supabase/functions/_shared/supabase.ts")
+    check(
+        "settings: ids, numbers and flags read through their typed shape",
+        "SETTING_TYPES" in supabase and "settingTyped" in supabase
+        and all(f"settingTyped" in read(f"supabase/functions/{f}/index.ts")
+                for f in ("health", "content", "results", "tg-webhook")),
+        "a wrong-shaped seed row must fall back, never become chat id 0 or NaN",
+    )
+    deploy = read("scripts/deploy.sh")
+    check(
+        "deploy: test files ride along never; every file comes back",
+        "*_test.ts" in deploy and "restore_tests" in deploy,
+        "the deploy must move tests aside and restore them on any exit",
+    )
+    fn_root = ROOT / "supabase/functions"
+    missing_cfg = [p.parent.name for p in fn_root.glob("*/index.ts") if not (p.parent / "deno.json").exists()]
+    check(
+        "deploy: every function carries its import map",
+        not missing_cfg,
+        f"no deno.json in: {missing_cfg}",
+    )
+    worker = read("workers/pc/twinos_worker.py")
+    check(
+        "clips: the long-form cut is one flag on the clip job",
+        '"longform"' in worker or "'longform'" in worker or "longform" in worker and "run_long" in worker,
+        "job_clip with longform=true must cut the 8-20 minute window with chapters",
+    )
+    prompts = read("docs/LOVABLE-WAVE4-PROMPTS.md")
+    check(
+        "dashboard: clips and the retry queue have their prompts",
+        "## 3." in prompts and "## 4." in prompts,
+        "one prompt per item: clips view, retry-queue status",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()

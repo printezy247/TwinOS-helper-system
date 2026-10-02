@@ -180,5 +180,29 @@ class LlmVariantsTests(unittest.TestCase):
         self.assertIn("llm_variants", w.HANDLERS)
 
 
+class LongformTests(unittest.TestCase):
+    def test_longform_flag_cuts_the_best_window_with_chapters(self):
+        from studio import longform
+
+        d = Path(tempfile.mkdtemp())
+        src = d / "live_2026-09-28.mp4"
+        src.write_bytes(b"x")
+        with mock.patch.object(longform, "run_long", return_value={"long_form": "long.mp4", "chapters": 4}) as run:
+            out = w.job_clip(FakeApi(), {"path": str(src), "longform": True, "lang": "en"})
+        self.assertEqual(out, {"long_form": "long.mp4", "chapters": 4})
+        run.assert_called_once_with(src, lang="en")
+
+    def test_without_the_flag_clips_still_go_through_clipper(self):
+        from studio import clipper
+
+        d = Path(tempfile.mkdtemp())
+        src = d / "live_2026-09-28.mp4"
+        src.write_bytes(b"x")
+        with mock.patch.object(clipper, "run", return_value={"clips": []}) as run:
+            out = w.job_clip(FakeApi(), {"path": str(src), "max_clips": 1})
+        self.assertEqual(out, {"clips": []})
+        run.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -48,3 +48,21 @@ the prompts below assume them.)
 > one tap, and the one-CTA rule still applies. Deleting a scheduled card
 > cancels its jobs, never posts. Filter chips per platform; `?` cheat sheet
 > for the J/K/A/R/S keys you already added.
+
+## 3. Clip approvals
+
+> Add a Clips view that lists the open clip candidates: each card shows the
+> time window, score, reason and hook text. Playing the window happens on
+> Jack's PC (there is no video URL to stream); the card offers Use and Drop
+> only, each with a confirm, Jack-only. Use queues the cut on the PC through
+> the existing Desk flow — the dashboard never cuts video itself. Dropped
+> cards disappear from the list. Empty state: "No open clip candidates."
+
+## 4. Fan-out retry status
+
+> Add a small "Retries" strip on the Content Calendar (and a line on the
+> Health screen): when `content/fanout` returns `retry_queued: true` for a
+> platform, show that platform's card with a "retry queued" badge until its
+> draft succeeds. Surface the Desk alerts `fanout_failed` and
+> `fanout_backlog` as read-only banners with a Retry button that re-invokes
+> the fan-out for that platform. Read-only: this view never edits captions.

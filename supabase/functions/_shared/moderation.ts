@@ -140,6 +140,18 @@ export function evaluate(ctx: MsgCtx, rules: ModRule[], strikes: number): Verdic
   };
 }
 
+/**
+ * The widest flood window the enabled rules ask for (seconds, default 10).
+ * tg-webhook counts the sender's flood_counters rows inside this window.
+ */
+export function floodWindowS(rules: ModRule[]): number {
+  const wins = rules
+    .filter((r) => r.enabled && r.kind === "flood")
+    .map((r) => Number(r.params.window_s ?? 10))
+    .filter((w) => Number.isFinite(w) && w > 0);
+  return Math.max(10, ...wins);
+}
+
 /** CAS (cas.chat) answers {"ok":true,...} for an account on its ban list. Anything else means not banned. */
 export function casBanned(json: unknown): boolean {
   return typeof json === "object" && json !== null && (json as { ok?: unknown }).ok === true;

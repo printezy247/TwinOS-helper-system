@@ -27,10 +27,31 @@ else
 fi
 
 if [ "${1:-}" != "--check" ]; then
+  # Edge deploys upload the whole function folder, tests included (~20
+  # *_test.ts files today). Move them aside for the deploy only; the EXIT
+  # trap puts every file back even when a deploy fails. Checks above already
+  # ran with the tests present.
+  TESTCACHE="$(mktemp -d)"
+  TESTLIST="$TESTCACHE/list"
+  find supabase/functions -name '*_test.ts' > "$TESTLIST"
+  restore_tests() {
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      mv -f "$TESTCACHE/$(printf '%s' "$f" | tr '/' '__')" "$f" 2>/dev/null || true
+    done < "$TESTLIST"
+    rm -rf "$TESTCACHE"
+  }
+  trap restore_tests EXIT
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    mv -f "$f" "$TESTCACHE/$(printf '%s' "$f" | tr '/' '__')"
+  done < "$TESTLIST"
   say "deploy (11 functions that verify the caller's JWT)"
   supabase functions deploy content approve publish signals-ingest results health friday jobs links metrics research
   say "deploy (3 routes that carry their own credential)"
   supabase functions deploy tg-webhook tv-webhook tg-auth --no-verify-jwt
+  restore_tests
+  trap - EXIT
 fi
 
 say "live probe"

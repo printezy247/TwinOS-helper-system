@@ -670,5 +670,15 @@ begin
   raise notice 'ok: clip candidates';
 end $$;
 
+-- 24. flood control counts real messages per sender (0031)
+do $$
+begin
+  assert (select count(*) from information_schema.columns
+    where table_name = 'flood_counters'
+    and column_name in ('chat_id', 'user_id', 'at')) = 3,
+    'flood counter columns exist';
+  raise notice 'ok: flood counters';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;

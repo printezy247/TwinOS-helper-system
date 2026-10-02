@@ -20,7 +20,7 @@ import { serve, json, readJson, routeOf, bad, notFound, optString, oneOf } from 
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember, type IdemContext } from "_shared/idempotency.ts";
-import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
+import { admin, requireSetting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, enqueuePublish, setStatus } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
@@ -203,7 +203,7 @@ serve(async (req) => {
 
   if (tail[0] === "stop-if") {
     // Signals closed (or past expiry) without a result reply → alert now (§1 Q4 stop-if).
-    const hours = Number((await setting(SETTING_KEYS.signalExpiryHours)) ?? 48);
+    const hours = Number((await settingTyped(SETTING_KEYS.signalExpiryHours)) ?? 48);
     const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
     const { data: posted } = await db.from("signal_posts").select("signal_id, kind");
     // 0011 widened the card kind to 'card' | 'signal'; count both, like v_stop_if.

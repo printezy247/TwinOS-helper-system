@@ -249,6 +249,7 @@ select cron.schedule('twinos-stop-if',         '*/10 * * * *', $$select public.t
 select cron.schedule('twinos-friday-inputs',   '0 1 * * 5',    $$select public.twinos_cron_call('friday/request-inputs')$$); -- 09:00 MYT
 select cron.schedule('twinos-nightly-backup',  '0 19 * * *',   $$insert into jobs(kind,status,created_by) values ('backup','queued','cron')$$); -- 03:00 MYT
 select cron.schedule('twinos-keepalive',       '0 */6 * * *',  $$select 1$$);  -- keeps a free-tier project from pausing (§8)
+select cron.schedule('twinos-fanout-drain',    '* * * * *',    $$select public.twinos_cron_call('content/fanout-drain')$$); -- Wave 4.4: fan-out retries
 select cron.jobid, jobname, schedule from cron.job order by jobname;   -- check
 select cron.unschedule('twinos-health');                               -- remove one
 ```

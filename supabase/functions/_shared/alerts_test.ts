@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { cooldownDue } from "./alerts.ts";
+import { cooldownDue, updateFailuresExceeded } from "./alerts.ts";
 
 Deno.test("cooldown: the first alert always sends, repeats wait out the cooldown", () => {
   const now = Date.now();
@@ -9,4 +9,10 @@ Deno.test("cooldown: the first alert always sends, repeats wait out the cooldown
   assertEquals(cooldownDue(new Date(now - 5 * hour).toISOString(), hour, now), true);
   assertEquals(cooldownDue(new Date(now - 30 * 60_000).toISOString(), hour, now), false);
   assertEquals(cooldownDue("not-a-date", hour, now), true);
+});
+
+Deno.test("update failures: the Desk hears only past the threshold, not at it", () => {
+  assertEquals(updateFailuresExceeded(0), false);
+  assertEquals(updateFailuresExceeded(3), false);
+  assertEquals(updateFailuresExceeded(4), true);
 });

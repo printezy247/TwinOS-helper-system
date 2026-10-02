@@ -28,6 +28,7 @@ export type Action =
   | "metrics.poll"
   | "content.schedule"
   | "content.schedule_claim" // schedule a post that carries a claim flag
+  | "content.fanout_drain" // cron works the fan-out retry queue
   | "publish.run"
   | "signals.ingest"
   | "tv.alert"
@@ -67,6 +68,7 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "content.batch": ["jack", "abdul", "cron"],
   "metrics.poll": ["jack", "abdul", "cron"],
   "content.schedule": ["jack", "abdul", "cron"],
+  "content.fanout_drain": ["cron", "jack"],
   "content.schedule_claim": ["jack"],
   "publish.run": ["cron", "jack"],
   "signals.ingest": ["ezyai"],
