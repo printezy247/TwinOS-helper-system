@@ -1,0 +1,82 @@
+TWINOS BUILD REPORT, Fri 2 Oct 2026
+
+Status: every phase that can be built from the repo is built, merged to main (PRs #21 to #38) and deployed (all 13 functions, version 10). The Desk tour passed live today: commands answer, a draft appears, /fanout copies it to 6 platforms, Reject clears all 7, nothing published.
+
+WHAT CHANGED
+
+Phase 2, Desk and content
+- Wednesday 14:30 batch: 7 lessons, numbered. "N: text" edits one. /batch lists it. /batch ok approves what is ready and claim-free.
+- Thursday sweep nudges what is still waiting.
+- /fanout copies a post to Instagram, Facebook, Threads, TikTok, YouTube and X. TikTok, YouTube and X come as copy-paste kits.
+- Map and evening reminders. /hours logs time per task.
+
+Phase 3, publishing
+- Real Instagram, Facebook and Threads publishers with retry, rate caps and signed media links. Waiting for your Meta app.
+- Health warns 7 days before a Meta token expires.
+
+Phase 4, community
+- Moderation in the discussion group: scam phrases, warn, then 24 h mute, then ban.
+- Join requests are checked against CAS, then a captcha button.
+- Repeat questions are counted for the FAQ.
+
+Phase 5, research and metrics
+- View snapshots at 1 h, 24 h and 7 d for every channel post.
+- Benchmarks against the reference channels.
+- Topic research: autocomplete expansion EN/BM, risk and demand scores, Monday brief.
+
+Phase 6, Friday
+- Cost per first-time depositor per campaign, ad spend input.
+- Hours-cut line and fan-out line on the scorecard.
+
+Phase 7
+- Annual-plan offers, BM article briefs, YouTube long-form pick and chapters, clip layouts with face box.
+
+Phase 8
+- docs/PHASE8.md: the revenue path, two bugs found in the printezy site, migration and hosting plan.
+
+Dashboard (Lovable): all screens built, project knowledge updated.
+
+Fixed today (found by the live tour)
+- The Desk Approve and Reject buttons were refused by the approve function (403), because your Telegram id came back as a number and was compared as text. Fixed and live.
+- TikTok, YouTube and X kits can now be rejected.
+- A slow tap (Telegram's 15 s limit) no longer cancels the decision.
+- The scripts now ask the Supabase CLI for JSON, because in your terminal it printed a table.
+
+WHAT YOU NEED TO DO (in this order)
+1. Real approve test: on the next morning map, tap Approve in the Desk and check it posts to @ezymap. This is the one path no test can cover for you.
+2. Meta app: make it Live with Standard Access, then put the tokens and their expiry dates in the function secrets (docs/SETUP.md 3.1).
+3. Link the discussion group to the channel, make the bot admin there, and send me the group's chat id (docs/SETUP.md 4.1).
+4. PC: run scripts/install-worker.sh. Install ffmpeg and faster-whisper. Save live recordings in ~/EzyMap/lives.
+5. TradingView: set the alert JSON (docs/TRADINGVIEW.md). Copy the ezyai key to the signal bot host (docs/SIGNAL-BOT.md).
+6. From Mon 5 Oct, log your hours each day: /hours <task> <minutes>. That week is the baseline for the 60% cut.
+7. Sign in to the dashboard and try the new screens.
+8. After every deploy, run scripts/desk-tour.sh. It must say PASS.
+
+DECISIONS WAITING ON YOU
+- A second login role for the dashboard, and whether to publish it.
+- The WhatsApp channel (WhatsApp Business API or another), before the retention hooks can be built.
+- Sales bot hosting: decide after the 14-night parallel run.
+- A lawyer's opinion before any paid ads.
+- Make the EzyMap indicator repo private. Agree the invite-link naming (src-campaign-yymm).
+- Data still missing: names, audience tier and usual-IB flag for the 3 reference channels (dashboard, Benchmarks). The EzyAI founding price (Q1 2027).
+
+STILL BLOCKED (not buildable from here)
+- Metrics pollers for IG, FB and Threads: need the Meta tokens. YouTube uploads: need the API project and audit.
+- Search Console, Bing and YouTube Data API research: need your accounts and keys.
+- Double-down alert: needs per-video TikTok views, which have no source today.
+- Ad-landing attribution: the read endpoint must be built in the printezy site's own project (spec in PHASE8.md).
+- Sales bot migration: needs that bot's repo.
+- First real clip render: needs ffmpeg and faster-whisper on your PC.
+
+NEXT FIXES (my suggestion, in order)
+1. printezy: the Stripe webhook checks then inserts, so two fast retries can double-count. Use a unique key plus upsert.
+2. printezy: the user lookup stops at 1,000 users. Filter by email instead of listing.
+3. Flood control in the discussion group: needs a per-user message counter (the rest of moderation is live).
+4. Wire YouTube long-form into the queued clip job (the pick and chapters are done).
+5. A contract test for the tg-webhook to approve hop. Today's 403 passed every unit test, because each side was right alone.
+
+UPGRADES (when you have time)
+- deploy.sh: skip *_test.ts files (every function uploads ~20 test files today), then run the Desk tour by itself.
+- Alert the Desk when tg.update_failed shows up more than 3 times in an hour.
+- Per-function dependency files, to clear the "fallback import map" warning on deploy.
+- A typed settings reader (number vs text per key), so today's bug class cannot come back.

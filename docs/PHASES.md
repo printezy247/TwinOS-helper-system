@@ -44,7 +44,7 @@ webhook is set.
 
 ## Phase 1 — Desk loop (8–21 Oct)
 Exit: Jack approves the map and a signal from his phone; a result reply posts by itself.
-- [ ] Desk drafts with approve buttons working end to end (`tg-webhook` → `content` → `approve` → `publish`)
+- [ ] Desk drafts with approve buttons working end to end (`tg-webhook` → `content` → `approve` → `publish`) — the draft → Desk → ❌ → `approve` path passed live on 2 Oct (`scripts/desk-tour.sh`: 7 posts made, 7 rejected, 0 publish jobs) after #38 fixed the 403 every Desk tap got (Jack's Telegram id read as a number). Left: one real ✅ on a morning map, checked on @ezymap — Jack
 - [x] Telegram publisher and scheduler running every minute; backoff verified with a forced 429 (`twinos-publisher-tick` fires once a minute — 10 `scheduler` beats in 10 distinct minutes live; `_shared/backoff_test.ts` and `_shared/tg_test.ts` force a 429 through a stubbed Bot API and assert the retry/backoff; `smoke.sql` §15 proves one `publish_jobs` row per variant)
 - [x] Templates for all 15 post types seeded and rendering without `[NEEDED]` on the daily ones (`templates.body`; `tests/check_templates.ts` renders all 15 through the compliance engine in CI)
 - [ ] TradingView alert → signal card draft (COUNTER-TREND line kept); alert JSON set in TradingView — Jack
