@@ -71,7 +71,9 @@ export async function fanOut(
       source: { via: "fanout", parent: masterId, platform, kit, notes: adapted.notes, platform_findings: findings },
       actor: opts.actor,
     });
-    if (kit) await db.from("content_items").update({ desk_state: "kit" }).eq("id", draft.content_id);
+    if (kit) {
+      await db.from("content_items").update({ desk_state: "kit", desk_state_at: new Date().toISOString() }).eq("id", draft.content_id);
+    }
     results.push({
       platform: platform as Platform, content_id: draft.content_id, kit, body: adapted.body,
       notes: adapted.notes, findings, complianceOk: draft.compliance.ok,

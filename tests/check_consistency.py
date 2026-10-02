@@ -301,8 +301,37 @@ def compliance_evidence() -> None:
     check("functions: every variant body write also writes compliance_checks", not missing, str(missing))
 
 
+def desk_state_wave0() -> None:
+    migrations = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted((ROOT / "supabase/migrations").glob("*.sql"))
+    )
+    later = sorted((ROOT / "supabase/migrations").glob("002*.sql"))
+    later_src = "\n".join(p.read_text(encoding="utf-8") for p in later)
+    check(
+        "desk_state: a migration after 0011 allows 'kit'",
+        bool(later) and "'kit'" in later_src and "desk_state" in later_src,
+        "fanout.ts sets desk_state='kit' but 0011's check rejects it",
+    )
+    check(
+        "desk_state: 'awaiting_slot' exists for Waves 1-3",
+        "'awaiting_slot'" in migrations,
+        "Wave 1 Later quick picks need it",
+    )
+    check(
+        "desk_state: desk_state_at exists for the 30-minute expiry",
+        "desk_state_at" in migrations,
+        "edit/later prompts must expire",
+    )
+    approve = read("supabase/functions/approve/index.ts")
+    check(
+        "approve: reschedule keeps the card's buttons",
+        'decision !== "reschedule"' in approve or "decision !== 'reschedule'" in approve,
+        "the keyboard clear must skip reschedule",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
