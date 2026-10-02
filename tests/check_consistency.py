@@ -340,6 +340,19 @@ def desk_state_wave0() -> None:
         "setMyCommands" in deploy,
         "Wave 1 item 3: scoped to the Desk chat, run by deploy.sh",
     )
+    webhook = read("supabase/functions/tg-webhook/index.ts")
+    check(
+        "desk cards: decisions collapse to a status button, no extra message",
+        "nopButton" in webhook and "\u2705 Approved" in webhook
+        and "Approved <code>" not in webhook,
+        "Wave 1 item 4: one status button, drop the extra Approved message",
+    )
+    check(
+        "desk batch: per-item buttons, refresh and a confirmed approve-ready",
+        "batchListKeyboard" in tg and "batchListKeyboard" in webhook
+        and "batchyes" in webhook and "readyToApprove" in webhook,
+        "Wave 1 item 5: approve/edit/preview per item, Refresh, Yes/Cancel re-check",
+    )
 
 
 def main() -> int:
