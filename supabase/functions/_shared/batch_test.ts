@@ -2,6 +2,7 @@ import { assert, assertEquals } from "std/assert/mod.ts";
 import {
   type BatchSlot, cycleWeek, mondayOf, nextMonday, planBatch, readyToApprove, slotToInstant, summaryLines,
   sweepPlan, topicTitle,
+  isEditable, isOpenBatchItem,
 } from "./batch.ts";
 
 const TZ = "Asia/Kuala_Lumpur";
@@ -153,4 +154,15 @@ Deno.test("sweepPlan: queue what is approved but unscheduled, nudge what waits, 
     { n: 5, why: "ready: /batch ok" },
   ]);
   assertEquals(plan.missed, [6, 7]);
+});
+
+Deno.test("isEditable: only a draft or a post waiting for Jack can be rewritten by 'N: text'", () => {
+  assertEquals(isEditable("draft"), true);
+  assertEquals(isEditable("pending_approval"), true);
+  for (const st of ["approved", "scheduled", "publishing", "published", "failed", "rejected"]) assertEquals(isEditable(st), false, st);
+});
+
+Deno.test("isOpenBatchItem: a batch is open while any of its posts has not gone out or been dropped", () => {
+  for (const st of ["draft", "pending_approval", "approved", "scheduled"]) assertEquals(isOpenBatchItem(st), true, st);
+  for (const st of ["publishing", "published", "failed", "rejected"]) assertEquals(isOpenBatchItem(st), false, st);
 });

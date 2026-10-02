@@ -192,8 +192,18 @@ export interface ReadyState {
  * runs its own gate on every call; this only decides who is worth asking it about.
  */
 export function readyToApprove(s: ReadyState): boolean {
-  return (s.status === "draft" || s.status === "pending_approval") &&
+  return isEditable(s.status) &&
     s.needed.length === 0 && s.claims.length === 0 && !s.blocked;
+}
+
+/** "N: text" may rewrite a post only while it is a draft or waiting for Jack. */
+export function isEditable(status: string): boolean {
+  return status === "draft" || status === "pending_approval";
+}
+
+/** A batch stays open until each of its posts has gone out or been dropped. */
+export function isOpenBatchItem(status: string): boolean {
+  return isEditable(status) || status === "approved" || status === "scheduled";
 }
 
 export interface SweepItem extends ReadyState {
