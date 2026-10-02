@@ -353,6 +353,17 @@ def desk_state_wave0() -> None:
         and "batchyes" in webhook and "readyToApprove" in webhook,
         "Wave 1 item 5: approve/edit/preview per item, Refresh, Yes/Cancel re-check",
     )
+    check(
+        "desk cards: approved cards carry a fan-out button",
+        "Fanned out" in webhook and "fanOut(" in webhook,
+        "Wave 1 item 8: fan:<id8> on approved cards",
+    )
+    check(
+        "desk panels: refresh stamps, drafts paging, alert buttons",
+        "updated " in webhook and "draftsPanel" in webhook
+        and "mo:ban" in webhook and "mo:faq" in webhook,
+        "Wave 1 items 9-11: updated hh:mm, pg: paging, mo: actions",
+    )
 
 
 def main() -> int:
