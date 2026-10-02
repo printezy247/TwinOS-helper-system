@@ -386,8 +386,40 @@ def wave3_health() -> None:
     )
 
 
+def wave3_guard() -> None:
+    backoff = read("supabase/functions/_shared/backoff.ts")
+    check(
+        "guard: unknown outcomes are recognised and held, not quick-retried",
+        "isUnknownOutcome(" in backoff and "UNKNOWN_HOLD_MS" in backoff,
+        "Wave 3 item 4: timeout/network errors hold the retry",
+    )
+    check(
+        "guard: a post that landed after the hold suppresses the retry",
+        "duplicateLanded(" in backoff,
+        "Wave 3 item 4: check before posting again",
+    )
+    publish = read("supabase/functions/publish/index.ts")
+    check(
+        "publish: unknown failures hold, flag error_class and alert the Desk",
+        "isUnknownOutcome(" in publish and "error_class" in publish and "deskAlert(" in publish,
+        "Wave 3 item 4: hold + error_class='unknown' + Desk alert",
+    )
+    check(
+        "publish: a held job is checked for a landed post before resending",
+        "duplicateLanded(" in publish and "unknown_hold" in publish,
+        "Wave 3 item 4: no blind resend after a timeout",
+    )
+    compliance = read("supabase/functions/_shared/compliance.ts")
+    check(
+        "compliance: humanizer rules (EN + BM) warn, apart from blocking claim checks",
+        "HUMANIZER_WORDS_EN" in compliance and "HUMANIZER_WORDS_MS" in compliance
+        and '"humanizer"' in compliance,
+        "Wave 3 item 8: AI-tell words are warn-level, claim words stay blocking",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()

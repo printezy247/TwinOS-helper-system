@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
 import {
-  bannedWords, check, ctaCount, detectClaims, hasDisclosure, hasPastPerformanceLine, hasRiskLine, neededPlaceholders,
+  bannedWords, check, ctaCount, detectClaims, hasDisclosure, hasPastPerformanceLine, hasRiskLine, humanizerHits,
+  neededPlaceholders,
 } from "./compliance.ts";
 
 const RISK = "Not financial advice. Education only. Trade at your own risk.";
@@ -79,6 +80,29 @@ Deno.test("locked brand lines satisfy the detectors", () => {
     "Prestasi lepas tidak menunjukkan hasil masa depan. Kami tidak menerbitkan kadar kemenangan atau jumlah pip yang tidak dapat disahkan secara bebas.",
   ]) assertEquals(hasPastPerformanceLine(line), true, line);
   assertEquals(hasDisclosure("Honest note: we earn a commission when you trade through the link."), true);
+});
+
+Deno.test("humanizer tells are warnings in EN and MS, never blocks", () => {
+  assert(humanizerHits("Let's delve into the gold tapestry, furthermore it is seamless").length >= 2);
+  assert(humanizerHits("Dalam dunia yang serba pantas, jom merevolusikan cara trade").length >= 1);
+  assertEquals(humanizerHits("Gold held the 4590 zone. Risk 1% or less."), []);
+  const r = check({
+    post_type: "lesson", platform: "telegram", lang: "en",
+    body: "Let's delve into a seamless setup. Furthermore, keep risk small.",
+  });
+  const f = r.findings.find((x) => x.check === "humanizer");
+  assert(f && f.severity === "warn", "humanizer hits must be warn-level");
+  assert(r.ok, "warn-only findings must not block");
+});
+
+Deno.test("claim words still block while humanizer words only warn", () => {
+  const r = check({
+    post_type: "lesson", platform: "telegram", lang: "en",
+    body: "This guaranteed win will delve into seamless profits.",
+  });
+  assert(r.findings.some((f) => f.check === "words" && f.severity === "blocking"));
+  assert(r.findings.some((f) => f.check === "humanizer" && f.severity === "warn"));
+  assert(!r.ok);
 });
 
 Deno.test("the everyday risk lines are recognised: not financial advice, not investment advice, not advice", () => {
