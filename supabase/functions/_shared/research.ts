@@ -90,3 +90,40 @@ export function coreTerms(seed: string, n = 3): string {
   const keep = words.filter((w) => !FILLER.has(w));
   return (keep.length ? keep : words).slice(0, n).join(" ");
 }
+
+export interface CsiRow {
+  topic: string;
+  category: string | null;
+  metric: string | null;
+  value: number | null;
+  trend: "up" | "flat" | "down" | null;
+  note: string | null;
+}
+
+/**
+ * One Creator Search Insights reading as a csi_captures row. ABDUL's tool sends
+ * topic, popularity, trend, gap and icp; the dashboard form sends category,
+ * metric and value. Both land in the same columns.
+ */
+export function csiRow(b: Record<string, unknown>): CsiRow {
+  const topic = typeof b.topic === "string" ? b.topic.trim() : "";
+  if (!topic) throw new Error("topic is required");
+  const trend = b.trend === undefined || b.trend === null || b.trend === "" ? null : String(b.trend);
+  if (trend !== null && !["up", "flat", "down"].includes(trend)) throw new Error("trend must be up, flat or down");
+  const raw = b.value ?? b.popularity;
+  let value: number | null = null;
+  if (raw !== undefined && raw !== null && raw !== "") {
+    value = Number(raw);
+    if (!Number.isFinite(value)) throw new Error("value must be a number");
+  }
+  const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+  const note = [b.gap === true ? "content gap" : null, str(b.note, 500)].filter(Boolean).join(". ") || null;
+  return {
+    topic: topic.slice(0, 200),
+    category: str(b.category ?? b.icp, 80),
+    metric: str(b.metric, 80) ?? (b.popularity !== undefined && b.popularity !== null ? "popularity" : null),
+    value,
+    trend: trend as CsiRow["trend"],
+    note,
+  };
+}

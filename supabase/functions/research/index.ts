@@ -11,7 +11,7 @@
  * Autocomplete is an unofficial public endpoint: a failed lookup is skipped, never retried in a loop.
  * No AI reads anything here, and nothing is posted: the brief is a note for Jack.
  */
-import { serve, json, readJson, routeOf, reqString, optString, optNumber, oneOf, bad } from "_shared/http.ts";
+import { bad, json, readJson, routeOf, serve } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { remember, replay } from "_shared/idempotency.ts";
@@ -20,10 +20,9 @@ import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
 import { cycleWeek, nextMonday } from "_shared/batch.ts";
 import { similarity } from "_shared/moderation.ts";
-import { buildBrief, coreTerms, demandScore, parseSuggest, queryVariants, scoreTopic, topicRisk } from "_shared/research.ts";
+import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, scoreTopic, topicRisk } from "_shared/research.ts";
 
 const LANGS = ["en", "ms", "manglish"] as const;
-const TRENDS = ["up", "flat", "down"] as const;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 async function suggest(q: string, lang: string): Promise<string[]> {
@@ -46,14 +45,15 @@ serve(async (req) => {
 
   if (tail[0] === "csi") {
     requireRole(caller.role, "research.csi");
-    const topic = reqString(body, "topic", { max: 200 });
-    const trend = body.trend === undefined || body.trend === null ? null : oneOf(body, "trend", TRENDS);
-    const { error } = await db.from("csi_captures").insert({
-      topic, category: optString(body, "category", 80), metric: optString(body, "metric", 80),
-      value: optNumber(body, "value"), trend, note: optString(body, "note", 500), captured_by: caller.actor,
-    });
+    let row;
+    try {
+      row = csiRow(body);
+    } catch (err) {
+      throw bad(err instanceof Error ? err.message : String(err));
+    }
+    const { error } = await db.from("csi_captures").insert({ ...row, captured_by: caller.actor });
     if (error) throw bad(`csi_captures: ${error.message}`);
-    await logAction({ actor: caller.actor, action: "research.csi", payload: { topic } });
+    await logAction({ actor: caller.actor, action: "research.csi", payload: { topic: row.topic } });
     return json({ ok: true }, 201);
   }
 
