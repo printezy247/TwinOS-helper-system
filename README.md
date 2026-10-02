@@ -23,7 +23,7 @@ Jack (Telegram Desk group, dashboard, ABDUL) ─▶ one API, one set of rules
 | `supabase/migrations/` | the schema (plan §10), RLS, triggers, `mint_api_key()` | migrations agent |
 | `supabase/seed.sql` | settings, products, brand facts, 15 templates, hooks, calendar | seed agent |
 | `supabase/functions/_shared/` | auth (JWT or hashed key → role), roles, idempotency, action_log, Telegram client, compliance checklist, draft pipeline | this scaffold |
-| `supabase/functions/<fn>/` | `content` `approve` `publish` `tg-webhook` `tv-webhook` `signals-ingest` `results` `health` `friday` `jobs` | this scaffold |
+| `supabase/functions/<fn>/` | `content` `approve` `publish` `tg-webhook` `tv-webhook` `signals-ingest` `results` `health` `friday` `jobs` `links` | this scaffold |
 | `workers/pc/` | Python worker on Jack's PC: drop folder, Telechurn CSV, backup, clips. Never opens a port | this scaffold |
 | `bots/ops/` | @EzyOps_bot setup, permissions, webhook, Desk group flow | this scaffold |
 | `apps/dashboard/` | Lovable-generated dashboard (GitHub sync) | Lovable |
@@ -34,7 +34,7 @@ Jack (Telegram Desk group, dashboard, ABDUL) ─▶ one API, one set of rules
 ## Docs
 
 - [`docs/SETUP.md`](docs/SETUP.md) — what only Jack can do, in order, per phase, with exact commands
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the shape (plan §7) and the ten functions
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the shape (plan §7) and the eleven functions
 - [`docs/API.md`](docs/API.md) — endpoints with request/response examples and the schema contract the functions assume
 - [`docs/PHASES.md`](docs/PHASES.md) — checklist per phase (plan §13)
 - [`docs/LOVABLE-KNOWLEDGE.md`](docs/LOVABLE-KNOWLEDGE.md) — paste into the Lovable project's knowledge

@@ -33,7 +33,7 @@ Jack ── voice/chat ─▶ ABDUL ── MCP (apps/mcp) ───────�
 
 The PC worker never opens a port: it asks `jobs/claim`, works, posts `jobs/result`.
 
-## The ten functions
+## The eleven functions
 
 | Function | Trigger | Does |
 |---|---|---|
@@ -47,6 +47,7 @@ The PC worker never opens a port: it asks `jobs/claim`, works, posts `jobs/resul
 | `health` | everyone (beats), cron (`check`) | beats, stale alerts, "anything broken?" |
 | `friday` | cron, Jack, ABDUL | scoreboard read, manual inputs, scorecard draft + image job |
 | `jobs` | PC worker | claim/result, enqueue, signed upload, asset register, Telechurn import |
+| `links` | Jack, ABDUL | create a named invite link (`src-campaign-yymm`) and store it; list them |
 
 Shared code in `supabase/functions/_shared/`: `auth` (JWT or hashed API key →
 role), `roles` (the §11 table), `idempotency`, `log` (`action_log`), `tg` (Bot

@@ -27,15 +27,15 @@ else
 fi
 
 if [ "${1:-}" != "--check" ]; then
-  say "deploy (8 functions that verify the caller's JWT)"
-  supabase functions deploy content approve publish signals-ingest results health friday jobs
+  say "deploy (9 functions that verify the caller's JWT)"
+  supabase functions deploy content approve publish signals-ingest results health friday jobs links
   say "deploy (2 webhooks that carry their own secret)"
   supabase functions deploy tg-webhook tv-webhook --no-verify-jwt
 fi
 
 say "live probe"
 fail=0
-for fn in content approve publish signals-ingest results health friday jobs; do
+for fn in content approve publish signals-ingest results health friday jobs links; do
   code="$(curl -s -o /dev/null -w '%{http_code}' "https://$REF.supabase.co/functions/v1/$fn")"
   # 401/403 = deployed and refusing an anonymous caller. 404 = not deployed.
   case "$code" in 401|403) echo "ok   $fn ($code)";; *) echo "FAIL $fn ($code)"; fail=1;; esac
