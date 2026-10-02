@@ -3,6 +3,8 @@
  *
  *   POST /content/draft                     { post_type, lang, fields, platform?, pillar?, icp?,
  *                                             media?, allowed_numbers?, push_to_desk? }
+ *   POST /content/batch                     { for?: YYYY-MM-DD, only?: ["lesson", ...] }   Wednesday 14:30 MYT
+ *   POST /content/batch-sweep               {}                                             Thursday 09:00 MYT
  *   POST /content/{id}/request-approval     {}
  *   POST /content/{id}/schedule             { run_at }   (claim posts: jack only)
  *   GET  /content/{id}                      → item + variants + checks
@@ -18,6 +20,9 @@ import { createDraft, enqueuePublish, loadContent, pushToDesk } from "_shared/co
 import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
 import { startOfDayInTz } from "_shared/time.ts";
+import {
+  cycleWeek, mondayOf, nextMonday, planBatch, slotToInstant, summaryLines, sweepPlan, topicTitle, type SweepItem,
+} from "_shared/batch.ts";
 import type { Lang, Platform, PostType } from "_shared/compliance.ts";
 
 const POST_TYPES: readonly PostType[] = [
@@ -80,6 +85,150 @@ serve(async (req) => {
     await sendMessage(deskId, reminder.text, { parse_mode: "HTML" });
     await logAction({ actor: caller.actor, action: `content.${tail[0]}`, payload: { day } });
     return remember(idem, 200, { ok: true, reminded: true, day });
+  }
+
+  // POST /content/batch — the Wednesday batch (§9.C.18): next week's 7 lessons, the
+  // Channel Audit, the poll and the offer as numbered drafts, then one numbered list
+  // in the Desk. One run per week (the idempotency key is the Monday).
+  if (tail[0] === "batch") {
+    requireRole(caller.role, "content.batch");
+    const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+    const forDay = typeof body.for === "string" && body.for ? body.for : null;
+    if (forDay && !/^\d{4}-\d{2}-\d{2}$/.test(forDay)) throw bad("for must be YYYY-MM-DD");
+    const monday = forDay ? mondayOf(forDay) : nextMonday(new Date(), tz);
+    const only = Array.isArray(body.only) ? (body.only as unknown[]).map(String) : [];
+    const idem = { scope: "content.batch", key: `${monday}:${[...only].sort().join(",")}`, requestHash: "-" };
+    const hit = await replay(idem);
+    if (hit) return hit;
+
+    const db = admin();
+    const { data: slotRows } = await db.from("calendar_slots").select("dow, time_local, post_type")
+      .in("kind", ["channel_daily", "channel_weekly"]).eq("active", true);
+    const { data: topicRows } = await db.from("calendar_slots").select("pillar, topic")
+      .eq("kind", "tiktok_28day").eq("week_no", cycleWeek(monday)).in("pillar", ["lesson", "start_safe"]);
+    const topicOf = (p: string) => topicTitle(topicRows?.find((t) => t.pillar === p)?.topic);
+
+    // At most settings.offer_posts_per_week_max offer posts in the week.
+    const weekFrom = slotToInstant(monday, 1, "00:00", tz);
+    const weekTo = new Date(new Date(weekFrom).getTime() + 7 * 86_400_000).toISOString();
+    const { count: offers } = await db.from("content_items").select("id", { count: "exact", head: true })
+      .eq("post_type", "offer").not("status", "in", "(rejected,failed)")
+      .gte("scheduled_at", weekFrom).lt("scheduled_at", weekTo);
+    const offerMax = Number((await setting(SETTING_KEYS.offerMaxPerWeek)) ?? 1);
+
+    const plan = planBatch({
+      monday, slots: slotRows ?? [], tz, only,
+      topics: { lesson: topicOf("lesson"), start_safe: topicOf("start_safe") },
+      offerAlready: (offers ?? 0) >= offerMax,
+    });
+    if (!plan.length) throw bad("no batch slots found in calendar_slots");
+
+    // The audit quotes the board, never a number of ours: only when there is a closed signal to count.
+    const { data: statRows } = await db.rpc("results_stats", {
+      p_since: new Date(Date.now() - 28 * 86_400_000).toISOString(), p_until: new Date().toISOString(),
+    });
+    const stat = Array.isArray(statRows) ? statRows[0] : statRows;
+    const board = stat && Number(stat.wins) + Number(stat.losses) > 0
+      ? { wins: Number(stat.wins), losses: Number(stat.losses), total_r: Number(stat.total_r) }
+      : null;
+
+    const made: Array<{ n: number; post_type: string; content_id: string; needed: string[] }> = [];
+    const failed: Array<{ n: number; error: string }> = [];
+    const needed = new Map<number, string[]>();
+    for (const item of plan) {
+      const fields: Record<string, unknown> = {};
+      let allowed: number[] | undefined;
+      if (item.post_type === "lesson") {
+        fields.label = item.label;
+        if (item.title) fields.title = item.title;
+      }
+      if (item.post_type === "channel_audit" && board) {
+        Object.assign(fields, board);
+        allowed = [board.wins, board.losses, board.total_r];
+      }
+      try {
+        const draft = await createDraft({
+          post_type: item.post_type, lang: "en", fields, allowed_numbers: allowed,
+          pillar: item.pillar, title: item.title, scheduled_at: item.when, planned_for: item.when,
+          batch: { week: monday, no: item.n },
+          source: { via: "batch", week: monday, n: item.n, label: item.label },
+          actor: caller.actor,
+        });
+        needed.set(item.n, draft.needed);
+        made.push({ n: item.n, post_type: item.post_type, content_id: draft.content_id, needed: draft.needed });
+      } catch (err) {
+        failed.push({ n: item.n, error: String(err).slice(0, 200) });
+      }
+    }
+
+    const deskId = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
+    const lines = summaryLines(plan.filter((i) => made.some((m) => m.n === i.n)), needed, tz);
+    const text = [
+      `<b>Wednesday batch</b> · week of ${monday}`,
+      "",
+      ...lines,
+      ...(failed.length ? ["", `⚠️ not drafted: ${failed.map((f) => f.n).join(", ")}`] : []),
+      "",
+      "Reply <code>N: the text</code> to fill or replace a post (it comes back here with buttons), or <code>N: softer</code> for a rewrite.",
+      "<code>/batch ok</code> approves what is ready and claim-free. A price, level, result or offer always needs your own tap.",
+    ].join("\n");
+    await sendMessage(deskId, text.slice(0, 4096), { parse_mode: "HTML", disable_web_page_preview: true });
+    await logAction({ actor: caller.actor, action: "content.batch", payload: { monday, made: made.length, failed: failed.length } });
+    return remember(idem, 201, { ok: true, week: monday, items: made, failed });
+  }
+
+  // POST /content/batch-sweep — Thursday: queue anything approved but unscheduled,
+  // nudge the Desk about what still waits, flag slots that have already gone.
+  if (tail[0] === "batch-sweep") {
+    requireRole(caller.role, "content.batch");
+    const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+    const now = new Date();
+    const day = now.toLocaleDateString("en-CA", { timeZone: tz });
+    const idem = { scope: "content.batch-sweep", key: day, requestHash: "-" };
+    const hit = await replay(idem);
+    if (hit) return hit;
+
+    const monday = nextMonday(now, tz);
+    const db = admin();
+    const { data: items } = await db.from("content_items")
+      .select("id, batch_no, status, scheduled_at").eq("batch_week", monday).order("batch_no");
+    if (!items?.length) return remember(idem, 200, { ok: true, skipped: "no batch for the coming week", monday });
+
+    const ids = items.map((i) => i.id as string);
+    const { data: variants } = await db.from("content_variants")
+      .select("content_id, needed_fields, claim_flags, compliance").in("content_id", ids);
+    const { data: jobs } = await db.from("publish_jobs").select("content_id, status").in("content_id", ids);
+    const queued = new Set((jobs ?? []).filter((j) => j.status !== "cancelled").map((j) => j.content_id as string));
+
+    const sweepItems: SweepItem[] = items.map((i) => {
+      const v = (variants ?? []).find((x) => x.content_id === i.id);
+      return {
+        id: i.id as string, n: i.batch_no as number, status: i.status as string,
+        when: (i.scheduled_at as string | null) ?? now.toISOString(),
+        needed: (v?.needed_fields as string[] | null) ?? [],
+        claims: (v?.claim_flags as string[] | null) ?? [],
+        blocked: v?.compliance?.ok === false,
+        hasJob: queued.has(i.id as string),
+      };
+    });
+    const plan = sweepPlan(sweepItems, now);
+
+    for (const id of plan.enqueue) {
+      const item = sweepItems.find((s) => s.id === id)!;
+      await enqueuePublish(id, item.when, caller.actor);
+    }
+    if (plan.nudge.length || plan.missed.length) {
+      const deskId = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
+      const text = [
+        `<b>Batch check</b> · week of ${monday}`,
+        ...plan.nudge.map((n) => `${n.n}. ${n.why}`),
+        ...(plan.missed.length ? [`Slot already passed: ${plan.missed.join(", ")}`] : []),
+        ...(plan.enqueue.length ? [`Queued ${plan.enqueue.length} approved post(s) that had no job.`] : []),
+      ].join("\n");
+      await sendMessage(deskId, text, { parse_mode: "HTML" });
+    }
+    await logAction({ actor: caller.actor, action: "content.batch_sweep", payload: { monday, enqueued: plan.enqueue.length, nudged: plan.nudge.length, missed: plan.missed.length } });
+    return remember(idem, 200, { ok: true, monday, ...plan });
   }
 
   // POST /content/draft

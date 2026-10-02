@@ -85,4 +85,5 @@ export const SETTING_KEYS = {
   discussionChatId: "discussion_group_chat_id", // linked discussion group (Phase 4)
   timezone: "timezone", // Asia/Kuala_Lumpur
   signalExpiryHours: "signal_expiry_hours", // stop-if window (§9.D.25)
+  offerMaxPerWeek: "offer_posts_per_week_max", // one offer post a week (§9.E.41)
 } as const;

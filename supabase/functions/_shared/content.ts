@@ -143,6 +143,10 @@ export interface DraftInput {
   media?: Array<{ kind: "photo" | "video"; url?: string; asset_id?: string; file_id?: string }>;
   signal_id?: string | null;
   scheduled_at?: string | null;
+  /** When the post is meant to go out (the batch plan); scheduled_at is what the publisher acts on. */
+  planned_for?: string | null;
+  /** The Wednesday batch this draft belongs to: the Monday it is for, and its number in the list. */
+  batch?: { week: string; no: number };
   actor: string;
   /** Skip the template and use this body verbatim (results replies built from the board). */
   body_override?: string;
@@ -193,6 +197,9 @@ export async function createDraft(input: DraftInput): Promise<DraftResult> {
       source: input.source ?? {},
       signal_id: input.signal_id ?? null,
       scheduled_at: input.scheduled_at ?? null,
+      planned_for: input.planned_for ?? null,
+      batch_week: input.batch?.week ?? null,
+      batch_no: input.batch?.no ?? null,
       created_by: input.actor,
     })
     .select("id")

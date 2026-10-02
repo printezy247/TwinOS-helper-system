@@ -22,6 +22,7 @@ import { createDraft, pushToDesk, resolveShort } from "_shared/content.ts";
 import { check as complianceCheck, type PostType } from "_shared/compliance.ts";
 import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
 import { logAction } from "_shared/log.ts";
+import { readyToApprove, summaryLines, sweepPlan, type SweepItem } from "_shared/batch.ts";
 
 const ACTOR = "ops_bot";
 
@@ -145,6 +146,71 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
   }
 }
 
+/* ------------------------------ the Wednesday batch ------------------------------ */
+interface BatchRow { id: string; batch_no: number; post_type: string; lang: "en" | "ms"; status: string; scheduled_at: string | null; title: string | null; source: { label?: string } | null }
+
+/** The newest batch that still has something open, with its items in number order. */
+async function openBatch(): Promise<{ week: string; items: BatchRow[] } | null> {
+  const db = admin();
+  const { data: latest } = await db.from("content_items").select("batch_week")
+    .not("batch_week", "is", null).order("batch_week", { ascending: false }).limit(1).maybeSingle();
+  if (!latest?.batch_week) return null;
+  const { data: items } = await db.from("content_items")
+    .select("id, batch_no, post_type, lang, status, scheduled_at, title, source")
+    .eq("batch_week", latest.batch_week).order("batch_no");
+  return items?.length ? { week: latest.batch_week as string, items: items as BatchRow[] } : null;
+}
+
+/** `/batch` lists the open batch; `/batch ok` approves what is ready and claim-free. Jack only (the Desk handler already checked). */
+async function onBatch(m: Message): Promise<void> {
+  const say = (html: string) => tg.sendMessage(m.chat.id, html, { parse_mode: "HTML", reply_to_message_id: m.message_id });
+  const arg = (m.text ?? m.caption ?? "").replace(/^\/batch(?:@\w+)?\s*/i, "").trim().toLowerCase();
+  const batch = await openBatch();
+  if (!batch) { await say("No batch yet. It is drafted on Wednesday at 14:30."); return; }
+
+  const db = admin();
+  const ids = batch.items.map((i) => i.id);
+  const { data: variants } = await db.from("content_variants")
+    .select("content_id, needed_fields, claim_flags, compliance").in("content_id", ids);
+  const states: SweepItem[] = batch.items.map((i) => {
+    const v = (variants ?? []).find((x) => x.content_id === i.id);
+    return {
+      id: i.id, n: i.batch_no, status: i.status, when: i.scheduled_at ?? new Date().toISOString(),
+      needed: (v?.needed_fields as string[] | null) ?? [], claims: (v?.claim_flags as string[] | null) ?? [],
+      blocked: v?.compliance?.ok === false, hasJob: false,
+    };
+  });
+
+  if (arg === "ok") {
+    const jack = await jackId();
+    const done: number[] = [];
+    const refused: string[] = [];
+    for (const s of states) {
+      if (!readyToApprove(s)) continue;
+      const r = await callApprove({ content_id: s.id, decision: "approve", via: "telegram", telegram: { user_id: jack }, idempotency_key: `batch-ok:${s.id}` });
+      if (r.ok) done.push(s.n); else refused.push(`${s.n} (${tg.escapeHtml(String(r.message ?? r.error))})`);
+    }
+    const left = sweepPlan(states.filter((s) => !done.includes(s.n)), new Date(0)).nudge
+      .filter((n) => n.why !== "ready: /batch ok");
+    await say([
+      done.length ? `✅ Approved ${done.join(", ")}. They go out at their slot.` : "Nothing was ready to approve.",
+      ...(refused.length ? [`⚠️ Not approved: ${refused.join("; ")}`] : []),
+      ...(left.length ? ["Still waiting on you:", ...left.map((n) => `${n.n}. ${n.why}`)] : []),
+    ].join("\n"));
+    await logAction({ actor: "jack", action: "batch.ok", payload: { approved: done, refused: refused.length } });
+    return;
+  }
+
+  const asItems = batch.items.map((i) => ({
+    n: i.batch_no, post_type: i.post_type as "lesson", pillar: null, label: i.source?.label ?? i.post_type,
+    title: i.title, when: i.scheduled_at ?? new Date().toISOString(), dow: 0,
+  }));
+  const needed = new Map(states.map((s) => [s.n, s.needed] as [number, string[]]));
+  const lines = summaryLines(asItems, needed, (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur")
+    .map((line, idx) => `${line} [${batch.items[idx].status}]`);
+  await say([`<b>Batch</b> · week of ${batch.week}`, "", ...lines, "", "<code>N: the text</code> fills or edits one. <code>/batch ok</code> approves what is ready."].join("\n"));
+}
+
 /* ------------------------------ Desk group input ------------------------------ */
 function parseTime(text: string, tz: string): string | null {
   const m = /^(?:(today|tomorrow|esok)\s+)?(\d{1,2}):(\d{2})$/i.exec(text.trim());
@@ -166,6 +232,7 @@ const HELP_TEXT = [
   "",
   "/status - anything broken?",
   "/friday - this week's Friday numbers so far",
+  "/batch - the Wednesday batch (<code>/batch ok</code> approves what is ready and claim-free)",
   "/hours &lt;task&gt; &lt;minutes&gt; [note] - log what a task cost by hand",
   "/hours today - today's total and the week so far",
   "/help - this message",
@@ -213,6 +280,7 @@ async function onDeskCommand(m: Message, cmd: string): Promise<void> {
   }
 
   if (cmd === "hours") { await onHours(m); return; }
+  if (cmd === "batch") { await onBatch(m); return; }
 
   if (cmd === "help" || cmd === "start") { await say(HELP_TEXT); return; }
   await say(`I don't know /${tg.escapeHtml(cmd)}.\n\n${HELP_TEXT}`);
@@ -291,6 +359,13 @@ async function onDeskMessage(m: Message): Promise<void> {
   const numbered = /^(\d{1,2})\s*:\s*(.+)$/s.exec(text);
   if (numbered) {
     const n = Number(numbered[1]);
+    // The open Wednesday batch has its own stable numbers (content_items.batch_no).
+    const open = await openBatch();
+    const inBatch = open?.items.find((i) => i.batch_no === n);
+    if (inBatch) {
+      await applyEdit(inBatch.id, inBatch.post_type as PostType, inBatch.lang, numbered[2], m);
+      return;
+    }
     const { data: todays } = await admin().from("content_items")
       .select("id, post_type, lang").gte("created_at", new Date(Date.now() - 24 * 3600_000).toISOString())
       .in("status", ["draft", "pending_approval"]).order("created_at", { ascending: true });
