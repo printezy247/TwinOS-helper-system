@@ -74,6 +74,33 @@ class DeskTourTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("DRY RUN", r.stdout)
 
+    def test_a_cli_answer_without_rows_is_reported_as_a_cli_problem(self):
+        # The CLI can exit 0 with an error object (or a bare banner). That must
+        # stop the tour with the CLI's own words, not "setting is unset".
+        for script in (SCRIPT, REPO / "scripts" / "desk-selftest.sh"):
+            with tempfile.TemporaryDirectory() as d:
+                fake = {
+                    "supabase": "#!/bin/sh\necho 'Initialising login role...'\n"
+                                "echo '{\"_tag\":\"Error\",\"error\":{\"message\":\"Access token not provided\"}}'\nexit 0\n",
+                    "secret-tool": "#!/bin/sh\necho fake-value\n",
+                    "curl": "#!/bin/sh\necho 200\n",
+                }
+                for name, body in fake.items():
+                    p = Path(d) / name
+                    p.write_text(body)
+                    p.chmod(0o755)
+                for tool in ("bash", "cat", "date", "cut", "dirname", "sed", "jq", "grep",
+                             "sha256sum", "printf", "head", "tr", "sleep", "wc"):
+                    src = shutil.which(tool)
+                    if src:
+                        os.symlink(src, os.path.join(d, tool))
+                r = subprocess.run(["bash", str(script)], capture_output=True, text=True,
+                                   timeout=60, env={"PATH": d})
+            out = r.stdout + r.stderr
+            self.assertNotEqual(r.returncode, 0, out)
+            self.assertNotIn("is unset", out, script.name)
+            self.assertIn("Access token not provided", out, script.name)
+
     def test_update_ids_do_not_collide_with_the_selftest(self):
         # The selftest uses 900000000000 + epoch; the tour sits 1e10 above it.
         self.assertIn("910000000000", self.src)
