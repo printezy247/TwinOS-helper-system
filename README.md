@@ -37,6 +37,7 @@ Jack (Telegram Desk group, dashboard, ABDUL) ─▶ one API, one set of rules
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the shape (plan §7) and the eleven functions
 - [`docs/API.md`](docs/API.md) — endpoints with request/response examples and the schema contract the functions assume
 - [`docs/PHASES.md`](docs/PHASES.md) — checklist per phase (plan §13)
+- [`docs/UPGRADE-IDEAS.md`](docs/UPGRADE-IDEAS.md) — research-driven upgrade ideas (Wave 5) with status per item
 - [`docs/LOVABLE-KNOWLEDGE.md`](docs/LOVABLE-KNOWLEDGE.md) — paste into the Lovable project's knowledge
 - [`bots/ops/README.md`](bots/ops/README.md), [`workers/pc/README.md`](workers/pc/README.md)
 

@@ -66,3 +66,19 @@ the prompts below assume them.)
 > draft succeeds. Surface the Desk alerts `fanout_failed` and
 > `fanout_backlog` as read-only banners with a Retry button that re-invokes
 > the fan-out for that platform. Read-only: this view never edits captions.
+
+## 5. Insights (best times, hooks, engagement)
+
+> Add a read-only Insights view on top of the four analytics views
+> `v_best_times`, `v_hook_performance`, `v_post_engagement` and
+> `v_signal_ledger` (read them like the other analytics views; never write).
+> Top section: the three best posting hours from `v_best_times` as stat
+> tiles (hour in Asia/Kuala_Lumpur, average 1-hour views). Middle: a hook
+> table from `v_hook_performance` — hook text, uses, average views — with
+> the winner badged. Then engagement rate per day from `v_post_engagement`
+> (views-24h ÷ members, in %) as a simple bar list. Last section: the
+> signal ledger from `v_signal_ledger` as a table with a per-row
+> "deleted-trade guard" lock icon — the schema refuses signal deletions, so
+> say so once in a caption. No charts library needed; plain tables and
+> tiles are fine. Empty state: "Numbers arrive after the first posts"
+> with the honest reason.

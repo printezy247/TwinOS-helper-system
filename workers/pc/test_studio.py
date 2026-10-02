@@ -171,9 +171,12 @@ class WordCaptions(unittest.TestCase):
         self.assertIn("[Script Info]", ass)
         self.assertIn("Dialogue:", ass)
         self.assertIn("gold", ass)
-        # 70.5 - 70.0 = 0.5 s into the clip -> 0:00:00.50
+        # gold 70.0-70.5 and held 70.5-71.2, shifted by the 70.0 clip start:
+        # the word events carry 0:00:00.50 and 0:00:01.20, never the raw times.
         self.assertIn("0:00:00.50", ass)
-        self.assertNotIn("0:00:01.", ass.split("held")[0])
+        self.assertIn("0:00:00.00,0:00:00.50", ass)
+        self.assertIn("0:00:00.50,0:00:01.20", ass)
+        self.assertNotIn("0:01:1", ass)  # unshifted 70 s never leaks through
 
     def test_without_word_timings_the_segment_text_still_captions(self):
         ass = clipper.ass_words([seg(10, 12, "risk one percent")], offset=10.0)

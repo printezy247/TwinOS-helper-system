@@ -22,10 +22,10 @@ Deno.test("engagementRate: views over members as a percentage, honest about miss
 
 Deno.test("hookWinner: the hook whose posts got the most views wins, at least two uses", () => {
   assertEquals(hookWinner([
-    { hook_id: 1, views: 100 },
     { hook_id: 1, views: 300 },
+    { hook_id: 1, views: 500 }, // avg 400
     { hook_id: 2, views: 500 },
-    { hook_id: 2, views: 100 },
+    { hook_id: 2, views: 100 }, // avg 300
     { hook_id: 3, views: 900 }, // one use only: not enough evidence
     { hook_id: null, views: 5000 }, // untracked hooks never win
   ]), 1);

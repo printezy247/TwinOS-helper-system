@@ -230,6 +230,17 @@ export const HUMANIZER_WORDS_EN = [
   "unparalleled",
   "ever-evolving",
   "ever evolving",
+  // 2026 refresh (research 2026-10-02): the current batch of model tells.
+  "leverage",
+  "robust",
+  "holistic",
+  "streamline",
+  "harness",
+  "foster",
+  "realm",
+  "navigate the landscape",
+  "in today's fast-paced world",
+  "at the forefront",
 ];
 
 export const HUMANIZER_WORDS_MS = [
@@ -243,6 +254,13 @@ export const HUMANIZER_WORDS_MS = [
   "revolusioner",
   "buka kunci",
   "melonjak",
+  // 2026 refresh (research 2026-10-02).
+  "penyelesaian menyeluruh",
+  "inovatif",
+  "memperkasakan",
+  "pendekatan holistik",
+  "transformasi digital",
+  "di barisan hadapan",
 ];
 
 export function humanizerHits(body: string): string[] {

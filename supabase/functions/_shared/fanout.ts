@@ -8,11 +8,11 @@
  * 0011 §25) honest: a post that went out on Instagram never marks the
  * Facebook variant published. TikTok, YouTube and X children are kits.
  */
-import { admin } from "./supabase.ts";
+import { admin, setting } from "./supabase.ts";
 import { createDraft } from "./content.ts";
 import { HttpError, notFound } from "./http.ts";
 import type { Lang, Platform, PostType } from "./compliance.ts";
-import { adaptCaption, FANOUT_DEFAULT, type FanResult, isKitPlatform, validatePlatform } from "./platforms.ts";
+import { adaptCaption, FANOUT_DEFAULT, type FanResult, isKitPlatform, validatePlatform, withSignature } from "./platforms.ts";
 import { nextCta, nextHook } from "./hooks.ts";
 import { renderScriptKit, scriptKit, type KitLang, type KitPlatform } from "./kits.ts";
 
@@ -104,6 +104,11 @@ async function fanOutOne(
   opts: { assetId?: string | null; actor: string },
 ): Promise<FanResult> {
     const adapted = adaptCaption(masterBody as string, platform as Platform);
+    // The saved per-platform sign-off rides below every adapted caption
+    // (platform_signatures setting; research 2026-10-02: kit hygiene).
+    const signatures = JSON.parse((await setting("platform_signatures")) ?? "{}") as Record<string, string>;
+    const signed = withSignature(adapted.body, signatures[platform]);
+    if (signed.added) adapted.body = signed.body;
     const findings = validatePlatform({ platform: platform as Platform, body: adapted.body, media: meta });
     const kit = isKitPlatform(platform);
     // TikTok / YouTube kits ship a shooting script: hook + beats + the risk

@@ -56,14 +56,14 @@ Deno.test("validatePlatform: a reel over its length or size is blocked, an unkno
   const unknown = validatePlatform({ platform: "instagram", body: "ok", media: { kind: "video" } });
   assert(unknown.every((f) => f.severity === "warn"));
   assert(unknown.length > 0);
-  assertEquals(validatePlatform({ platform: "instagram", body: "ok", media: { kind: "video", duration_s: 30, bytes: 20e6 } }), []);
+  assertEquals(validatePlatform({ platform: "instagram", body: "ok #gold #xau #tips", media: { kind: "video", duration_s: 30, bytes: 20e6 } }), []);
 });
 
 Deno.test("validatePlatform: Instagram and Facebook cannot post without media; Threads and X can", () => {
   assert(validatePlatform({ platform: "instagram", body: "x" }).some((f) => f.severity === "blocking"));
   assert(validatePlatform({ platform: "facebook", body: "x" }).some((f) => f.severity === "blocking"));
-  assertEquals(validatePlatform({ platform: "threads", body: "x" }), []);
-  assertEquals(validatePlatform({ platform: "x", body: "x" }), []);
+  assertEquals(validatePlatform({ platform: "threads", body: "x #gold" }), []);
+  assertEquals(validatePlatform({ platform: "x", body: "x #gold #xau" }), []);
 });
 
 Deno.test("validatePlatform: too many hashtags and an over-long caption are called out", () => {

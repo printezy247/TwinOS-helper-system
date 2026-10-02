@@ -103,6 +103,33 @@ def window_cut_command(ff: str, source: str | Path, start_s: float, end_s: float
             "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", str(dest)]
 
 
+def _drawtext_escape(text: str) -> str:
+    """A quote or backslash must not break the drawtext filter expression."""
+    return text.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def cover_command(ff: str, source: str | Path, at_s: float, dest: str | Path, text: str) -> list[str]:
+    """Grab the moment's best frame and draw the hook text on it (cover art).
+
+    Research 2026-10-02: clip tools score moment + face for the cover; the
+    moment's top frame with the hook line burned in is the same idea without
+    any model. Pure command builder; the caller runs it.
+    """
+    at_s = float(at_s)
+    if at_s < 0:
+        raise ValueError(f"bad cover time {at_s}")
+    escaped = _drawtext_escape(str(text))
+    vf = (
+        "drawtext="
+        f"text='{escaped}':"
+        "fontcolor=white:fontsize=72:line_spacing=8:"
+        "box=1:boxcolor=black@0.55:boxborderw=24:"
+        "x=(w-text_w)/2:y=h-text_h-160"
+    )
+    return [ff, "-y", "-ss", f"{at_s:.2f}", "-i", str(source),
+            "-frames:v", "1", "-vf", vf, "-q:v", "2", str(dest)]
+
+
 def probe_duration(source: Path) -> float:
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:

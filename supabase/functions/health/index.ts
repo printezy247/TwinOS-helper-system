@@ -20,6 +20,7 @@ import { sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
 import { runProviderChecks } from "_shared/providers.ts";
 import { deskAlert, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
+import { channelStale, CHANNEL_STALE_MS } from "_shared/insights.ts";
 
 const SOURCES = ["ezyai", "ops_bot", "scheduler", "pc_worker", "poller", "abdul", "sales_bot"] as const;
 const STALE_DEFAULT_MIN: Record<string, number> = {
@@ -146,6 +147,19 @@ serve(async (req) => {
       } else {
         await deskAlert({ db, key: src, kind: "provider_down", severity: "high", message: `⚠️ ${r.provider} check failed: ${r.detail}` });
       }
+    }
+    // A channel that goes quiet loses members (2026 research): past the gap,
+    // tell the Desk once per cooldown instead of letting it fade silently.
+    const { data: lastPost } = await db.from("tg_posts")
+      .select("posted_at").order("posted_at", { ascending: false }).limit(1).maybeSingle();
+    if (channelStale(lastPost?.posted_at as string | null ?? null, Date.now(), CHANNEL_STALE_MS)) {
+      await deskAlert({
+        db,
+        key: "channel-quiet",
+        kind: "channel_stale",
+        severity: "high",
+        message: "\u26A0\uFE0F Nothing has posted to the channel in over 36 hours. A quiet channel loses members \u2014 queue a map or a lesson.",
+      });
     }
     // Webhook handler failures cluster when Telegram or the database misbehaves:
     // past the threshold the Desk hears once (deskAlert dedupes inside cooldown).

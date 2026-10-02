@@ -166,3 +166,16 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [x] Postiz-style calendar scheduler (backend: `content_items.first_comment` + delay, `publish_jobs.kind` post/comment sharing the variant, comment posted as a checked reply under the channel post, `platform_signatures` setting; calendar UI prompt 2 in `docs/LOVABLE-WAVE4-PROMPTS.md`; migration 0029 + smoke §22; shared 196, consistency 60/60)
 - [x] Clip pipeline upgrade (scene detection, moment scoring, reframe, `clip_candidates`) (`studio/moments.py`: ffmpeg scene splits, keyword-burst scoring with scene bonus, face-following 1080x1920 reframe, exact-window cut; `clip_candidates` job proposes, Desk Use cuts / Drop discards, `/clips` lists; migration 0030 + smoke §23; worker 60, shared 196, consistency 63/63)
 - [x] Fan-out retries with a Desk alert on the last failure (jobs-table queue + `content/fanout-drain` cron + stuck-backlog alert; pgmq deferred — CI Postgres has no pgmq extension)
+
+### Wave 5 — research-driven upgrades (from Oct 2026)
+Ideas and sources: `docs/UPGRADE-IDEAS.md` (21 items from trending repos and Reddit; method rules hold).
+- [x] Poison-update guard (a failing update is dropped at 3 failures with a `tg.update_poisoned` log, never hot-looped; `tg_updates.failures` + `isPoisonedUpdate`, migration 0032)
+- [x] Burned-in word-level captions + hook-text cover thumbnails (`ass_words` / `cover_command` in `workers/pc/studio/`; WordCaption + CoverThumbnail tests)
+- [x] Hook A/B by evidence (`content_variants.hook_id`, `v_hook_performance`, `hookWinner`; `onAdjust` records the hook used)
+- [x] Best-times + engagement + signal ledger views (`v_best_times`, `v_post_engagement`, `v_signal_ledger`, `v_post_engagement` %; `bestHours`/`engagementRate` in `_shared/insights.ts`; registered in `ANALYTICS_VIEWS`)
+- [x] No-delete watchdog on `signal_posts` (trigger `trg_signal_posts_no_delete`; smoke §25)
+- [x] Channel staleness alert (36 h quiet gap → Desk alert `channel-quiet` in `health/check`)
+- [x] Hashtag minimum per platform + signature rotation (`hashtagsMin` warn floor, `withSignature` + `platform_signatures` setting)
+- [x] 2026 humanizer tells in the compliance warn list (EN + MS)
+- [ ] RSS macro digest — needs Jack's feed URL (the only non-self-contained idea)
+- [ ] Telegram Stars reporting / ad share rows — Phase 8 revenue decisions (decision 7 lawyer first)
