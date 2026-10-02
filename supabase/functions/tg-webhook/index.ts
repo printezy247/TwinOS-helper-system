@@ -19,7 +19,7 @@ import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
 import { buildApprovePayload, isDeskPromptExpired } from "_shared/desk.ts";
-import { createDraft, pushToDesk, resolveShort } from "_shared/content.ts";
+import { createDraft, pushToDesk, resolveShort, shortIdRange } from "_shared/content.ts";
 import { check as complianceCheck, type PostType } from "_shared/compliance.ts";
 import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
 import { logAction } from "_shared/log.ts";
@@ -117,6 +117,10 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
     await onBatchCmd(cq, parsed.name);
     return;
   }
+  if (parsed.verb === "mo") {
+    await onModAction(cq, parsed.short, parsed.extra);
+    return;
+  }
 
   let content_id: string;
   try { content_id = await resolveShort(parsed.short); } catch (err) {
@@ -137,7 +141,10 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       const r = await callApprove(buildApprovePayload(content_id, "approve", cq.from.id, `cb:${cq.id}`, { callback_id: cq.id }));
       await tg.answerCallbackQuery(cq.id, r.ok ? "Approved. Publishing on schedule." : `Not approved: ${r.message ?? r.error}`, !r.ok);
       if (chat && mid && r.ok) {
-        await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton(await approvedStamp(content_id))]]).catch(() => null);
+        await tg.editMessageReplyMarkup(chat, mid, [
+          [tg.nopButton(await approvedStamp(content_id))],
+          [{ text: "📣 Fan out", callback_data: tg.shortCallback("fan", content_id) }],
+        ]).catch(() => null);
       }
       return;
     }
@@ -199,6 +206,24 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       });
       await tg.answerCallbackQuery(cq.id, "Rewriting…");
       await tg.editMessageReplyMarkup(chat, mid, null).catch(() => null);
+      return;
+    }
+    case "fan": {
+      await tg.answerCallbackQuery(cq.id, "Copying to the other platforms…");
+      try {
+        const results = await fanOut(content_id, { actor: "jack" });
+        await logAction({ actor: "jack", action: "content.fanout", target: content_id, payload: { platforms: results.map((r) => r.platform), via: "button" } });
+        if (chat) {
+          await tg.sendMessage(chat, results.length ? fanoutSummary(content_id.slice(0, 8), results) : "Already copied to every platform.", { parse_mode: "HTML", reply_to_message_id: mid });
+        }
+        if (chat && mid) {
+          await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton("📣 Fanned out")]]).catch(() => null);
+        }
+      } catch (err) {
+        if (chat) {
+          await tg.sendMessage(chat, `⚠️ ${tg.escapeHtml(err instanceof Error ? err.message : String(err)).slice(0, 300)}`, { parse_mode: "HTML", reply_to_message_id: mid });
+        }
+      }
       return;
     }
     case "vw": {
@@ -411,6 +436,65 @@ const HOME_TEXT = [
   "Send the chart + raw lines any time; reply to a draft to edit it.",
 ].join("\n");
 
+function updatedLine(tz: string): string {
+  const hm = new Date().toLocaleTimeString("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+  return `<i>updated ${hm}</i>`;
+}
+
+/** A moderation/repeat alert tap: ban, mute, ignore, propose for FAQ, dismiss. */
+async function onModAction(
+  cq: NonNullable<Update["callback_query"]>,
+  short: string,
+  action: string | undefined,
+): Promise<void> {
+  const chat = cq.message?.chat.id;
+  const mid = cq.message?.message_id;
+  interface ModEvent { id: string; chat_id: number; user_id: number; message_id: number | null; rule_key: string; detail: string | null }
+  let ev: ModEvent | null = null;
+  try {
+    const { from, to } = shortIdRange(short);
+    const { data } = await admin().from("moderation_events")
+      .select("id, chat_id, user_id, message_id, rule_key, detail").gte("id", from).lte("id", to).limit(2);
+    if (data?.length === 1) ev = data[0] as ModEvent;
+  } catch {
+    ev = null;
+  }
+  if (!ev) { await tg.answerCallbackQuery(cq.id, "That alert is gone.", true); return; }
+  const db = admin();
+  const done = async (label: string) => {
+    await tg.answerCallbackQuery(cq.id, label);
+    if (chat && mid) await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton(label)]]).catch(() => null);
+  };
+  const record = (action_taken: string) =>
+    db.from("moderation_events").insert({
+      chat_id: ev.chat_id, user_id: ev.user_id, message_id: ev.message_id,
+      rule_key: ev.rule_key, action_taken, detail: ev.detail,
+      hits: [{ rule: ev.rule_key, action: action_taken, via: "desk" }],
+      text_excerpt: (ev.detail ?? "").slice(0, 200), at: new Date().toISOString(),
+    });
+  try {
+    if (action === "ban") {
+      await tg.banChatMember(ev.chat_id, ev.user_id);
+      await record("banned");
+      await done("🚫 Banned");
+    } else if (action === "mute") {
+      await tg.restrictChatMember(ev.chat_id, ev.user_id, Math.floor(Date.now() / 1000) + 24 * 3600);
+      await record("muted");
+      await done("🔇 Muted 24 h");
+    } else if (action === "ignore" || action === "drop") {
+      await logAction({ actor: "jack", action: "moderation.dismissed", payload: { event: ev.id, rule: ev.rule_key } });
+      await done(action === "drop" ? "Dismissed" : "Ignored");
+    } else if (action === "faq") {
+      await logAction({ actor: "jack", action: "faq.proposed", payload: { event: ev.id, question: ev.detail } });
+      await done("📝 Proposed for FAQ");
+    } else {
+      await tg.answerCallbackQuery(cq.id, "Unknown button.");
+    }
+  } catch (err) {
+    await tg.answerCallbackQuery(cq.id, `Failed: ${String(err instanceof Error ? err.message : err).slice(0, 120)}`, true);
+  }
+}
+
 /** Read-only screen texts, shared by the slash commands and the nav panels. */
 async function statusText(): Promise<string> {
   const db = admin();
@@ -425,10 +509,12 @@ async function statusText(): Promise<string> {
     const mins = Math.max(0, Math.round((Date.now() - new Date(b.at).getTime()) / 60_000));
     return `${b.status === "ok" ? "✅" : "⚠️"} ${tg.escapeHtml(src)}: ${tg.escapeHtml(b.status)}, ${mins} min ago`;
   });
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
   return [
     "<b>Status</b>",
     ...(lines.length ? lines : ["No health beats in the last 15 minutes."]),
     `Open alerts: ${openAlerts ?? 0}`,
+    updatedLine(tz),
   ].join("\n");
 }
 
@@ -444,6 +530,7 @@ async function fridayText(): Promise<string> {
     `Signals posted: ${n(w.signals_posted)}, with results: ${n(w.results_posted)}`,
     `Strict win rate (4 weeks): ${n(w.strict_win_rate_4w)}%, total R: ${n(w.total_r_4w)}`,
     "TikTok and Vantage numbers are entered by hand.",
+    updatedLine((await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur"),
   ].join("\n");
 }
 
@@ -465,6 +552,7 @@ async function hoursTodayText(): Promise<string> {
     "",
     `Today: <b>${formatMinutes(todayTotal)}</b> · week of ${week}: <b>${formatMinutes(weekTotal)}</b>`,
     "Log with <code>/hours &lt;task&gt; &lt;minutes&gt; [note]</code>.",
+    updatedLine(tz),
   ].join("\n");
 }
 
@@ -499,6 +587,49 @@ async function batchListText(): Promise<string> {
   return renderBatchList(batch, await loadBatchStates(batch), tz);
 }
 
+const DRAFTS_PAGE_SIZE = 5;
+
+/** Pending drafts with per-item buttons and ◀ n/N ▶ paging (Wave 1 item 10). */
+async function draftsPanel(page: number): Promise<{ text: string; buttons: tg.InlineButton[][] }> {
+  const db = admin();
+  const { count } = await db.from("content_items").select("id", { count: "exact", head: true })
+    .in("status", ["draft", "pending_approval"]);
+  const total = count ?? 0;
+  const pages = Math.max(1, Math.ceil(total / DRAFTS_PAGE_SIZE));
+  const p = Math.min(Math.max(1, page), pages);
+  const { data } = await db.from("content_items")
+    .select("id, post_type, lang, status, title")
+    .in("status", ["draft", "pending_approval"])
+    .order("created_at", { ascending: false })
+    .range((p - 1) * DRAFTS_PAGE_SIZE, p * DRAFTS_PAGE_SIZE - 1);
+  const rows = (data ?? []).map((i) => {
+    const id8 = (i.id as string).slice(0, 8);
+    const title = i.title ? ` — ${tg.escapeHtml(String(i.title)).slice(0, 60)}` : "";
+    return `#${id8} ${i.post_type} ${i.lang} [${i.status}]${title}`;
+  });
+  const buttons: tg.InlineButton[][] = (data ?? []).map((i) => {
+    const id = i.id as string;
+    const n = id.slice(0, 8);
+    return [
+      { text: `✅ ${n}`, callback_data: tg.shortCallback("ok", id) },
+      { text: `✏️ ${n}`, callback_data: tg.shortCallback("edit", id) },
+      { text: `👁 ${n}`, callback_data: tg.shortCallback("vw", id) },
+    ];
+  });
+  if (pages > 1) {
+    const row: tg.InlineButton[] = [];
+    if (p > 1) row.push({ text: "◀", callback_data: tg.pageCallback("drafts", p - 1) });
+    row.push(tg.nopButton(`${p}/${pages}`));
+    if (p < pages) row.push({ text: "▶", callback_data: tg.pageCallback("drafts", p + 1) });
+    buttons.push(row);
+  }
+  buttons.push(...tg.backHomeRows());
+  return {
+    text: [`<b>Pending drafts</b> · ${total}`, "", ...(rows.length ? rows : ["Nothing pending."]), ""].join("\n"),
+    buttons,
+  };
+}
+
 async function navScreenText(screen: string): Promise<string> {
   switch (screen) {
     case "status": return await statusText();
@@ -526,13 +657,41 @@ async function onNav(
   const screen = nav.kind === "nav" &&
       ((tg.MENU_SCREENS as readonly string[]).includes(nav.screen) || nav.screen === "home")
     ? nav.screen
-    : "home";
-  const text = await navScreenText(screen);
+    : nav.kind === "page" && nav.screen === "drafts"
+      ? "drafts"
+      : "home";
   await tg.answerCallbackQuery(cq.id, stale ? "Outdated menu — showing the latest." : undefined);
+  if (screen === "batch") {
+    const panel = await batchPanel();
+    try {
+      if (panel) {
+        await tg.editMessageText(chat, mid, panel.text.slice(0, 4096), { parse_mode: "HTML", buttons: panel.buttons });
+      } else {
+        await tg.editMessageText(chat, mid, "No batch yet. It is drafted on Wednesday at 14:30.", { parse_mode: "HTML", buttons: tg.backHomeRows() });
+      }
+    } catch {
+      await tg.sendMessage(chat, panel?.text.slice(0, 4096) ?? "No batch yet.", { parse_mode: "HTML" });
+    }
+    return;
+  }
+  if (screen === "drafts") {
+    const panel = await draftsPanel(nav.kind === "page" ? nav.n : 1);
+    try {
+      await tg.editMessageText(chat, mid, panel.text.slice(0, 4096), { parse_mode: "HTML", buttons: panel.buttons });
+    } catch {
+      await tg.sendMessage(chat, panel.text.slice(0, 4096), { parse_mode: "HTML" });
+    }
+    return;
+  }
+  const text = await navScreenText(screen);
   try {
     await tg.editMessageText(chat, mid, text.slice(0, 4096), {
       parse_mode: "HTML",
-      buttons: screen === "home" ? tg.menuKeyboard() : tg.backHomeRows(),
+      buttons: screen === "home"
+        ? tg.menuKeyboard()
+        : screen === "status" || screen === "friday" || screen === "hours"
+          ? tg.screenKeyboard(screen)
+          : tg.backHomeRows(),
     });
   } catch {
     await tg.sendMessage(chat, text.slice(0, 4096), { parse_mode: "HTML" });
@@ -825,11 +984,11 @@ async function onDiscussionMessage(m: Message) {
   }
 
   const final = verdict.final;
-  await db.from("moderation_events").insert({
+  const { data: modEv } = await db.from("moderation_events").insert({
     chat_id: m.chat.id, user_id: m.from.id, message_id: m.message_id,
     rule_key: verdict.hits[0].rule, action_taken: NOTED[final], detail: verdict.hits.map((h) => h.rule).join(", "),
     hits: verdict.hits, text_excerpt: text.slice(0, 200), at: new Date(m.date * 1000).toISOString(),
-  });
+  }).select("id").single();
   try {
     if (verdict.deleteMessage) await tg.deleteMessage(m.chat.id, m.message_id);
     if (final === "warn") {
@@ -840,7 +999,21 @@ async function onDiscussionMessage(m: Message) {
     if (final === "flag") {
       const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
       const who = `${m.from.first_name ?? ""}${m.from.username ? ` (@${m.from.username})` : ""}`.trim();
-      await tg.sendMessage(desk, `🚩 A name that looks like yours or EzyMap's just posted in the group: <b>${tg.escapeHtml(who)}</b>. Nothing was removed. Check it.`, { parse_mode: "HTML" });
+      const modShort = modEv?.id ? String(modEv.id).replace(/-/g, "").slice(0, 8) : null;
+      await tg.sendMessage(desk, `🚩 A name that looks like yours or EzyMap's just posted in the group: <b>${tg.escapeHtml(who)}</b>. Nothing was removed. Check it.`, {
+        parse_mode: "HTML",
+        ...(modShort
+          ? {
+            buttons: [
+              [
+                { text: "🚫 Ban", callback_data: `mo:${modShort}:ban` },
+                { text: "🔇 Mute 24 h", callback_data: `mo:${modShort}:mute` },
+              ],
+              [{ text: "Ignore", callback_data: `mo:${modShort}:ignore` }],
+            ],
+          }
+          : {}),
+      });
     }
   } catch (err) {
     console.warn("[moderation] action failed", err);
@@ -863,13 +1036,24 @@ async function noteRepeatQuestion(m: Message, text: string, rules: ModRule[]): P
   const { data: seen } = await db.from("moderation_events").select("detail, user_id")
     .eq("rule_key", rule.key).gte("occurred_at", new Date(Date.now() - days * 86_400_000).toISOString()).limit(500);
   const earlier = (seen ?? []).filter((s) => similarity((s.detail as string) ?? "", key) >= min);
-  await db.from("moderation_events").insert({
+  const { data: repEv } = await db.from("moderation_events").insert({
     chat_id: m.chat.id, user_id: m.from.id, message_id: m.message_id, rule_key: rule.key, action_taken: "flagged",
     detail: key, hits: [{ rule: rule.key, action: "flag" }], text_excerpt: text.slice(0, 200), at: new Date(m.date * 1000).toISOString(),
-  });
+  }).select("id").single();
   if (earlier.length === 1 && matchRepeat(earlier.map((e) => ({ detail: (e.detail as string) ?? "" })), text, min)) {
     const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
-    await tg.sendMessage(desk, `❓ A question was asked twice in the group:\n<code>${tg.escapeHtml(text.slice(0, 200))}</code>\nAdd it to the FAQ reply sheet.`, { parse_mode: "HTML" });
+    const repShort = repEv?.id ? String(repEv.id).replace(/-/g, "").slice(0, 8) : null;
+    await tg.sendMessage(desk, `❓ A question was asked twice in the group:\n<code>${tg.escapeHtml(text.slice(0, 200))}</code>\nAdd it to the FAQ reply sheet.`, {
+      parse_mode: "HTML",
+      ...(repShort
+        ? {
+          buttons: [[
+            { text: "📝 Propose for FAQ", callback_data: `mo:${repShort}:faq` },
+            { text: "Dismiss", callback_data: `mo:${repShort}:drop` },
+          ]],
+        }
+        : {}),
+    });
   }
 }
 

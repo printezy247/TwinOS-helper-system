@@ -135,10 +135,10 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [x] `/batch` list with per-item buttons, Refresh, confirm before "Approve ready" (`batchListKeyboard`, `cmd:` refresh/ready/batchyes/batchno, Yes re-checks)
 - [x] Later quick picks (13:00 · 18:00 · Tomorrow 08:00 · Custom) (`rs:<id8>:<slot>` via `parseTime`; prompt keyboard cleared after pick)
 - [x] Edit presets (Soften · BM · Shorter · Write my own) + Cancel (`ed:<id8>:<preset>` queues the rewrite; own stays a reply)
-- [ ] Fan-out button on approved cards
-- [ ] Refresh + "updated hh:mm" on Status, Friday, Hours
-- [ ] Paging for long lists + a pending-drafts screen
-- [ ] Buttons on moderation alerts and repeat questions
+- [x] Fan-out button on approved cards (`fan:<id8>`; collapses to Fanned out; `panels_test.ts` + consistency)
+- [x] Refresh + "updated hh:mm" on Status, Friday, Hours (`screenKeyboard` + stamp in all three texts)
+- [x] Paging for long lists + a pending-drafts screen (`draftsPanel`, 5 per page, `pg:drafts:n`, per-item buttons)
+- [x] Buttons on moderation alerts and repeat questions (`mo:<id8>:<action>`: ban/mute/ignore/faq/drop, recorded)
 
 ### Wave 2 — dashboard (Lovable, one prompt per item)
 - [ ] App-shell layout route, `useRole()`, no-role screen

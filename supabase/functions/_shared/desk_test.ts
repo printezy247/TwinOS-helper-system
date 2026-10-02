@@ -9,7 +9,7 @@ import {
   keyboardVerbs,
   PROMPT_TTL_MS,
 } from "./desk.ts";
-import { approvalKeyboard, editKeyboard, laterKeyboard, menuKeyboard } from "./tg.ts";
+import { approvalKeyboard, editKeyboard, laterKeyboard, menuKeyboard, shortCallback } from "./tg.ts";
 
 const ID = "6f1c2b3a-4d5e-6f70-8192-a3b4c5d6e7f8";
 
@@ -49,6 +49,8 @@ Deno.test("dead buttons: every emitted callback verb has a handler (Wave 0 fix 5
     ...keyboardVerbs(menuKeyboard()),
     ...keyboardVerbs(laterKeyboard(ID)),
     ...keyboardVerbs(editKeyboard(ID)),
+    ...keyboardVerbs([[{ text: "x", callback_data: shortCallback("fan", ID) }]]),
+    ...keyboardVerbs([[{ text: "x", callback_data: `mo:${ID.replace(/-/g, "").slice(0, 8)}:ban` }]]),
   ]);
   const missing = [...emitted].filter((v) => !(HANDLED_CALLBACK_VERBS as readonly string[]).includes(v));
   assertEquals(missing, [], `unhandled callback verbs: ${missing.join(", ")}`);
