@@ -84,9 +84,9 @@ Exit: every swap shows joins and 7-day retention.
 - [ ] Discussion group linked; bot admin; `mod_rules` seeded; warn → mute → ban live — the engine is rebuilt and tested (`_shared/moderation.ts`: scam phrases EN/BM, new-member link block with our own domains allowed, impersonation incl. lookalike letters, ladder warn → 24 h mute → ban, admins and Jack exempt). It switches on when Jack links the group: `settings.discussion_group_chat_id` and the bot as admin (delete, restrict, ban). Flood control is NOT enforced yet: it needs a per-message counter that is not stored
 - [x] Join-request captcha + CAS check (`onJoinRequest`: a CAS-banned account is declined and logged `cas_blocked`; otherwise a private "I am a person" button, only that person can press it; needs invite links created with approval)
 - [x] Scam-impersonation watch (flag to the Desk, nothing removed) and repeat-question detector (`v_repeat_questions`, migration 0022; the Desk hears about a question the second time it is asked)
-- [ ] Post view snapshots at +1 h / 24 h / 7 d
+- [x] Post view snapshots at +1 h / 24 h / 7 d (`metrics/snapshots`, cron every 15 min, reads the public preview `t.me/s/<channel>` because bots cannot read views; parser checked against the real @ezymap page; a snapshot is only taken inside its window so it is never mislabelled). Needs `scripts/deploy.sh`
 - [x] Swap tracker (one named link per partner through `POST /links`) + funnel view (`v_funnel`, cost per first-time depositor in `v_stop_if`)
-- [ ] Reference-channel benchmark cards refreshed weekly
+- [x] Reference-channel benchmark cards refreshed weekly (`metrics/benchmarks`, Monday 03:00 MYT: size, average views, view rate, posts per day into `benchmarks`; handles never leave the table). A channel with its preview switched off is skipped
 - [ ] Signal board + Inbox screens in Lovable
 
 ## Phase 5 — Studio + research (Dec–Jan)

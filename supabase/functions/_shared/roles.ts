@@ -25,6 +25,7 @@ export type Action =
   | "content.approve"
   | "content.remind"
   | "content.batch"
+  | "metrics.poll"
   | "content.schedule"
   | "content.schedule_claim" // schedule a post that carries a claim flag
   | "publish.run"
@@ -63,6 +64,7 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "content.approve": ["jack"],
   "content.remind": ["jack", "abdul", "cron", "ops_bot"],
   "content.batch": ["jack", "abdul", "cron"],
+  "metrics.poll": ["jack", "abdul", "cron"],
   "content.schedule": ["jack", "abdul", "cron"],
   "content.schedule_claim": ["jack"],
   "publish.run": ["cron", "jack"],
