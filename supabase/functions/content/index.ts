@@ -13,9 +13,11 @@ import { serve, json, readJson, routeOf, reqString, oneOf, bad, notFound } from 
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
-import { admin } from "_shared/supabase.ts";
+import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, enqueuePublish, loadContent, pushToDesk } from "_shared/content.ts";
 import { logAction } from "_shared/log.ts";
+import { sendMessage } from "_shared/tg.ts";
+import { startOfDayInTz } from "_shared/time.ts";
 import type { Lang, Platform, PostType } from "_shared/compliance.ts";
 
 const POST_TYPES: readonly PostType[] = [
@@ -24,6 +26,17 @@ const POST_TYPES: readonly PostType[] = [
 ];
 const PLATFORMS: readonly Platform[] = ["telegram", "instagram", "facebook", "threads", "youtube", "tiktok", "x"];
 const LANGS: readonly Lang[] = ["en", "ms"];
+
+const REMINDERS: Record<string, { post_type: PostType; text: string }> = {
+  "remind-map": {
+    post_type: "gold_map",
+    text: "☀️ No map yet. Send the chart screenshot and 3–5 raw lines when you're ready; the draft comes back here.",
+  },
+  "remind-wrap": {
+    post_type: "evening_wrap",
+    text: "🌙 No evening line yet. Send <code>wrap: …</code> with how the day closed and I'll draft the wrap.",
+  },
+};
 
 serve(async (req) => {
   const caller = await authenticate(req);
@@ -43,6 +56,31 @@ serve(async (req) => {
 
   if (method !== "POST") throw bad("method not allowed");
   const body = await readJson(req, true);
+
+  // POST /content/remind-map | /content/remind-wrap — the 07:40 / 19:55 nudge.
+  // Once per day (idempotency key = the MYT date) and only when nothing arrived.
+  const reminder = REMINDERS[tail[0] ?? ""];
+  if (reminder) {
+    requireRole(caller.role, "content.remind");
+    const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+    const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+    const idem = { scope: `content.${tail[0]}`, key: day, requestHash: "-" };
+    const hit = await replay(idem);
+    if (hit) return hit;
+
+    const { count } = await admin().from("content_items")
+      .select("id", { count: "exact", head: true })
+      .eq("post_type", reminder.post_type)
+      .gte("created_at", startOfDayInTz(tz));
+    if ((count ?? 0) > 0) {
+      return remember(idem, 200, { ok: true, skipped: `a ${reminder.post_type} already arrived today`, day });
+    }
+
+    const deskId = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
+    await sendMessage(deskId, reminder.text, { parse_mode: "HTML" });
+    await logAction({ actor: caller.actor, action: `content.${tail[0]}`, payload: { day } });
+    return remember(idem, 200, { ok: true, reminded: true, day });
+  }
 
   // POST /content/draft
   if (tail[0] === "draft") {
