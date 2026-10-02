@@ -86,7 +86,7 @@ serve(async (req) => {
     requireRole(caller.role, "reports.read");
     const beats = await latestBeats();
     const { data: alerts } = await db.from("alerts").select("id, kind, severity, message, at").is("resolved_at", null).order("at", { ascending: false }).limit(20);
-    const { data: failed } = await db.from("publish_jobs").select("id", { count: "exact", head: true }).eq("status", "failed");
+    const { count: failedCount } = await db.from("publish_jobs").select("id", { count: "exact", head: true }).eq("status", "failed");
     const broken = Object.entries(beats).filter(([, b]) => b.stale || b.status === "down").map(([s]) => s);
     // "Anything broken?" one-line answer (plan §9.M.104)
     const tokens = metaTokenWarnings();
@@ -96,7 +96,7 @@ serve(async (req) => {
     const summary = broken.length || (alerts ?? []).length || tokens.length || provDown.length
       ? `${broken.length ? "stale: " + broken.join(", ") : "beats ok"}; ${(alerts ?? []).length} open alert(s)${tokens.length ? "; " + tokens.map((t) => t.message).join("; ") : ""}${provDown.length ? "; provider down: " + provDown.join(", ") : ""}`
       : "all good";
-    return json({ ok: broken.length === 0 && provDown.length === 0 && !tokens.some((t) => t.severity === "high"), summary, beats, tokens, integrations, providers, open_alerts: alerts ?? [], failed_jobs: (failed as unknown as { count?: number } | null)?.count ?? null });
+    return json({ ok: broken.length === 0 && provDown.length === 0 && !tokens.some((t) => t.severity === "high"), summary, beats, tokens, integrations, providers, open_alerts: alerts ?? [], failed_jobs: failedCount ?? null });
   }
 
   if (method !== "POST") throw bad("method not allowed");

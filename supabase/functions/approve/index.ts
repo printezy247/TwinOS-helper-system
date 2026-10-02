@@ -24,7 +24,7 @@ import { enqueuePublish, loadContent, setStatus } from "_shared/content.ts";
 import { deriveWebhookSecret, editMessageReplyMarkup } from "_shared/tg.ts";
 import { logAction } from "_shared/log.ts";
 import { HttpError } from "_shared/http.ts";
-import { kitRefuses } from "_shared/platforms.ts";
+import { isPublishableVariant, kitRefuses } from "_shared/platforms.ts";
 
 const DECISIONS = ["approve", "reject", "reschedule"] as const;
 
@@ -71,13 +71,18 @@ serve(async (req) => {
   }
 
   // A draft with blocking findings cannot be approved; Jack edits first.
-  const { data: variant } = await admin()
-    .from("content_variants").select("id, compliance, needed_fields").eq("content_id", content_id).limit(1).maybeSingle();
-  if (decision === "approve" && variant?.compliance && variant.compliance.ok === false) {
+  // Every variant that would publish must be clean (not one arbitrary row;
+  // unpicked AI angles never publish, so they neither block nor pass it).
+  const { data: allVariants } = await admin()
+    .from("content_variants").select("id, compliance, needed_fields, source").eq("content_id", content_id);
+  const variants = (allVariants ?? []).filter((v) => isPublishableVariant(v.source as Record<string, unknown> | null));
+  const blocked = variants.find((v) => v.compliance && v.compliance.ok === false);
+  if (decision === "approve" && blocked) {
     throw new HttpError(409, "conflict", "blocking compliance findings; fix the draft first", {
-      findings: variant.compliance.findings,
+      findings: blocked.compliance.findings,
     });
   }
+  if (decision === "approve" && !variants.length) throw bad("nothing to publish: the item has no variant");
 
   const db = admin();
   const { error } = await db.from("approvals").insert({

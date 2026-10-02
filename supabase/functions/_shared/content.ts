@@ -12,6 +12,7 @@ import { check, type CheckResult, type Lang, type Platform, type PostType } from
 import { HttpError, notFound } from "./http.ts";
 import { approvalKeyboard, escapeHtml, sendMessage, sendPhoto } from "./tg.ts";
 import { logAction, logTimeSaved } from "./log.ts";
+import { isPublishableVariant } from "./platforms.ts";
 
 export const STATUSES = [
   "draft",
@@ -409,10 +410,12 @@ export async function enqueuePublish(
   const db = admin();
   const { data: variants, error } = await db
     .from("content_variants")
-    .select("id, platform")
+    .select("id, platform, source")
     .eq("content_id", content_id);
   if (error) throw new HttpError(503, "upstream_failed", error.message);
-  const rows = (variants ?? []).map((v) => ({
+  // Only what Jack approved goes out: never an unpicked AI angle.
+  const publishable = (variants ?? []).filter((v) => isPublishableVariant(v.source as Record<string, unknown> | null));
+  const rows = publishable.map((v) => ({
     content_id,
     variant_id: v.id,
     platform: v.platform,
@@ -432,7 +435,7 @@ export async function enqueuePublish(
     .select("first_comment, first_comment_delay_min").eq("id", content_id).maybeSingle();
   const comments = buildCommentJobs(
     content_id,
-    (variants ?? []).map((v) => ({ id: v.id as string, platform: String(v.platform) })),
+    publishable.map((v) => ({ id: v.id as string, platform: String(v.platform) })),
     run_at,
     (item?.first_comment as string | null) ?? null,
     Number(item?.first_comment_delay_min ?? 30),
