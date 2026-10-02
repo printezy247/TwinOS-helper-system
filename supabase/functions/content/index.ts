@@ -13,7 +13,7 @@
  *
  * Who: jack, abdul, cron, ops_bot (plan §11). Idempotency-Key honoured on POSTs.
  */
-import { serve, json, readJson, routeOf, reqString, optString, oneOf, bad, notFound } from "_shared/http.ts";
+import { serve, json, readJson, routeOf, reqString, optString, oneOf, bad, HttpError, notFound } from "_shared/http.ts";
 import { deskAlert } from "_shared/alerts.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
@@ -23,6 +23,7 @@ import { createDraft, enqueuePublish, loadContent, pushToDesk } from "_shared/co
 import { fanOut, isStuckQueue } from "_shared/fanout.ts";
 import { annualOffers, offerText, type ProductRow } from "_shared/offers.ts";
 import { fanoutFailure, fanoutSummary } from "_shared/platforms.ts";
+import { type PendingItem, pendingRows, type PendingVariant } from "_shared/inbox.ts";
 import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
 import { startOfDayInTz } from "_shared/time.ts";
@@ -52,6 +53,29 @@ const REMINDERS: Record<string, { post_type: PostType; text: string }> = {
 serve(async (req) => {
   const caller = await authenticate(req);
   const { method, tail } = routeOf(req, "content");
+
+  // GET /content/pending — the Mini App's approval list (it has no Supabase
+  // login, so RLS would show it nothing). Same publish rules as approve.
+  if (method === "GET" && tail.length === 1 && tail[0] === "pending") {
+    requireRole(caller.role, "reports.read");
+    const db = admin();
+    const { data: items, error } = await db.from("content_items")
+      .select("id, post_type, lang, status, title, created_at, scheduled_at, source")
+      .in("status", ["pending_approval", "draft"])
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw new HttpError(503, "upstream_failed", error.message);
+    const ids = (items ?? []).map((i) => i.id as string);
+    let variants: PendingVariant[] = [];
+    if (ids.length) {
+      const { data: vars, error: vErr } = await db.from("content_variants")
+        .select("id, content_id, platform, body, created_at, compliance, source")
+        .in("content_id", ids);
+      if (vErr) throw new HttpError(503, "upstream_failed", vErr.message);
+      variants = (vars ?? []) as PendingVariant[];
+    }
+    return json({ items: pendingRows((items ?? []) as PendingItem[], variants) });
+  }
 
   if (method === "GET" && tail.length === 1) {
     requireRole(caller.role, "reports.read");

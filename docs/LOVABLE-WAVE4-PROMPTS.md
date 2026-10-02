@@ -30,7 +30,10 @@ the prompts below assume them.)
 > (never in localStorage), and send it in an `x-twinos-session` header on
 > every `supabase.functions.invoke` from this route (keep the default
 > Authorization; do not replace it with the session). Confirm the session with `GET
-> tg-auth/me` before showing anything. The view is the Approval Inbox
+> tg-auth/me` before showing anything. Load the list from `GET content/pending`
+> (it returns `{ items: [{ id, post_type, lang, status, title, created_at,
+> scheduled_at, kit, blocked, can_approve, findings, variant }] }`; the Mini App
+> has no Supabase login, so it never reads tables directly). The view is the Approval Inbox
 > condensed for 390 px: pending drafts with Approve / Reject + confirm,
 > blocking findings hide Approve, one item per screen with prev/next. Any
 > verify failure shows a plain "Open this from the EzyMap Desk" screen and
