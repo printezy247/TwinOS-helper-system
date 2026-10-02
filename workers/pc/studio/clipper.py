@@ -19,6 +19,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import layouts
+
 try:
     from faster_whisper import WhisperModel  # type: ignore
 except ImportError:  # pragma: no cover - optional
@@ -70,7 +72,12 @@ def srt(segments: list[dict[str, Any]], offset: float) -> str:
     return "\n".join(f"{n}\n{ts(s['start'])} --> {ts(s['end'])}\n{s['text']}\n" for n, s in enumerate(segments, 1))
 
 
-def run(source: Path, lang: str = "en", max_clips: int = 5) -> dict[str, Any]:
+def run(source: Path, lang: str = "en", max_clips: int = 5, layout: str | None = None,
+        face_box: layouts.FaceBox | None = None, end_text: str | None = None) -> dict[str, Any]:
+    """Cut the live into clips. `layout` (chart_full, chart_face, blurred_fill) makes them 1080x1920;
+    `end_text` (the risk line) is made into a 3 second card and joined on every clip."""
+    if layout is not None:
+        layouts.filter_graph(layout, face_box)  # refuse a bad layout or face box before any work is done
     ff = _ffmpeg()
     out = source.parent / "clips" / source.stem
     out.mkdir(parents=True, exist_ok=True)
@@ -79,15 +86,27 @@ def run(source: Path, lang: str = "en", max_clips: int = 5) -> dict[str, Any]:
                    check=True, capture_output=True)
     segments = transcribe(audio, lang)
     picks = pick_highlights(segments, max_clips)
+    card = out / "end_card.mp4"
+    if end_text and picks:
+        subprocess.run(layouts.end_card_command(ff, end_text, str(card)), check=True, capture_output=True)
     clips = []
     for n, p in enumerate(picks, 1):
         clip = out / f"clip_{n}.mp4"
-        subprocess.run([ff, "-y", "-ss", f"{p['start']:.2f}", "-to", f"{p['end']:.2f}", "-i", str(source),
-                        "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", str(clip)],
-                       check=True, capture_output=True)
+        if layout:
+            cut = layouts.clip_command(ff, str(source), p["start"], p["end"], str(clip), layout, face_box)
+        else:
+            cut = [ff, "-y", "-ss", f"{p['start']:.2f}", "-to", f"{p['end']:.2f}", "-i", str(source),
+                   "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", str(clip)]
+        subprocess.run(cut, check=True, capture_output=True)
+        if end_text:
+            joined = out / f"clip_{n}_card.mp4"
+            subprocess.run(layouts.append_card_command(ff, str(clip), str(card), str(joined)), check=True, capture_output=True)
+            if joined.exists():
+                joined.replace(clip)
         inside = [s for s in segments if s["start"] >= p["start"] and s["end"] <= p["end"]]
         (out / f"clip_{n}.srt").write_text(srt(inside, p["start"]), encoding="utf-8")
         clips.append({"file": clip.name, "start": p["start"], "end": p["end"], "cover": p["cover"],
-                      "risk_line_needed": True})  # plan §9.G.58: spoken/on-screen risk line is Jack's call in CapCut
+                      "layout": layout, "end_card": bool(end_text),
+                      "risk_line_needed": not end_text})  # plan §9.G.58: spoken/on-screen risk line is Jack's call in CapCut
     (out / "clips.json").write_text(json.dumps({"source": str(source), "clips": clips}, indent=2), encoding="utf-8")
     return {"out_dir": str(out), "clips": len(clips), "transcript_segments": len(segments)}

@@ -78,3 +78,20 @@ function alerts Jack when no beat arrives for 20 minutes
 `TWINOS_URL`, `TWINOS_WORKER_KEY`, `TWINOS_DB_URL` override the keyring;
 `TWINOS_DROP_DIR`, `TWINOS_TELECHURN_DIR`, `TWINOS_BACKUP_DIR` override the folders.
 Do not put the real key into a `.env`: `.env*` is git-ignored but the keyring is the rule on this PC.
+
+
+## Clipping a live (Phase 5)
+
+Put the recording in `~/EzyMap/lives/` (OBS's `.mkv` is fine; the file name should carry the date, `2026-09-30` or
+`20260930`, and ideally `tiktok` or `telegram`). Then ask ABDUL, or call the tool:
+
+```
+twinos_clip {}                                          # yesterday's TikTok live, plain cuts
+twinos_clip {"layout": "blurred_fill"}                  # 1080x1920 clips, chart over a blurred copy of itself
+twinos_clip {"layout": "chart_face", "face_box": [1400, 600, 480, 360]}   # chart on top, camera view underneath
+twinos_clip {"layout": "chart_full", "end_text": "Not financial advice."} # plus a 3 second end card on every clip
+```
+
+`face_box` is `[x, y, width, height]` of the camera view in the recording. Without one, `chart_face` crops the lower
+right quarter. The worker needs `pip install faster-whisper Pillow` and `ffmpeg` on the PATH; clips land in
+`~/EzyMap/lives/clips/<recording>/` with an SRT and a `clips.json`. CapCut stays the editor: nothing is burned in.

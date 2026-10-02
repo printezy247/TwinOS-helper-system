@@ -202,11 +202,34 @@ class TestRequestShapes(Base):
         self.assertIs(r["body"]["gap"], True)
 
     def test_clip(self):
-        tm.tool_call("twinos_clip", {"date": "2026-09-30"})
+        tm.tool_call("twinos_clip", {"date": "2026-09-30", "layout": "blurred_fill", "end_text": "Not financial advice.", "max_clips": 3})
         r = self.last()
         self.assertEqual(r["path"], "/functions/v1/jobs/enqueue")
-        self.assertEqual(r["body"]["source"], "tiktok")
         self.assertEqual(r["body"]["kind"], "clip")
+        # jobs/enqueue reads body.payload only: flat fields would be dropped and the worker would get nothing
+        p = r["body"]["payload"]
+        self.assertEqual((p["source"], p["date"], p["layout"], p["end_text"], p["max_clips"]),
+                         ("tiktok", "2026-09-30", "blurred_fill", "Not financial advice.", 3))
+        self.assertNotIn("source", r["body"])
+
+    def test_clip_with_no_date_means_yesterday_in_kuala_lumpur(self):
+        import datetime as dt
+        self.assertEqual(tm.yesterday_kl(dt.datetime(2026, 10, 7, 18, 0, tzinfo=dt.timezone.utc)), "2026-10-07")  # 02:00 on the 8th in KL
+        self.assertEqual(tm.yesterday_kl(dt.datetime(2026, 10, 7, 3, 0, tzinfo=dt.timezone.utc)), "2026-10-06")
+        tm.tool_call("twinos_clip", {})
+        self.assertRegex(self.last()["body"]["payload"]["date"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_clip_refuses_a_bad_layout_or_face_box(self):
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_clip", {"layout": "diagonal"})
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_clip", {"layout": "chart_face", "face_box": [1, 2, 3]})
+
+    def test_clip_passes_a_face_box_and_a_file_path(self):
+        tm.tool_call("twinos_clip", {"layout": "chart_face", "face_box": [1400, 600, 480, 360], "path": "/home/jack/EzyMap/lives/x.mp4"})
+        p = self.last()["body"]["payload"]
+        self.assertEqual(p["face_box"], [1400, 600, 480, 360])
+        self.assertEqual(p["path"], "/home/jack/EzyMap/lives/x.mp4")
 
     def test_friday_reads_the_view(self):
         FakeTwinOS.state["bodies"]["/rest/v1/v_friday_scoreboard"] = [{"week": "2026-09-28", "members": 1200}]

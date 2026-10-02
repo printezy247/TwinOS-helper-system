@@ -28,6 +28,33 @@ class FakeApi:
         self.calls.append(("jobs/result", {"job_id": job_id, "ok": ok, "result": result, "error": error}, None))
 
 
+class FindRecordingTests(unittest.TestCase):
+    def make(self, names):
+        d = Path(tempfile.mkdtemp())
+        for n in names:
+            (d / n).write_bytes(b"x")
+        return d
+
+    def test_the_file_with_the_date_and_the_platform_wins(self):
+        d = self.make(["live_2026-09-30_telegram.mp4", "live_2026-09-30_tiktok.mp4", "live_2026-09-29_tiktok.mp4"])
+        self.assertEqual(w.find_recording(d, "tiktok", "2026-09-30").name, "live_2026-09-30_tiktok.mp4")
+
+    def test_a_compact_date_matches_too(self):
+        d = self.make(["tiktok-live-20260930-2100.mkv"])
+        self.assertEqual(w.find_recording(d, "tiktok", "2026-09-30").name, "tiktok-live-20260930-2100.mkv")
+
+    def test_with_only_the_date_the_newest_file_is_used(self):
+        d = self.make(["a_2026-09-30.mp4", "b_2026-09-30.mp4"])
+        old = d / "a_2026-09-30.mp4"
+        os.utime(old, (1, 1))
+        self.assertEqual(w.find_recording(d, "tiktok", "2026-09-30").name, "b_2026-09-30.mp4")
+
+    def test_nothing_for_that_day_is_none_and_other_file_types_are_ignored(self):
+        d = self.make(["notes_2026-09-30.txt", "live_2026-10-01.mp4"])
+        self.assertIsNone(w.find_recording(d, "tiktok", "2026-09-30"))
+        self.assertIsNone(w.find_recording(Path("/nonexistent-dir"), "tiktok", "2026-09-30"))
+
+
 class KeyringTests(unittest.TestCase):
     def test_env_override_wins(self):
         self.assertEqual(w.keyring("url"), "https://example.invalid")
