@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
 import {
-  bannedWords, check, ctaCount, detectClaims, hasDisclosure, hasPastPerformanceLine, hasRiskLine, humanizerHits,
-  neededPlaceholders,
+  aiNumberGuard, bannedWords, check, ctaCount, detectClaims, extractNumbers, hasDisclosure, hasPastPerformanceLine,
+  hasRiskLine, humanizerHits, neededPlaceholders,
 } from "./compliance.ts";
 
 const RISK = "Not financial advice. Education only. Trade at your own risk.";
@@ -103,6 +103,17 @@ Deno.test("claim words still block while humanizer words only warn", () => {
   assert(r.findings.some((f) => f.check === "words" && f.severity === "blocking"));
   assert(r.findings.some((f) => f.check === "humanizer" && f.severity === "warn"));
   assert(!r.ok);
+});
+
+Deno.test("AI number guard: prices and percents outside Jack's lines block", () => {
+  assertEquals(extractNumbers("Gold held 4590, risk 68% of nothing"), [4590, 68]);
+  const ok = aiNumberGuard("Watch 4590, risk 1% or less.", [4590, 1]);
+  assertEquals(ok, []);
+  const invented = aiNumberGuard("TP 4604, win rate 68%.", [4590]);
+  assertEquals(invented.length, 1);
+  assertEquals(invented[0].severity, "blocking");
+  const noGround = aiNumberGuard("Watch 4590.", undefined);
+  assert(noGround.some((f) => f.severity === "blocking"), "no grounding, no AI numbers");
 });
 
 Deno.test("the everyday risk lines are recognised: not financial advice, not investment advice, not advice", () => {

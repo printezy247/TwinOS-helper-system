@@ -145,5 +145,40 @@ class DropFolderTests(unittest.TestCase):
                     w.signed_upload(api, p)
 
 
+class LlmVariantsTests(unittest.TestCase):
+    RAW = ["4590 held, bias up", "watch 4612"]
+
+    def test_prompt_carries_the_raw_lines_and_the_json_rule(self):
+        p = w.build_variants_prompt(self.RAW, ["telegram"], "en", angles=3)
+        self.assertIn("4590 held", p)
+        self.assertIn("JSON", p)
+        self.assertIn("4590", p)  # the allowed numbers ride along
+        self.assertIn("only", p.lower())
+
+    def test_strict_json_round_trip(self):
+        variants = w.parse_variants(
+            '{"variants": [{"platform": "telegram", "angle": 1, "body": "a"},'
+            ' {"platform": "telegram", "angle": 2, "body": "b"},'
+            ' {"platform": "telegram", "angle": 3, "body": "c"}]}',
+            ["telegram"], angles=3,
+        )
+        self.assertEqual([v["angle"] for v in variants], [1, 2, 3])
+
+    def test_bad_shape_is_refused(self):
+        for bad in ("not json", '{"variants": []}', '{"other": 1}',
+                    '{"variants": [{"platform": "telegram", "angle": 1}]}'):
+            with self.assertRaises(ValueError, msg=bad):
+                w.parse_variants(bad, ["telegram"], angles=3)
+
+    def test_only_a_loopback_model_is_called(self):
+        for url in ("http://example.com:8080", "https://10.0.0.1/", "http://192.168.1.2:8080"):
+            with self.assertRaises(RuntimeError, msg=url):
+                w.job_llm_variants(FakeApi(), {"llama_url": url, "raw_lines": self.RAW})
+
+    def test_handler_is_registered(self):
+        self.assertIn("llm_variants", w.KINDS)
+        self.assertIn("llm_variants", w.HANDLERS)
+
+
 if __name__ == "__main__":
     unittest.main()
