@@ -32,3 +32,19 @@ the prompts below assume them.)
 > blocking findings hide Approve, one item per screen with prev/next. Any
 > verify failure shows a plain "Open this from the EzyMap Desk" screen and
 > calls nothing else. Respect `prefers-reduced-motion`; no framer-motion.
+
+## 2. Calendar scheduler
+
+> Build a Postiz-style week calendar from scheduled items: columns per day,
+> cards per item with its time, platform dots and status. Tapping a card
+> opens the per-platform preview (adapted caption + validator findings) with
+> Approve / Edit / Reschedule per platform. A "New post" flow picks pillar,
+> platform and slot, then drafts through `content/draft` and schedules
+> through `content/{id}/schedule` with optional `first_comment` (posted as
+> a reply under the channel message after `first_comment_delay_min`
+> minutes) — show the comment and delay on the card. Saved signatures come
+> from the `platform_signatures` setting (Settings page edits them as plain
+> text, never a secret): the composer appends the platform's signature with
+> one tap, and the one-CTA rule still applies. Deleting a scheduled card
+> cancels its jobs, never posts. Filter chips per platform; `?` cheat sheet
+> for the J/K/A/R/S keys you already added.

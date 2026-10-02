@@ -641,5 +641,17 @@ begin
   raise notice 'ok: cta library';
 end $$;
 
+-- 22. delayed first comment rides the publish queue without a second variant (0029)
+do $$
+begin
+  assert (select count(*) from information_schema.columns
+    where table_name = 'content_items' and column_name in ('first_comment', 'first_comment_delay_min')) = 2,
+    'first_comment columns exist';
+  assert exists (
+    select 1 from pg_indexes where tablename = 'publish_jobs' and indexname = 'idx_publish_jobs_variant_kind_uniq'
+  ), 'one post job and one comment job may share a variant';
+  raise notice 'ok: first comment queue';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;

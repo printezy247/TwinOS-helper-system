@@ -357,7 +357,50 @@ export async function loadContent(id: string): Promise<ContentRow> {
   return data as ContentRow;
 }
 
-/** Create one publish_jobs row per variant (plan §9.E.30). */
+/**
+ * Delayed first-comment jobs (plan §17 Wave 4 item 2): one `comment` job per
+ * telegram variant, due first_comment_delay_min after the post. The comment
+ * text rides in result (the queue has no payload column); kind keeps the
+ * comment job apart from the post job for the same variant.
+ */
+export interface CommentJobRow {
+  content_id: string;
+  variant_id: string;
+  platform: string;
+  kind: "comment";
+  run_at: string;
+  status: "queued";
+  attempts: number;
+  result: { first_comment: string };
+  created_by: string;
+}
+
+export function buildCommentJobs(
+  content_id: string,
+  variants: Array<{ id: string; platform: string }>,
+  run_at: string,
+  firstComment: string | null | undefined,
+  delayMin: number | null | undefined,
+  actor: string,
+): CommentJobRow[] {
+  if (!firstComment) return [];
+  const due = new Date(Date.parse(run_at) + Math.max(delayMin ?? 30, 1) * 60_000).toISOString();
+  return variants
+    .filter((v) => v.platform === "telegram") // replies under the channel message only
+    .map((v) => ({
+      content_id,
+      variant_id: v.id,
+      platform: v.platform,
+      kind: "comment" as const,
+      run_at: due,
+      status: "queued" as const,
+      attempts: 0,
+      result: { first_comment: firstComment },
+      created_by: actor,
+    }));
+}
+
+/** Create one publish_jobs row per variant (plan §9.E.30), plus comment jobs. */
 export async function enqueuePublish(
   content_id: string,
   run_at: string,
@@ -373,6 +416,7 @@ export async function enqueuePublish(
     content_id,
     variant_id: v.id,
     platform: v.platform,
+    kind: "post",
     run_at,
     status: "queued",
     attempts: 0,
@@ -381,8 +425,24 @@ export async function enqueuePublish(
   if (rows.length) {
     const { error: e2 } = await db
       .from("publish_jobs")
-      .upsert(rows, { onConflict: "variant_id", ignoreDuplicates: true });
+      .upsert(rows, { onConflict: "variant_id,kind", ignoreDuplicates: true });
     if (e2) throw new HttpError(503, "upstream_failed", e2.message);
+  }
+  const { data: item } = await db.from("content_items")
+    .select("first_comment, first_comment_delay_min").eq("id", content_id).maybeSingle();
+  const comments = buildCommentJobs(
+    content_id,
+    (variants ?? []).map((v) => ({ id: v.id as string, platform: String(v.platform) })),
+    run_at,
+    (item?.first_comment as string | null) ?? null,
+    Number(item?.first_comment_delay_min ?? 30),
+    actor,
+  );
+  if (comments.length) {
+    const { error: e3 } = await db
+      .from("publish_jobs")
+      .upsert(comments, { onConflict: "variant_id,kind", ignoreDuplicates: true });
+    if (e3) throw new HttpError(503, "upstream_failed", e3.message);
   }
   await setStatus(content_id, "scheduled", actor, { scheduled_at: run_at });
   return rows.length;
