@@ -185,6 +185,12 @@ const NAMES: Record<string, string> = {
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** The Desk message after a fan-out: where each platform stands, and the captions to copy for the kits. */
+/** The first platform that was not made, as "platform: reason", or null. */
+export function fanoutFailure(results: FanResult[]): string | null {
+  const bad = results.find((r) => !r.content_id);
+  return bad ? `${bad.platform}: ${bad.notes[0] ?? "failed"}` : null;
+}
+
 export function fanoutSummary(masterShort: string, results: FanResult[]): string {
   const lines = [`<b>Fan-out</b> · <code>#${esc(masterShort)}</code>`, ""];
   const kits: string[] = [];

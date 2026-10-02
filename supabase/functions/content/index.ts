@@ -22,7 +22,7 @@ import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_sha
 import { createDraft, enqueuePublish, loadContent, pushToDesk } from "_shared/content.ts";
 import { fanOut, isStuckQueue } from "_shared/fanout.ts";
 import { annualOffers, offerText, type ProductRow } from "_shared/offers.ts";
-import { fanoutSummary } from "_shared/platforms.ts";
+import { fanoutFailure, fanoutSummary } from "_shared/platforms.ts";
 import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
 import { startOfDayInTz } from "_shared/time.ts";
@@ -336,12 +336,16 @@ serve(async (req) => {
     const parent = String(p.parent ?? "");
     const platform = String(p.platform ?? "");
     try {
-      await fanOut(parent, {
+      const res = await fanOut(parent, {
         platforms: [platform],
         assetId: typeof p.asset_id === "string" ? p.asset_id : null,
         actor: "cron",
         enqueueRetry: false, // this IS the retry: no loops
       });
+      // fanOut records a platform failure as a row: surface it so the
+      // attempts, backoff and last-failure alert below actually run.
+      const failure = fanoutFailure(res);
+      if (failure) throw new Error(failure);
       await db.from("jobs").update({ status: "done" }).eq("id", due.id);
       await logAction({ actor: caller.actor, action: "content.fanout_retry_done", target: parent, payload: { platform } });
       return json({ ok: true, drained: 1 });
@@ -420,12 +424,6 @@ serve(async (req) => {
       if (!Number.isInteger(delayMin) || delayMin < 1 || delayMin > 1440) {
         throw bad("first_comment_delay_min must be 1..1440");
       }
-      if (firstComment !== undefined || delayRaw !== undefined) {
-        await admin().from("content_items").update({
-          ...(firstComment !== undefined ? { first_comment: firstComment } : {}),
-          first_comment_delay_min: delayMin,
-        }).eq("id", id);
-      }
       // Claim posts (price/result/offer/signal/map) may only be scheduled by Jack,
       // and only after approval. Everything else: approved → schedule by abdul/cron.
       const { data: v } = await admin()
@@ -434,6 +432,16 @@ serve(async (req) => {
       requireRole(caller.role, hasClaim ? "content.schedule_claim" : "content.schedule");
       if (item.status !== "approved") throw bad(`only approved items can be scheduled (status ${item.status})`);
       if (v?.compliance && v.compliance.ok === false) throw bad("compliance findings block scheduling");
+      // Saved only after every gate. Comment text never passes Jack's approval
+      // tap, so only a caller who may schedule claim posts (Jack) may set it;
+      // publish still runs checkComment on it before it goes out.
+      if (firstComment !== undefined) requireRole(caller.role, "content.schedule_claim");
+      if (firstComment !== undefined || delayRaw !== undefined) {
+        await admin().from("content_items").update({
+          ...(firstComment !== undefined ? { first_comment: firstComment } : {}),
+          first_comment_delay_min: delayMin,
+        }).eq("id", id);
+      }
       const idem = await idemFrom(req, body, `content.schedule:${id}`);
       const hit = await replay(idem);
       if (hit) return hit;
