@@ -1,0 +1,100 @@
+import { assert, assertEquals } from "std/assert/mod.ts";
+import { type BatchSlot, nextMonday, planBatch, slotToInstant, summaryLines } from "./batch.ts";
+
+const TZ = "Asia/Kuala_Lumpur";
+
+// The channel rhythm as seeded in calendar_slots (dow 1 = Monday, null = every day).
+const SLOTS: BatchSlot[] = [
+  { dow: null, time_local: "13:00:00", post_type: "lesson" },
+  { dow: 1, time_local: "09:00:00", post_type: "poll" },
+  { dow: 3, time_local: "13:00:00", post_type: "channel_audit" },
+  { dow: 6, time_local: "12:00:00", post_type: "offer" },
+  // not part of the batch
+  { dow: null, time_local: "08:00:00", post_type: "gold_map" },
+  { dow: 5, time_local: "18:00:00", post_type: "scorecard" },
+];
+
+Deno.test("nextMonday: the Monday strictly after today, in the channel's timezone", () => {
+  assertEquals(nextMonday(new Date("2026-10-07T06:30:00Z"), TZ), "2026-10-12"); // Wednesday 14:30 MYT
+  assertEquals(nextMonday(new Date("2026-10-05T02:00:00Z"), TZ), "2026-10-12"); // a Monday -> the next one
+  assertEquals(nextMonday(new Date("2026-10-11T10:00:00Z"), TZ), "2026-10-12"); // Sunday
+  // 17:00Z on Sunday is already Monday 01:00 in KL: the next Monday is a week on
+  assertEquals(nextMonday(new Date("2026-10-11T17:00:00Z"), TZ), "2026-10-19");
+});
+
+Deno.test("slotToInstant: wall-clock time in KL becomes the right UTC instant", () => {
+  assertEquals(slotToInstant("2026-10-12", 1, "13:00:00", TZ), "2026-10-12T05:00:00.000Z");
+  assertEquals(slotToInstant("2026-10-12", 7, "20:00", TZ), "2026-10-18T12:00:00.000Z");
+});
+
+Deno.test("planBatch: 7 lessons (5 skill + 2 Start Safe), audit, poll, offer", () => {
+  const plan = planBatch({ monday: "2026-10-12", slots: SLOTS, tz: TZ });
+  assertEquals(plan.length, 10);
+  assertEquals(plan.filter((i) => i.post_type === "lesson").length, 7);
+  assertEquals(plan.filter((i) => i.pillar === "skill").length, 5);
+  assertEquals(plan.filter((i) => i.pillar === "start_safe").length, 2);
+  for (const t of ["channel_audit", "poll", "offer"]) assertEquals(plan.filter((i) => i.post_type === t).length, 1);
+});
+
+Deno.test("planBatch: numbered 1..10 in posting order, at the seeded times", () => {
+  const plan = planBatch({ monday: "2026-10-12", slots: SLOTS, tz: TZ });
+  assertEquals(plan.map((i) => i.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const times = plan.map((i) => i.when);
+  assertEquals(times, [...times].sort());
+  assertEquals(plan[0].post_type, "poll"); // Monday 09:00
+  assertEquals(plan[0].when, "2026-10-12T01:00:00.000Z");
+  const audit = plan.find((i) => i.post_type === "channel_audit")!;
+  assertEquals(audit.when, "2026-10-14T05:00:00.000Z"); // Wednesday 13:00 KL
+  const offer = plan.find((i) => i.post_type === "offer")!;
+  assertEquals(offer.when, "2026-10-17T04:00:00.000Z"); // Saturday 12:00 KL
+});
+
+Deno.test("planBatch: Start Safe on the weekend, labelled in order", () => {
+  const plan = planBatch({ monday: "2026-10-12", slots: SLOTS, tz: TZ });
+  const lessons = plan.filter((i) => i.post_type === "lesson");
+  assertEquals(lessons.map((l) => l.label), [
+    "Lesson 1", "Lesson 2", "Lesson 3", "Lesson 4", "Lesson 5", "Start Safe 1", "Start Safe 2",
+  ]);
+  assertEquals(lessons.filter((l) => l.pillar === "start_safe").map((l) => l.dow), [6, 7]);
+});
+
+Deno.test("planBatch: titles come from the topics given, the rest stay open", () => {
+  const plan = planBatch({
+    monday: "2026-10-12", slots: SLOTS, tz: TZ,
+    topics: { lesson: "where your stop goes on gold", start_safe: "3 scam red flags" },
+  });
+  const lessons = plan.filter((i) => i.post_type === "lesson");
+  assertEquals(lessons[0].title, "where your stop goes on gold");
+  assertEquals(lessons[1].title, null);
+  assertEquals(lessons.find((l) => l.label === "Start Safe 1")!.title, "3 scam red flags");
+  assertEquals(lessons.find((l) => l.label === "Start Safe 2")!.title, null);
+});
+
+Deno.test("planBatch: only keeps the numbers stable, so 'N: instruction' means the same thing", () => {
+  const all = planBatch({ monday: "2026-10-12", slots: SLOTS, tz: TZ });
+  const some = planBatch({ monday: "2026-10-12", slots: SLOTS, tz: TZ, only: ["offer", "poll"] });
+  assertEquals(some.map((i) => i.post_type).sort(), ["offer", "poll"]);
+  for (const i of some) assertEquals(i.n, all.find((a) => a.post_type === i.post_type)!.n);
+});
+
+Deno.test("planBatch: no second offer in a week that already has one", () => {
+  const plan = planBatch({ monday: "2026-10-12", slots: SLOTS, tz: TZ, offerAlready: true });
+  assertEquals(plan.some((i) => i.post_type === "offer"), false);
+  assertEquals(plan.length, 9);
+});
+
+Deno.test("planBatch: a post type with no slot is left out, not invented", () => {
+  const plan = planBatch({ monday: "2026-10-12", slots: SLOTS.filter((s) => s.post_type !== "poll"), tz: TZ });
+  assertEquals(plan.some((i) => i.post_type === "poll"), false);
+});
+
+Deno.test("summaryLines: one numbered line per item, with what is still open, HTML-safe", () => {
+  const plan = planBatch({ monday: "2026-10-12", slots: SLOTS, tz: TZ, topics: { lesson: "stops <and> risk" } });
+  const lines = summaryLines(plan, new Map([[2, ["text"]], [1, []]]), TZ);
+  assertEquals(lines.length, 10);
+  assert(lines[0].startsWith("1."));
+  assert(lines[0].includes("Mon"));
+  assert(lines[0].includes("09:00"));
+  assert(lines[1].includes("needs: text"));
+  assert(lines[1].includes("stops &lt;and&gt; risk"));
+});
