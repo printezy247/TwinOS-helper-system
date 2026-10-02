@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
 import {
+  checkComment,
   aiNumberGuard, bannedWords, check, ctaCount, detectClaims, extractNumbers, hasDisclosure, hasPastPerformanceLine,
   hasRiskLine, humanizerHits, neededPlaceholders,
 } from "./compliance.ts";
@@ -127,4 +128,16 @@ Deno.test("the everyday risk lines are recognised: not financial advice, not inv
     "Bukan nasihat kewangan.",
   ]) assert(hasRiskLine(line), line);
   assert(!hasRiskLine("A note about advice for beginners."));
+});
+
+// Review 3 Oct: a delayed first comment is a reply under a post that already
+// carries the risk line. Checking it as the post's type blocked every comment.
+Deno.test("checkComment: a short comment under a map passes without its own risk line", () => {
+  const r = checkComment("Full levels in the pinned post.", "gold_map", "en");
+  assert(r.ok, JSON.stringify(r.findings));
+});
+
+Deno.test("checkComment: banned claims and placeholders still block a comment", () => {
+  assert(!checkComment("This is a guaranteed win", "gold_map", "en").ok);
+  assert(!checkComment("Entry [NEEDED:entry]", "gold_map", "en").ok);
 });

@@ -89,3 +89,23 @@ export const UPDATE_FAIL_LIMIT = 3;
 export function isPoisonedUpdate(failures: number, limit = UPDATE_FAIL_LIMIT): boolean {
   return failures >= limit;
 }
+
+/**
+ * An unknown outcome (timeout, reset) may have posted. The job is parked, not
+ * re-sent on a timer: the landed check cannot see a send that never returned
+ * a message id. Jack answers on the Desk (It's posted / Send again). Whatever
+ * the result held (a first comment's text) is kept.
+ */
+export function unknownOutcomePatch(prev: Record<string, unknown> | null | undefined, nowIso: string) {
+  return {
+    status: "failed" as const,
+    error_class: "unknown" as const,
+    result: { ...(prev ?? {}), unknown_hold: true, held_at: nowIso } as Record<string, unknown>,
+  };
+}
+
+/** Jack tapped Send again: one clean retry, the hold flags dropped. */
+export function resendPatch(prev: Record<string, unknown> | null | undefined, nowIso: string) {
+  const { unknown_hold: _h, held_at: _a, ...rest } = (prev ?? {}) as Record<string, unknown>;
+  return { status: "queued" as const, attempts: 0, error_class: null, last_error: null, run_at: nowIso, result: rest };
+}

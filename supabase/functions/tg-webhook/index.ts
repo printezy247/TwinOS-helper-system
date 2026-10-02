@@ -14,13 +14,13 @@
  *   message in discussion group → moderation rules (mod_rules, moderation_events)
  *   message_reaction_count → post_snapshots (reactions)
  */
-import { isPoisonedUpdate } from "_shared/backoff.ts";
+import { isPoisonedUpdate, resendPatch } from "_shared/backoff.ts";
 import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
 import { buildApprovePayload, isDeskPromptExpired } from "_shared/desk.ts";
-import { createDraft, pushToDesk, resolveShort, resolveVariantShort, shortIdRange } from "_shared/content.ts";
+import { createDraft, pushToDesk, resolveShort, resolveVariantShort, setStatus, shortIdRange } from "_shared/content.ts";
 import { check as complianceCheck, ctaCount, extractNumbers, type PostType } from "_shared/compliance.ts";
 import { nextCta, nextHook } from "_shared/hooks.ts";
 import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
@@ -261,6 +261,38 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       await tg.answerCallbackQuery(cq.id, "Cancelled.");
       if (chat && mid) {
         await tg.editMessageReplyMarkup(chat, mid, null).catch(() => null);
+      }
+      return;
+    }
+    case "hp":
+    case "hs": {
+      // A parked send (unknown outcome): Jack checked the channel.
+      const platform = parsed.extra ?? "";
+      const db = admin();
+      const { data: held } = await db.from("publish_jobs").select("id, result")
+        .eq("content_id", content_id).eq("platform", platform)
+        .eq("status", "failed").eq("error_class", "unknown");
+      if (!held?.length) {
+        await tg.answerCallbackQuery(cq.id, "Already handled.");
+        if (chat && mid) await tg.editMessageReplyMarkup(chat, mid, null).catch(() => null);
+        return;
+      }
+      const now = new Date().toISOString();
+      if (parsed.verb === "hp") {
+        await db.from("publish_jobs").update({ status: "done", done_at: now, last_error: "posted (confirmed by Jack)" })
+          .in("id", held.map((j) => j.id));
+        await setStatus(content_id, "published", "jack", { published_at: now, published_ref: `${platform}: confirmed by Jack` })
+          .catch(() => null);
+      } else {
+        for (const j of held) {
+          await db.from("publish_jobs").update(resendPatch(j.result as Record<string, unknown> | null, now)).eq("id", j.id);
+        }
+      }
+      await logAction({ actor: "jack", action: parsed.verb === "hp" ? "publish.held_posted" : "publish.held_resend", target: content_id, payload: { platform } });
+      await tg.answerCallbackQuery(cq.id, parsed.verb === "hp" ? "Marked as posted." : "Sending again now.");
+      if (chat && mid) {
+        await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton(parsed.verb === "hp" ? "✅ Posted (you confirmed)" : "🔁 Sent again")]])
+          .catch(() => null);
       }
       return;
     }

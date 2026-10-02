@@ -9,7 +9,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSetting, SETTING_KEYS } from "./supabase.ts";
 import { redactSecrets } from "./providers.ts";
-import { sendMessage } from "./tg.ts";
+import { type InlineButton, sendMessage } from "./tg.ts";
 
 export const DESK_ALERT_COOLDOWN_MS = 6 * 3600_000;
 
@@ -36,6 +36,7 @@ export async function deskAlert(opts: {
   severity: string;
   message: string;
   cooldownMs?: number;
+  buttons?: InlineButton[][];
 }): Promise<{ sent: boolean; repeats: number }> {
   const cooldownMs = opts.cooldownMs ?? DESK_ALERT_COOLDOWN_MS;
   const dedupe = `err:${opts.key}`;
@@ -57,6 +58,6 @@ export async function deskAlert(opts: {
     dedupe_key: dedupe,
   });
   const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
-  await sendMessage(desk, redactSecrets(opts.message), { parse_mode: "HTML" });
+  await sendMessage(desk, redactSecrets(opts.message), { parse_mode: "HTML", buttons: opts.buttons });
   return { sent: true, repeats: 0 };
 }

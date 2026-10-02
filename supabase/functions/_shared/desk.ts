@@ -73,7 +73,7 @@ export function keyboardVerbs(kb: InlineButton[][]): string[] {
  * handled before the verb parser.
  */
 export const HANDLED_CALLBACK_VERBS =
-  ["ok", "no", "edit", "later", "cancel", "cap", "nav", "pg", "nop", "rs", "ed", "vw", "cmd", "fan", "mo", "adj", "pk", "clip"] as const;
+  ["ok", "no", "edit", "later", "cancel", "cap", "nav", "pg", "nop", "rs", "ed", "vw", "cmd", "fan", "mo", "adj", "pk", "clip", "hp", "hs"] as const;
 
 /**
  * Contract for the tg-webhook → approve internal hop (Wave 0 fix 4).

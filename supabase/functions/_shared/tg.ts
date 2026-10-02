@@ -399,6 +399,15 @@ export function cmdCallback(name: string): string {
   return checkCallbackLen(`cmd:${name}`);
 }
 
+/** A send with an unknown outcome: Jack checks the channel and answers. */
+export function heldKeyboard(contentId: string, platform: string): InlineButton[][] {
+  const id8 = contentId.replace(/-/g, "").slice(0, 8);
+  return [[
+    { text: "✅ It's posted", callback_data: checkCallbackLen(`hp:${id8}:${platform}`) },
+    { text: "🔁 Send again", callback_data: checkCallbackLen(`hs:${id8}:${platform}`) },
+  ]];
+}
+
 /** Later prompt: quick picks + Custom (reply) + Cancel. */
 export function laterKeyboard(contentId: string): InlineButton[][] {
   const rs = (slot: string, text: string): InlineButton => ({ text, callback_data: slotCallback(contentId, slot) });
