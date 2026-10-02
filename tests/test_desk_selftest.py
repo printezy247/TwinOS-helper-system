@@ -51,7 +51,7 @@ class DeskSelftestTest(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as d:
-            for tool in ("bash", "cat", "date", "cut"):
+            for tool in ("bash", "cat", "date", "cut", "dirname"):
                 src = shutil.which(tool)
                 self.assertIsNotNone(src, f"{tool} missing on this machine")
                 os.symlink(src, os.path.join(d, tool))

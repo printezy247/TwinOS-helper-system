@@ -16,7 +16,8 @@
 # `ops_bot_token` in the keyring (docs/SETUP.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export PATH="$PATH:$HOME/.npm-global/bin"
+# HOME may be absent under a scrubbed env (CI test); keep set -u happy.
+export PATH="$PATH${HOME:+:$HOME/.npm-global/bin}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf '\nSTOPPED: %s\n' "$*" >&2; exit 1; }
