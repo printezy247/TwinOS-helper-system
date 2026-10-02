@@ -278,10 +278,14 @@ GitHub sync creates its own repository and cannot write into a subfolder here.
 If you want a copy on GitHub, Lovable → **GitHub → Connect** creates
 `printezy247/twinos-dashboard` (optional).
 
-Built so far: **Login** (email + password, no sign-up) and the **Approval
-Inbox** (pending/draft items, Telegram-style preview, findings by severity,
-`[NEEDED` in red, Approve/Reject/Reschedule only for `twinos_role = jack`,
-Approve hidden on blocked drafts, confirm dialog, 60 s refresh, 390 px).
+Built so far (2 Oct 2026, about 22 Lovable credits): **Login** (email + password,
+no sign-up), the **Approval Inbox** (pending/draft items, Telegram-style preview,
+findings by severity, `[NEEDED` in red, Approve/Reject/Reschedule only for
+`twinos_role = jack`, Approve hidden on blocked drafts, confirm dialog, 60 s
+refresh, 390 px), **Calendar**, **Health**, **Friday** (with ad spend and campaign
+cost), **Signals**, **Messages** (a placeholder until Phase 3 comment polling) and
+**Research**. Each reads tables and changes things only through a function;
+`docs/LOVABLE-KNOWLEDGE.md` lists every call.
 
 Check it after each new screen:
 
@@ -290,8 +294,8 @@ Check it after each new screen:
 - Does the Approve button *disappear* for a non-`jack` login?
 - Does it still work at 390 px?
 
-**Screen order**, one prompt each, verify between: Approval Inbox (done) →
-Content Calendar → Health → Analytics/Friday → Signal board → Research → Inbox.
+**Screen order** (all built): Approval Inbox → Content Calendar → Health →
+Analytics/Friday → Signal board → Research → Messages.
 
 **Auth.** Jack's login is `printezyusd@gmail.com` with `app_metadata.twinos_role
 = jack`. Row-level security reads that claim since migration 0016. The second

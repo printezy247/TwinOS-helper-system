@@ -67,7 +67,7 @@ Exit: Friday report arrives without Jack opening a spreadsheet.
 - [ ] Friday scoreboard with Vantage + TikTok manual inputs; `v_friday_scoreboard` complete
 - [ ] Content log rows automatic + Sheet export
 - [x] Named invite links through TwinOS (`POST /links`, `src-campaign-yymm` enforced). Weekly Telechurn import: the worker handler exists, it needs Jack's weekly CSV in `~/EzyMap/telechurn/`
-- [ ] Content Calendar, Health, Analytics/Friday screens in Lovable
+- [x] Content Calendar, Health, Analytics/Friday screens in Lovable (built 2 Oct; Jack to sign in and look at real data)
 
 ## Phase 3 — Repurposing (November)
 Exit: one TikTok reaches seven places with only the TikTok, YouTube and X taps by hand; ≥60% hours cut.
@@ -87,7 +87,7 @@ Exit: every swap shows joins and 7-day retention.
 - [x] Post view snapshots at +1 h / 24 h / 7 d (`metrics/snapshots`, cron every 15 min, reads the public preview `t.me/s/<channel>` because bots cannot read views; parser checked against the real @ezymap page; a snapshot is only taken inside its window so it is never mislabelled). Needs `scripts/deploy.sh`
 - [x] Swap tracker (one named link per partner through `POST /links`) + funnel view (`v_funnel`, cost per first-time depositor in `v_stop_if`)
 - [x] Reference-channel benchmark cards refreshed weekly (`metrics/benchmarks`, Monday 03:00 MYT: size, average views, view rate, posts per day into `benchmarks`; handles never leave the table). A channel with its preview switched off is skipped
-- [ ] Signal board + Inbox screens in Lovable
+- [x] Signal board + Inbox screens in Lovable (built 2 Oct: Signals with a dry-run preview before any result is posted; Messages as a placeholder that fills when Phase 3 comment polling exists)
 
 ## Phase 5 — Studio + research (Dec–Jan)
 Exit: a live becomes clips without CapCut's help for the cut list; Monday brief every week; ≥70% hours cut.
@@ -96,7 +96,7 @@ Exit: a live becomes clips without CapCut's help for the cut list; Monday brief 
 - [ ] Research: personas, autocomplete expansion (ms/MY), Search Console, Bing, YouTube competition score, channel RSS — autocomplete expansion is built and checked against the real endpoint (`research/expand`, weekly: every persona seed in en/ms/manglish plus its core words, scored into `topic_clusters`; a CSI reading Jack typed lifts a matching topic). Search Console, Bing and the YouTube Data API need Jack's accounts and keys, so they are not built
 - [x] Monday brief against the 28-day calendar (`research/brief`, Monday 07:00 MYT: the week's calendar slots, the best fitting scored topic per pillar, each used once, to `briefs` and the Desk; score = demand x ICP fit x (1 - compliance risk)). CSI capture: `POST /research/csi` is live-ready; the dashboard form is in the Research screen
 - [ ] Double-down alert (part 2 within 48 h) — not buildable yet: it needs per-video TikTok views and there is no source for them (only the weekly totals Jack types). It starts as soon as a source exists
-- [ ] Research briefs screen in Lovable
+- [x] Research briefs screen in Lovable (built 2 Oct: the Monday brief, scored topics, repeat questions, CSI readings and form, article brief)
 
 ## Phase 6 — Pilot readiness (January 2027)
 Exit: cost per FTD visible daily.
