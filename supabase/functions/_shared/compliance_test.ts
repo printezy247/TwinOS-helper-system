@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
 import {
   checkComment,
+  withRewriteGuard,
   aiNumberGuard, bannedWords, check, ctaCount, detectClaims, extractNumbers, hasDisclosure, hasPastPerformanceLine,
   hasRiskLine, humanizerHits, neededPlaceholders,
 } from "./compliance.ts";
@@ -140,4 +141,15 @@ Deno.test("checkComment: a short comment under a map passes without its own risk
 Deno.test("checkComment: banned claims and placeholders still block a comment", () => {
   assert(!checkComment("This is a guaranteed win", "gold_map", "en").ok);
   assert(!checkComment("Entry [NEEDED:entry]", "gold_map", "en").ok);
+});
+
+// Review 3 Oct: a worker rewrite only re-ran the checklist, so a number the
+// old body never had (an invented target) landed in the draft.
+Deno.test("withRewriteGuard: a rewrite may only use the numbers already in the old body", () => {
+  const base = check({ post_type: "lesson", platform: "telegram", lang: "en", body: "x" } as never);
+  const kept = withRewriteGuard({ ...base, ok: true, findings: [] }, "Hold 4590, watch 4612.", "Calmly: hold 4590 and watch 4612.");
+  assert(kept.ok, JSON.stringify(kept.findings));
+  const invented = withRewriteGuard({ ...base, ok: true, findings: [] }, "Hold 4590.", "Hold 4590, target 4700.");
+  assert(!invented.ok);
+  assert(invented.findings.some((f) => f.check === "numbers" && f.severity === "blocking"));
 });

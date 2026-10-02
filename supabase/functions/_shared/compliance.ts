@@ -494,3 +494,15 @@ export function checkComment(text: string, postType: PostType, lang: "en" | "ms"
   const findings = r.findings.filter((f) => f.check !== "risk_line" && f.check !== "meta_more_cut");
   return { ...r, findings, ok: !findings.some((f) => f.severity === "blocking") };
 }
+
+/**
+ * A worker rewrite (soften, BM, shorter) is generated text: it may only use
+ * numbers that were already in the body it replaces. Adds the blocking AI
+ * number guard to the checklist result.
+ */
+export function withRewriteGuard(checked: CheckResult, oldBody: string, newBody: string): CheckResult {
+  const guard = aiNumberGuard(newBody, extractNumbers(oldBody));
+  if (!guard.length) return checked;
+  const findings = [...checked.findings, ...guard];
+  return { ...checked, findings, ok: false };
+}
