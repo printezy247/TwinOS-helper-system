@@ -366,8 +366,28 @@ def desk_state_wave0() -> None:
     )
 
 
+def wave3_health() -> None:
+    health = read("supabase/functions/health/index.ts")
+    check(
+        "health: GET exposes integration status (secret names only)",
+        "integrations" in health and "integrationStatus(" in health,
+        "Wave 3 item 1: ready / needs-credentials per provider, names never values",
+    )
+    check(
+        "health: check runs live provider checks with change-only Desk alerts",
+        "runProviderChecks(" in health and "deskAlert(" in health,
+        "Wave 3 items 2-3: getMe / token debug, alert on change or recovery",
+    )
+    alerts = read("supabase/functions/_shared/alerts.ts")
+    check(
+        "alerts: a cooldown per error with a repeat count",
+        "cooldownDue(" in alerts and "repeats" in alerts,
+        "Wave 3 item 3: one Desk message per cooldown, repeats counted",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
