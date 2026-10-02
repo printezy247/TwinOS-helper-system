@@ -463,9 +463,10 @@ begin
   raise notice 'ok: login roles come from app_metadata only';
 end $$;
 
--- 15. one publish job per variant: enqueuePublish() upserts with
---     onConflict=variant_id, ignoreDuplicates, so an approve that is retried
---     (or a cron tick that re-enqueues) cannot post the same draft twice (P1.2)
+-- 15. one post job per variant (plus at most one comment job): enqueuePublish()
+--     upserts with onConflict=(variant_id,kind), ignoreDuplicates, so an approve
+--     that is retried (or a cron tick that re-enqueues) cannot post the same
+--     draft twice (P1.2); a first-comment job shares the variant (0029)
 do $$
 declare
   v_item uuid;
@@ -483,11 +484,17 @@ begin
   -- the retry: same upsert, must be a no-op
   insert into public.publish_jobs (content_id, variant_id, platform, run_at, status, attempts, created_by)
     values (v_item, v_var, 'telegram', now(), 'queued', 0, 'smoke')
-    on conflict (variant_id) do nothing;
+    on conflict (variant_id, kind) do nothing;
 
-  assert (select count(*) from public.publish_jobs where variant_id = v_var) = 1,
-    'enqueuePublish must keep one publish job per variant, even when retried';
-  raise notice 'ok: publish_jobs is idempotent per variant';
+  assert (select count(*) from public.publish_jobs where variant_id = v_var and kind = 'post') = 1,
+    'enqueuePublish must keep one post job per variant, even when retried';
+  -- the first comment shares the variant under its own kind
+  insert into public.publish_jobs (content_id, variant_id, platform, kind, run_at, status, attempts, created_by, result)
+    values (v_item, v_var, 'telegram', 'comment', now(), 'queued', 0, 'smoke', '{"first_comment": "hi"}')
+    on conflict (variant_id, kind) do nothing;
+  assert (select count(*) from public.publish_jobs where variant_id = v_var) = 2,
+    'one post job plus one comment job per variant';
+  raise notice 'ok: publish_jobs is idempotent per variant and kind';
 end $$;
 
 -- 16. a queued result_reply job is claimed by exactly one tick (P1.5)
@@ -639,6 +646,18 @@ begin
     select 1 from public.ctas where times_used is null or last_used_at is not null
   ), 'fresh CTA rows start unused with no last use';
   raise notice 'ok: cta library';
+end $$;
+
+-- 22. delayed first comment rides the publish queue without a second variant (0029)
+do $$
+begin
+  assert (select count(*) from information_schema.columns
+    where table_name = 'content_items' and column_name in ('first_comment', 'first_comment_delay_min')) = 2,
+    'first_comment columns exist';
+  assert exists (
+    select 1 from pg_indexes where tablename = 'publish_jobs' and indexname = 'idx_publish_jobs_variant_kind_uniq'
+  ), 'one post job and one comment job may share a variant';
+  raise notice 'ok: first comment queue';
 end $$;
 
 select 'smoke tests passed; rolling back' as result;

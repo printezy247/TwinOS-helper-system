@@ -39,8 +39,9 @@ interface Job {
   content_id: string;
   variant_id: string;
   platform: string;
+  kind: string;
   attempts: number;
-  result?: { unknown_hold?: boolean; held_at?: string } | null;
+  result?: { unknown_hold?: boolean; held_at?: string; first_comment?: string } | null;
 }
 
 interface Variant {
@@ -68,7 +69,7 @@ async function claimOne(): Promise<Job | null> {
   const db = admin();
   const { data: due } = await db
     .from("publish_jobs")
-    .select("id, content_id, variant_id, platform, attempts, result")
+    .select("id, content_id, variant_id, platform, kind, attempts, result")
     .eq("status", "queued")
     .lte("run_at", new Date().toISOString())
     .order("run_at", { ascending: true })
@@ -181,6 +182,36 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
   if (!item || !variant) return { ok: false, kind: "permanent", reason: "item or variant missing" };
   if (!["approved", "scheduled", "publishing"].includes(item.status)) {
     return { ok: false, kind: "permanent", reason: `item status ${item.status}` };
+  }
+
+  // Delayed first comment (Wave 4 item 2): a reply under the channel post,
+  // re-checked before it goes out. No post yet (clock skew, requeue) means
+  // wait, not fail: hold the job with a short backoff.
+  if (job.kind === "comment") {
+    const text = String(job.result?.first_comment ?? "").trim();
+    if (!text) return { ok: false, kind: "permanent", reason: "comment job has no text" };
+    if (job.platform !== "telegram") {
+      return { ok: false, kind: "permanent", reason: `comments post to telegram, not ${job.platform}` };
+    }
+    const { data: posted } = await db.from("tg_posts")
+      .select("chat_id, message_id")
+      .eq("variant_id", job.variant_id)
+      .order("posted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!posted) return { ok: false, kind: "throttled", reason: "post not out yet; the comment waits" };
+    const commentCheck = complianceCheck({
+      post_type: item.post_type as never, platform: "telegram", lang: variant.lang, body: text,
+    });
+    if (!commentCheck.ok) {
+      return { ok: false, kind: "permanent", reason: "comment blocked: " + commentCheck.findings.map((f) => f.message).join("; ") };
+    }
+    await tg.sendMessage(posted.chat_id as number, text, {
+      parse_mode: "HTML",
+      reply_to_message_id: posted.message_id as number,
+      disable_web_page_preview: true,
+    });
+    return { ok: true, kind: "success" };
   }
 
   // Last line of defence: re-run the checklist on the exact body going out.

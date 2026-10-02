@@ -82,7 +82,8 @@ insert into public.settings (key, value, description, needs_confirm) values
     }', 'FYP §08 one TikTok becomes seven posts.', false),
   ('llm_variants_enabled', 'false', 'Wave 3 item 6: queue the local-model variant job from the Desk Adjust button. Off until Jack turns it on.', false),
   ('llm_angles', '3', 'Wave 3 item 6: angles per platform the local model writes.', false),
-  ('llm_local_url', '"http://127.0.0.1:8080"', 'Wave 3 item 6: Jack''s local llama-server (OpenAI-compatible /v1). Loopback only.', false)
+  ('llm_local_url', '"http://127.0.0.1:8080"', 'Wave 3 item 6: Jack''s local llama-server (OpenAI-compatible /v1). Loopback only.', false),
+  ('platform_signatures', '{"telegram": "", "instagram": "", "facebook": "", "threads": "", "youtube": "", "tiktok": "", "x": ""}', 'Wave 4 item 2: saved per-platform sign-off lines the calendar appends. Empty until Jack writes his.', false)
 on conflict (key) do update set value = excluded.value, description = excluded.description, needs_confirm = excluded.needs_confirm;
 
 -- ===========================================================================

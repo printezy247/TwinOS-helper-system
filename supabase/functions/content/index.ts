@@ -13,7 +13,7 @@
  *
  * Who: jack, abdul, cron, ops_bot (plan §11). Idempotency-Key honoured on POSTs.
  */
-import { serve, json, readJson, routeOf, reqString, oneOf, bad, notFound } from "_shared/http.ts";
+import { serve, json, readJson, routeOf, reqString, optString, oneOf, bad, notFound } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
@@ -334,6 +334,20 @@ serve(async (req) => {
     if (tail[1] === "schedule") {
       const run_at = reqString(body, "run_at");
       if (Number.isNaN(Date.parse(run_at))) throw bad("run_at must be an ISO timestamp");
+      // Calendar scheduler (Wave 4 item 2): an optional first comment, posted
+      // as a reply under the channel message after a delay (default 30 min).
+      const firstComment = optString(body, "first_comment", 1000);
+      const delayRaw = body.first_comment_delay_min;
+      const delayMin = delayRaw === undefined ? 30 : Number(delayRaw);
+      if (!Number.isInteger(delayMin) || delayMin < 1 || delayMin > 1440) {
+        throw bad("first_comment_delay_min must be 1..1440");
+      }
+      if (firstComment !== undefined || delayRaw !== undefined) {
+        await admin().from("content_items").update({
+          ...(firstComment !== undefined ? { first_comment: firstComment } : {}),
+          first_comment_delay_min: delayMin,
+        }).eq("id", id);
+      }
       // Claim posts (price/result/offer/signal/map) may only be scheduled by Jack,
       // and only after approval. Everything else: approved → schedule by abdul/cron.
       const { data: v } = await admin()
