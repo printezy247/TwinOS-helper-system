@@ -25,6 +25,7 @@ POSTs that create or change something accept `Idempotency-Key: <id>`
 | `POST /signals/ingest` | `POST /signals-ingest` | ezyai key |
 | `POST /tv/alert` | `POST /tv-webhook?secret=…` | TradingView secret |
 | `POST /results/{signal}/reply` | `POST /results` | abdul, cron, ezyai, jack |
+| (result drain) | `POST /results/run` | cron, abdul, jack |
 | `POST /assets/ingest` | `POST /jobs/asset` (+ `jobs/upload-url`) | pc_worker, jack |
 | `POST /links` | Phase 2 | jack, abdul |
 | `POST /metrics/manual` | `POST /friday/manual` | jack, abdul |
@@ -117,6 +118,11 @@ Replays of the same `id` return `200 { "replayed": true }`.
 `POST /results` `{ "signal_id": "…" | "external_id": "auto-8841", "status": "tp1", "dry_run": false }`
 → `201 { "ok": true, "content_id": "…", "jobs": 1, "reply_to": 7712, "stats": { "wins": 7, "losses": 3, "be": 2, "win_rate": 0.7, "total_r": 8.4 } }`.
 `409` if the signal card was never posted. `POST /results/stop-if` → `{ "ok": true, "missing": ["auto-8800"] }` and a Telegram alert to Jack.
+`POST /results/run` `{ "limit": 20 }` → `{ "ran": 2, "results": [ { "job_id": "…", "ok": true, "content_id": "…" } ] }`.
+Cron calls it every minute: it drains queued `result_reply` jobs (queued by
+`signals-ingest` when a live signal closes) so a result posts by itself. The job
+claim is an atomic `UPDATE … WHERE status='queued'`, so two ticks never post the
+same result twice. `cron` is the usual caller; `abdul`/`jack` may also drain.
 
 ## health
 `POST /health` `{ "source": "pc_worker", "status": "ok", "detail": { "worker": "jack-pc" } }` → `{ "ok": true }`.
