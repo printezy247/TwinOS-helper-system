@@ -328,12 +328,13 @@ export interface ContentRow {
   scheduled_at: string | null;
   desk_chat_id: number | null;
   desk_message_id: number | null;
+  source?: Record<string, unknown> | null;
 }
 
 export async function loadContent(id: string): Promise<ContentRow> {
   const { data, error } = await admin()
     .from("content_items")
-    .select("id, post_type, lang, status, signal_id, scheduled_at, desk_chat_id, desk_message_id")
+    .select("id, post_type, lang, status, signal_id, scheduled_at, desk_chat_id, desk_message_id, source")
     .eq("id", id)
     .maybeSingle();
   if (error) throw new HttpError(503, "upstream_failed", error.message);

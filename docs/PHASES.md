@@ -72,9 +72,9 @@ Exit: Friday report arrives without Jack opening a spreadsheet.
 ## Phase 3 — Repurposing (November)
 Exit: one TikTok reaches seven places with only the TikTok, YouTube and X taps by hand; ≥60% hours cut.
 - [ ] Meta app Live, Standard Access; IG / FB Reels / Threads providers in `publish` (limits 100 / 30 / 250 per 24 h)
-- [ ] Drop-folder fan-out: asset → per-platform caption variants + publish kits (TikTok, YouTube, X)
+- [x] Fan-out: one master post becomes a child item per platform (`POST /content/{id}/fanout`, Desk `/fanout`); captions adapted per platform, TikTok/YouTube/X as copy-paste kits sent to the Desk, approvals stay per platform in the dashboard. The worker drop folder already ingests the asset; attach it with `asset_id`
 - [ ] YouTube API project; audit form submitted; private uploads until it passes
-- [ ] Per-platform validator (caption length, hashtags, duration, size)
+- [x] Per-platform validator (`_shared/platforms.ts`: media needed, video length and size, hashtag count, caption length; conservative limits in one table) and the caption adapter (risk line kept in front of any cut)
 - [ ] Metrics pollers (IG/FB/Threads/YouTube) + Meta token-expiry watch in `health`
 - [ ] "All platforms posted" Friday report line
 - [ ] Hours cut ≥60% vs baseline (from `time_saved`)

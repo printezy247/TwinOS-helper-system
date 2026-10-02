@@ -24,6 +24,7 @@ import { enqueuePublish, loadContent, setStatus } from "_shared/content.ts";
 import { deriveWebhookSecret, editMessageReplyMarkup } from "_shared/tg.ts";
 import { logAction } from "_shared/log.ts";
 import { HttpError } from "_shared/http.ts";
+import { isKit } from "_shared/platforms.ts";
 
 const DECISIONS = ["approve", "reject", "reschedule"] as const;
 
@@ -64,6 +65,7 @@ serve(async (req) => {
   if (hit) return hit;
 
   const item = await loadContent(content_id);
+  if (isKit(item.source)) throw bad("a publish kit is a copy-paste post for TikTok, YouTube or X: there is nothing to approve");
   if (!["draft", "pending_approval", "approved", "scheduled"].includes(item.status)) {
     throw bad(`cannot ${decision} an item in status ${item.status}`);
   }

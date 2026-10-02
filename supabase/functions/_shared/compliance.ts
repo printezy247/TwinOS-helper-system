@@ -143,7 +143,7 @@ export const PAST_PERFORMANCE_TYPES: readonly PostType[] = ["result_reply", "sco
 
 /** Risk line detector: the kit's wording in EN or BM, matched loosely. */
 export const RISK_LINE_RE =
-  /(?:not (?:financial|investment )?advice|education(?:al)? (?:only|purposes?)|trade at your own risk|manage your own risk|risk(?:ing)? only what you can afford|risk\s+\d+(?:\.\d+)?%\s+or\s+less|bukan nasihat (?:kewangan|pelaburan)|untuk pembelajaran|risiko (?:anda|sendiri)|prestasi lepas (?:tidak|bukan)|past (?:performance|results) (?:does|do|is) not)/i;
+  /(?:not (?:(?:financial|investment) )?advice|education(?:al)? (?:only|purposes?)|trade at your own risk|manage your own risk|risk(?:ing)? only what you can afford|risk\s+\d+(?:\.\d+)?%\s+or\s+less|bukan nasihat (?:kewangan|pelaburan)|untuk pembelajaran|risiko (?:anda|sendiri)|prestasi lepas (?:tidak|bukan)|past (?:performance|results) (?:does|do|is) not)/i;
 
 export const PAST_PERFORMANCE_RE =
   /past (?:performance|results) (?:does not|do not|is not|isn't) (?:guarantee|indicat(?:e|ive)|promise)|prestasi lepas (?:tidak|bukan) (?:jaminan|menjamin|menunjukkan)/i;

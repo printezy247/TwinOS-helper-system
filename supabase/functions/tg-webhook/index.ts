@@ -22,6 +22,8 @@ import { createDraft, pushToDesk, resolveShort } from "_shared/content.ts";
 import { check as complianceCheck, type PostType } from "_shared/compliance.ts";
 import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
 import { logAction } from "_shared/log.ts";
+import { fanOut } from "_shared/fanout.ts";
+import { fanoutSummary } from "_shared/platforms.ts";
 import { readyToApprove, summaryLines, sweepPlan, type SweepItem } from "_shared/batch.ts";
 
 const ACTOR = "ops_bot";
@@ -146,6 +148,27 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
   }
 }
 
+/** `/fanout` as a reply to a draft, or `/fanout #abcd1234`. */
+async function onFanout(m: Message): Promise<void> {
+  const say = (html: string) => tg.sendMessage(m.chat.id, html, { parse_mode: "HTML", reply_to_message_id: m.message_id });
+  const short = /#?([0-9a-f]{8})\b/i.exec((m.text ?? "").replace(/^\/fanout(?:@\w+)?/i, ""))?.[1];
+  let id: string | null = null;
+  if (short) {
+    try { id = await resolveShort(short.toLowerCase()); } catch { id = null; }
+  } else if (m.reply_to_message?.message_id) {
+    const { data } = await admin().from("content_items").select("id").eq("desk_message_id", m.reply_to_message.message_id).maybeSingle();
+    id = (data?.id as string | undefined) ?? null;
+  }
+  if (!id) { await say("Reply to a draft with /fanout, or send <code>/fanout #abcd1234</code>."); return; }
+  try {
+    const results = await fanOut(id, { actor: ACTOR });
+    await say(results.length ? fanoutSummary(id.slice(0, 8), results) : "Already copied to every platform.");
+    await logAction({ actor: "jack", action: "content.fanout", target: id, payload: { platforms: results.map((r) => r.platform), via: "desk" } });
+  } catch (err) {
+    await say(`⚠️ ${tg.escapeHtml(err instanceof Error ? err.message : String(err)).slice(0, 300)}`);
+  }
+}
+
 /* ------------------------------ the Wednesday batch ------------------------------ */
 interface BatchRow { id: string; batch_no: number; post_type: string; lang: "en" | "ms"; status: string; scheduled_at: string | null; title: string | null; source: { label?: string } | null }
 
@@ -232,6 +255,7 @@ const HELP_TEXT = [
   "",
   "/status - anything broken?",
   "/friday - this week's Friday numbers so far",
+  "/fanout - reply to a draft (or add its #id): copy it to Instagram, Facebook, Threads, TikTok, YouTube and X",
   "/batch - the Wednesday batch (<code>/batch ok</code> approves what is ready and claim-free)",
   "/hours &lt;task&gt; &lt;minutes&gt; [note] - log what a task cost by hand",
   "/hours today - today's total and the week so far",
@@ -281,6 +305,7 @@ async function onDeskCommand(m: Message, cmd: string): Promise<void> {
 
   if (cmd === "hours") { await onHours(m); return; }
   if (cmd === "batch") { await onBatch(m); return; }
+  if (cmd === "fanout") { await onFanout(m); return; }
 
   if (cmd === "help" || cmd === "start") { await say(HELP_TEXT); return; }
   await say(`I don't know /${tg.escapeHtml(cmd)}.\n\n${HELP_TEXT}`);
