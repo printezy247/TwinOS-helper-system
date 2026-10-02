@@ -623,5 +623,23 @@ begin
   raise notice 'ok: v_campaign_cost';
 end $$;
 
+-- 21. CTA library seeded per platform x language with rotation columns (0027)
+do $$
+declare combos integer;
+begin
+  assert (select count(*) from public.hooks where active) >= 40, 'the hook bank stays seeded';
+  select count(*) into combos from (
+    select distinct platform, lang from public.ctas where active
+  ) s;
+  assert combos = 14, 'one CTA set per platform x language (7 x en/ms), got ' || combos;
+  assert not exists (
+    select 1 from public.ctas where active group by platform, lang having count(*) < 2
+  ), 'every platform x language carries at least two CTA lines to rotate';
+  assert not exists (
+    select 1 from public.ctas where times_used is null or last_used_at is not null
+  ), 'fresh CTA rows start unused with no last use';
+  raise notice 'ok: cta library';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
