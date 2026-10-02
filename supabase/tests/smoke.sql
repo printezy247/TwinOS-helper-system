@@ -490,5 +490,31 @@ begin
   raise notice 'ok: publish_jobs is idempotent per variant';
 end $$;
 
+-- 16. a queued result_reply job is claimed by exactly one tick (P1.5)
+--     results/run drains these; two cron ticks must never post the same result.
+do $$
+declare
+  v_job uuid;
+  v_claimed integer;
+begin
+  insert into public.jobs (kind, payload, status, run_at, created_by)
+    values ('result_reply', '{"signal_id":"00000000-0000-0000-0000-000000000000","status":"tp1"}'::jsonb,
+            'queued', now(), 'smoke')
+    returning id into v_job;
+
+  with first as (
+    update public.jobs set status = 'claimed', claimed_at = now()
+     where id = v_job and status = 'queued' returning id
+  ) select count(*) into v_claimed from first;
+  assert v_claimed = 1, 'the first tick claims the result_reply job';
+
+  with second as (
+    update public.jobs set status = 'claimed', claimed_at = now()
+     where id = v_job and status = 'queued' returning id
+  ) select count(*) into v_claimed from second;
+  assert v_claimed = 0, 'a second tick must not claim an already-claimed job';
+  raise notice 'ok: a result_reply job is claimed once';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
