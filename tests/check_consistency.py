@@ -418,8 +418,25 @@ def wave3_guard() -> None:
     )
 
 
+def wave3_library() -> None:
+    lib = read("supabase/functions/_shared/hooks.ts")
+    check(
+        "library: hooks + CTAs rotate least-recently-used, no AI",
+        "pickLru(" in lib and "nextHook(" in lib and "nextCta(" in lib,
+        "Wave 3 item 5: LRU rotation over the hook bank and the CTA table",
+    )
+    mig = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted((ROOT / "supabase/migrations").glob("*.sql"))
+    )
+    check(
+        "library: a ctas table carries the per-platform CTA lines",
+        "create table" in mig and "public.ctas" in mig and "times_used" in mig,
+        "Wave 3 item 5: ctas seeded per platform x language with usage columns",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
