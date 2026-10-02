@@ -57,3 +57,21 @@ export function formatMinutes(total: number): string {
   const m = total % 60;
   return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
 }
+
+/**
+ * The Friday hours line: what TwinOS saved this week against the baseline week
+ * Jack logged by hand (Phase 3 exit: a cut of 60% or more). Null when no
+ * baseline exists, because a percentage of nothing says nothing.
+ */
+export function hoursCutLine(baselineMin: number, savedMin: number): string | null {
+  if (!(baselineMin > 0)) return null;
+  const h = (n: number) => (n / 60).toFixed(1);
+  const pct = Math.round((savedMin / baselineMin) * 100);
+  return `Hours: TwinOS saved *${h(savedMin)}h* against a *${h(baselineMin)}h* baseline week, a *${pct}%* cut.`;
+}
+
+/** The Friday "all platforms posted" line. Null when nothing was fanned out this week. */
+export function fanoutLine(masters: number, complete: number): string | null {
+  if (!(masters > 0)) return null;
+  return `All platforms posted: *${complete} of ${masters}* posts reached every platform.`;
+}

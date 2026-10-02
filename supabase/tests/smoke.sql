@@ -539,6 +539,45 @@ begin
   raise notice 'ok: stop-if alerts dedupe while open and can re-fire after resolve';
 end $$;
 
+-- 18. hours cut against the baseline week, and fan-out coverage (0021)
+do $$
+declare
+  v_m uuid;
+  v_m2 uuid;
+  r record;
+begin
+  delete from public.baseline_hours;
+  delete from public.time_saved;
+  insert into public.baseline_hours (week_start, day, task, minutes) values
+    ('2026-10-05', '2026-10-05', 'map', 300),
+    ('2026-10-05', '2026-10-06', 'recording', 300),
+    ('2026-10-12', '2026-10-12', 'map', 50);          -- a later week must not move the baseline
+  insert into public.time_saved (occurred_at, action, minutes_saved) values
+    ('2026-10-13 04:00+00', 'drafted', 300),
+    ('2026-10-14 04:00+00', 'posted', 60.3);
+  select * into r from public.v_hours_cut where week_start = '2026-10-12';
+  assert r.baseline_min = 600, 'the baseline is the first logged week: ' || coalesce(r.baseline_min::text, 'null');
+  assert r.saved_min = 360, 'saved minutes are summed per KL week: ' || coalesce(r.saved_min::text, 'null');
+  assert r.cut_pct = 60.0, 'cut = saved / baseline: ' || coalesce(r.cut_pct::text, 'null');
+
+  insert into public.content_items (post_type, title, status, created_at)
+    values ('gold_map', 'smoke master', 'published', '2026-10-13 01:00+00') returning id into v_m;
+  insert into public.content_items (post_type, title, status, source) values
+    ('gold_map', 'ig', 'published', jsonb_build_object('via', 'fanout', 'parent', v_m::text, 'platform', 'instagram', 'kit', false)),
+    ('gold_map', 'th', 'scheduled', jsonb_build_object('via', 'fanout', 'parent', v_m::text, 'platform', 'threads', 'kit', false)),
+    ('gold_map', 'tt', 'draft',     jsonb_build_object('via', 'fanout', 'parent', v_m::text, 'platform', 'tiktok', 'kit', true));
+  select * into r from public.v_fanout_week where master_id = v_m;
+  assert r.providers = 2, 'kits are not providers: ' || coalesce(r.providers::text, 'null');
+  assert r.published = 1, 'only published provider copies count: ' || coalesce(r.published::text, 'null');
+  assert r.week_start = '2026-10-12', 'week of the master, KL time';
+
+  insert into public.content_items (post_type, title, status, created_at)
+    values ('gold_map', 'smoke master 2', 'published', '2026-10-14 01:00+00') returning id into v_m2;
+  insert into public.content_items (post_type, title, status, source) values
+    ('gold_map', 'ig2', 'published', jsonb_build_object('via', 'fanout', 'parent', v_m2::text, 'platform', 'instagram', 'kit', false));
+  assert (select count(*) from public.v_fanout_week where week_start = '2026-10-12' and providers > 0 and providers = published) = 1,
+    'exactly one master reached every provider platform';
+  raise notice 'ok: hours cut and fan-out views';
 -- 19. repeat questions are counted per question for the FAQ sheet (0022)
 do $$
 declare r record;
