@@ -12,6 +12,15 @@ import { sendMessage } from "./tg.ts";
 
 export const DESK_ALERT_COOLDOWN_MS = 6 * 3600_000;
 
+/** More than this many `tg.update_failed` log rows in an hour pages the Desk. */
+export const UPDATE_FAILURE_THRESHOLD = 3;
+export const UPDATE_FAILURE_WINDOW_MS = 3600_000;
+
+/** Pure gate for the update-failure watch: strict > so exactly 3 is still quiet. */
+export function updateFailuresExceeded(failuresInHour: number, threshold = UPDATE_FAILURE_THRESHOLD): boolean {
+  return failuresInHour > threshold;
+}
+
 export function cooldownDue(lastAt: string | null | undefined, cooldownMs: number, now = Date.now()): boolean {
   if (!lastAt) return true;
   const t = Date.parse(lastAt);

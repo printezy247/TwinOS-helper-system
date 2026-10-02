@@ -279,6 +279,12 @@ def job_clip(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("ffmpeg not on PATH")
         subprocess.run(moments.window_cut_command(exe, src, start, end, out), check=True, capture_output=True)
         return {"file": out.name, "start": start, "end": end, "candidate_cut": True}
+    if payload.get("longform"):
+        # Sunday-live long-form (Phase 7): the best 8-20 minute window plus
+        # chapters, queued with {"longform": true}. Landscape, as recorded.
+        from studio import longform  # noqa: WPS433 (optional dependency)
+
+        return longform.run_long(src, lang=str(payload.get("lang") or "en"))
     box = payload.get("face_box")
     return clipper.run(
         src, lang=payload.get("lang", "en"), max_clips=int(payload.get("max_clips", 5)),

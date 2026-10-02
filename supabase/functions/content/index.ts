@@ -14,12 +14,13 @@
  * Who: jack, abdul, cron, ops_bot (plan §11). Idempotency-Key honoured on POSTs.
  */
 import { serve, json, readJson, routeOf, reqString, optString, oneOf, bad, notFound } from "_shared/http.ts";
+import { deskAlert } from "_shared/alerts.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
-import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
+import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, enqueuePublish, loadContent, pushToDesk } from "_shared/content.ts";
-import { fanOut } from "_shared/fanout.ts";
+import { fanOut, isStuckQueue } from "_shared/fanout.ts";
 import { annualOffers, offerText, type ProductRow } from "_shared/offers.ts";
 import { fanoutSummary } from "_shared/platforms.ts";
 import { logAction } from "_shared/log.ts";
@@ -119,7 +120,7 @@ serve(async (req) => {
     const { count: offers } = await db.from("content_items").select("id", { count: "exact", head: true })
       .eq("post_type", "offer").not("status", "in", "(rejected,failed)")
       .gte("scheduled_at", weekFrom).lt("scheduled_at", weekTo);
-    const offerMax = Number((await setting(SETTING_KEYS.offerMaxPerWeek)) ?? 1);
+    const offerMax = Number((await settingTyped(SETTING_KEYS.offerMaxPerWeek)) ?? 1);
 
     const plan = planBatch({
       monday, slots: slotRows ?? [], tz, only,
@@ -292,6 +293,80 @@ serve(async (req) => {
     return remember(idem, 201, { ...draft, desk });
   }
 
+  // POST /content/fanout-drain — cron works the fan-out retry queue (Wave 4
+  // item 4): one claimed job per call, backoff between tries, Desk alert on
+  // the last failure. pgmq would be the nicer queue; the CI Postgres has no
+  // pgmq extension, so retries ride the jobs table with the same semantics.
+  if (method === "POST" && tail.length === 1 && tail[0] === "fanout-drain") {
+    requireRole(caller.role, "content.fanout_drain");
+    const db = admin();
+    await db.from("jobs").update({ status: "queued", claimed_by: null, claimed_at: null })
+      .eq("kind", "fanout_platform").eq("status", "claimed")
+      .lt("claimed_at", new Date(Date.now() - 30 * 60_000).toISOString());
+    // A backlog at or past the threshold means failures outpace the one-per-
+    // call drain: page the Desk once (deskAlert dedupes inside its cooldown).
+    const { count: backlog } = await db.from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("kind", "fanout_platform").eq("status", "queued");
+    if (isStuckQueue(backlog ?? 0)) {
+      await deskAlert({
+        db,
+        key: "fanout-stuck",
+        kind: "fanout_backlog",
+        severity: "high",
+        message: `\u26A0\uFE0F ${backlog} fan-out retr${backlog === 1 ? "y is" : "ies are"} waiting: failures outpace the retry drain. Check the failed platforms.`,
+      });
+    }
+    const { data: due } = await db.from("jobs")
+      .select("id, payload, attempts, max_attempts")
+      .eq("kind", "fanout_platform").eq("status", "queued")
+      .lte("run_at", new Date().toISOString())
+      .order("run_at", { ascending: true }).limit(1).maybeSingle();
+    if (!due) return json({ ok: true, drained: 0 });
+    const { data: claimed } = await db.from("jobs")
+      .update({
+        status: "claimed", claimed_by: "fanout-drain", claimed_at: new Date().toISOString(),
+        attempts: (due.attempts as number) + 1,
+      })
+      .eq("id", due.id).eq("status", "queued").select("id").maybeSingle();
+    if (!claimed) return json({ ok: true, drained: 0 });
+    const p = ((due.payload ?? {}) as Record<string, unknown>);
+    const attempts = (due.attempts as number) + 1;
+    const max = Number(due.max_attempts ?? 3);
+    const parent = String(p.parent ?? "");
+    const platform = String(p.platform ?? "");
+    try {
+      await fanOut(parent, {
+        platforms: [platform],
+        assetId: typeof p.asset_id === "string" ? p.asset_id : null,
+        actor: "cron",
+        enqueueRetry: false, // this IS the retry: no loops
+      });
+      await db.from("jobs").update({ status: "done" }).eq("id", due.id);
+      await logAction({ actor: caller.actor, action: "content.fanout_retry_done", target: parent, payload: { platform } });
+      return json({ ok: true, drained: 1 });
+    } catch (err) {
+      const reason = (err instanceof Error ? err.message : String(err)).slice(0, 300);
+      if (attempts >= max) {
+        await db.from("jobs").update({ status: "failed" }).eq("id", due.id);
+        await deskAlert({
+          db,
+          key: `fanout:${parent.slice(0, 8)}:${platform}`,
+          kind: "fanout_failed",
+          severity: "high",
+          message: `\u26A0\uFE0F Fan-out to ${platform} failed ${attempts} times for #${parent.slice(0, 8)}: ${reason}. Retry it by hand from the dashboard.`,
+        });
+      } else {
+        await db.from("jobs").update({
+          status: "queued", claimed_by: null, claimed_at: null,
+          run_at: new Date(Date.now() + 5 * 60_000 * attempts).toISOString(),
+        }).eq("id", due.id);
+      }
+      await logAction({ actor: caller.actor, action: "content.fanout_retry_failed", target: parent, payload: { platform, attempts, reason } });
+      return json({ ok: true, drained: 1, failed: attempts >= max });
+    }
+  }
+
   // POST /content/{id}/request-approval | /content/{id}/schedule
   if (tail.length === 2) {
     const id = tail[0];
@@ -312,7 +387,10 @@ serve(async (req) => {
       await logAction({ actor: caller.actor, action: "content.fanout", target: id, payload: { platforms: results.map((r) => r.platform) } });
       return remember(idem, 201, {
         ok: true, master: id,
-        results: results.map((r) => ({ platform: r.platform, content_id: r.content_id, kit: r.kit, compliance_ok: r.complianceOk, findings: r.findings })),
+        results: results.map((r) => ({
+          platform: r.platform, content_id: r.content_id, kit: r.kit, compliance_ok: r.complianceOk,
+          findings: r.findings, retry_queued: r.retryQueued ?? false,
+        })),
       });
     }
 

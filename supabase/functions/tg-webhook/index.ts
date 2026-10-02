@@ -16,7 +16,7 @@
  */
 import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
-import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
+import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
 import { buildApprovePayload, isDeskPromptExpired } from "_shared/desk.ts";
 import { createDraft, pushToDesk, resolveShort, resolveVariantShort, shortIdRange } from "_shared/content.ts";
@@ -28,7 +28,7 @@ import { fanOut } from "_shared/fanout.ts";
 import { fanoutSummary } from "_shared/platforms.ts";
 import { readyToApprove, summaryLines, sweepPlan, type SweepItem } from "_shared/batch.ts";
 import {
-  casLookup, evaluate, isQuestion, matchRepeat, type ModRule, normalizeQuestion, similarity,
+  casLookup, evaluate, floodWindowS, isQuestion, matchRepeat, type ModRule, normalizeQuestion, similarity,
 } from "_shared/moderation.ts";
 
 const ACTOR = "ops_bot";
@@ -292,8 +292,8 @@ async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: s
   if (!primary) { await tg.answerCallbackQuery(cq.id, "That draft is gone.", true); return; }
 
   const db = admin();
-  if ((await setting(SETTING_KEYS.llmVariantsEnabled)) === "true") {
-    const angles = Math.min(Math.max(Number(await setting(SETTING_KEYS.llmAngles)) || 3, 1), 5);
+  if ((await settingTyped(SETTING_KEYS.llmVariantsEnabled)) === "true") {
+    const angles = Math.min(Math.max(Number(await settingTyped(SETTING_KEYS.llmAngles)) || 3, 1), 5);
     const { data: variants } = await db.from("content_variants").select("platform").eq("content_id", content_id);
     const platforms = [...new Set((variants ?? []).map((v) => String(v.platform)))];
     const body = String(primary.body ?? "");
@@ -1175,8 +1175,8 @@ async function onCaptcha(cq: NonNullable<Update["callback_query"]>): Promise<voi
 /**
  * Pattern rules only (plan §6: no AI on member text), through _shared/moderation.ts.
  * Jack and chat admins are never moderated. Every action is recorded in
- * moderation_events with only a 200-character excerpt. Flood control needs a
- * per-message counter that is not stored yet, so `recent` is 1 here (docs/PHASES.md).
+ * moderation_events with only a 200-character excerpt. Flood control counts
+ * this sender's flood_counters rows inside the widest flood window.
  */
 async function onDiscussionMessage(m: Message) {
   if (!m.from || m.from.is_bot) return;
@@ -1192,12 +1192,22 @@ async function onDiscussionMessage(m: Message) {
     .eq("chat_id", m.chat.id).eq("user_id", m.from.id).in("action_taken", ["warned", "muted"])
     .gte("occurred_at", new Date(Date.now() - 30 * 86_400_000).toISOString());
 
+  // Flood control (migration 0031): log this message, drop rows older than a
+  // day, and count this sender's rows inside the widest flood window.
+  const windowS = floodWindowS(rules);
+  await db.from("flood_counters").insert({ chat_id: m.chat.id, user_id: m.from.id });
+  await db.from("flood_counters").delete().lt("at", new Date(Date.now() - 86_400_000).toISOString());
+  const { count: recentCount } = await db.from("flood_counters")
+    .select("at", { count: "exact", head: true })
+    .eq("chat_id", m.chat.id).eq("user_id", m.from.id)
+    .gte("at", new Date(Date.now() - windowS * 1000).toISOString());
+
   const ctx = {
     text,
     hasLinkEntity: (m.entities ?? []).some((e) => e.type === "url" || e.type === "text_link" || e.type === "mention"),
     from: { id: m.from.id, first_name: m.from.first_name, last_name: m.from.last_name, username: m.from.username },
     joinedAt: joined?.at ? Date.parse(joined.at as string) : null,
-    recent: 1,
+    recent: recentCount ?? 1,
     isAdmin: m.from.id === await jackId(),
     now: Date.now(),
   };

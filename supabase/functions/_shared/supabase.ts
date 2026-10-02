@@ -11,7 +11,7 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { HttpError } from "./http.ts";
-import { settingText } from "./settings.ts";
+import { settingBool, settingId, settingNumber, settingText } from "./settings.ts";
 
 let cached: SupabaseClient | null = null;
 
@@ -63,6 +63,49 @@ export async function requireSetting(key: string, envFallback?: string): Promise
   const v = await setting(key, envFallback);
   if (!v) throw new HttpError(503, "not_configured", `setting ${key} is not set`);
   return v;
+}
+
+/**
+ * The shape each known setting must have (typed reader in settings.ts).
+ * ids stay digit-text (never float-compared), numbers stay finite, flags
+ * stay real booleans. Unknown keys read as text, as before.
+ */
+export type SettingType = "id" | "number" | "boolean" | "text";
+
+export const SETTING_TYPES: Record<string, SettingType> = {
+  jack_telegram_user_id: "id",
+  desk_group_chat_id: "id",
+  channel_chat_id: "id",
+  discussion_group_chat_id: "id",
+  timezone: "text",
+  signal_expiry_hours: "number",
+  offer_posts_per_week_max: "number",
+  llm_variants_enabled: "boolean",
+  llm_angles: "number",
+  llm_local_url: "text",
+  platform_signatures: "text",
+};
+
+/**
+ * Read a setting already coerced to its declared shape. Null means unset or
+ * the wrong shape: fall back to the default, never to chat id 0 or NaN.
+ * A mismatch is logged so a bad seed row is found, not silently kept.
+ */
+export async function settingTyped(key: string, envFallback?: string): Promise<string | null> {
+  const raw = await setting(key, envFallback);
+  if (raw === null) return null;
+  const type = SETTING_TYPES[key];
+  if (!type || type === "text") return raw;
+  // `setting()` already stringified the jsonb; re-coerce from the raw shape.
+  let ok: boolean | number | string | null;
+  if (type === "id") ok = settingId(raw);
+  else if (type === "number") ok = settingNumber(raw);
+  else ok = settingBool(raw);
+  if (ok === null) {
+    console.warn(`[settings] ${key} has the wrong shape for ${type}: ${raw.slice(0, 80)}`);
+    return null;
+  }
+  return String(ok);
 }
 
 /**

@@ -18,9 +18,20 @@ import { renderScriptKit, scriptKit, type KitLang, type KitPlatform } from "./ki
 
 type Media = { kind: "photo" | "video"; url?: string; asset_id?: string; file_id?: string };
 
+/**
+ * A retry backlog at or past this size pages the Desk (the per-minute drain
+ * clears one job per call, so a growing queue means failures outpace it).
+ */
+export const FANOUT_STUCK_THRESHOLD = 5;
+
+/** Pure gate for the stuck-queue watch. */
+export function isStuckQueue(queuedRetries: number, threshold = FANOUT_STUCK_THRESHOLD): boolean {
+  return queuedRetries >= threshold;
+}
+
 export async function fanOut(
   masterId: string,
-  opts: { platforms?: string[]; assetId?: string | null; actor: string },
+  opts: { platforms?: string[]; assetId?: string | null; actor: string; enqueueRetry?: boolean },
 ): Promise<FanResult[]> {
   const db = admin();
   const { data: item } = await db.from("content_items")
@@ -58,7 +69,41 @@ export async function fanOut(
   const lang = (item.lang === "ms" ? "ms" : "en") as KitLang;
   for (const platform of wanted) {
     if (done.has(platform)) continue;
-    const adapted = adaptCaption(master.body as string, platform as Platform);
+    try {
+      results.push(await fanOutOne(db, masterId, item, master.body as string, media, meta, platform, lang, opts));
+    } catch (err) {
+      // One platform's failure no longer sinks the rest (Wave 4 item 4):
+      // queue a retry unless this IS the retry.
+      if (opts.enqueueRetry !== false) {
+        await db.from("jobs").insert({
+          kind: "fanout_platform",
+          payload: { parent: masterId, platform, asset_id: opts.assetId ?? null },
+          status: "queued",
+          created_by: opts.actor,
+        });
+      }
+      results.push({
+        platform: platform as Platform, content_id: "", kit: isKitPlatform(platform), body: "",
+        notes: [err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200)],
+        findings: [], complianceOk: false, retryQueued: opts.enqueueRetry !== false,
+      });
+    }
+  }
+  return results;
+}
+
+async function fanOutOne(
+  db: ReturnType<typeof admin>,
+  masterId: string,
+  item: { post_type: string; lang: string; pillar: string | null; title: string | null; scheduled_at: string | null },
+  masterBody: string,
+  media: Media[],
+  meta: { kind: "photo" | "video"; duration_s?: number | null; bytes?: number | null } | undefined,
+  platform: string,
+  lang: KitLang,
+  opts: { assetId?: string | null; actor: string },
+): Promise<FanResult> {
+    const adapted = adaptCaption(masterBody as string, platform as Platform);
     const findings = validatePlatform({ platform: platform as Platform, body: adapted.body, media: meta });
     const kit = isKitPlatform(platform);
     // TikTok / YouTube kits ship a shooting script: hook + beats + the risk
@@ -94,10 +139,8 @@ export async function fanOut(
     if (kit) {
       await db.from("content_items").update({ desk_state: "kit", desk_state_at: new Date().toISOString() }).eq("id", draft.content_id);
     }
-    results.push({
+    return {
       platform: platform as Platform, content_id: draft.content_id, kit, body: adapted.body,
       notes: adapted.notes, findings, complianceOk: draft.compliance.ok, script_kit: scriptKitText,
-    });
-  }
-  return results;
+    };
 }

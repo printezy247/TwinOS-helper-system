@@ -158,6 +158,8 @@ export interface FanResult {
   complianceOk: boolean;
   /** TikTok / YouTube shooting script (Wave 3 item 7), rendered for the Desk. */
   script_kit?: string | null;
+  /** The platform failed and a retry job was queued (Wave 4 item 4). */
+  retryQueued?: boolean;
 }
 
 const NAMES: Record<string, string> = {
@@ -173,7 +175,9 @@ export function fanoutSummary(masterShort: string, results: FanResult[]): string
     const name = NAMES[r.platform] ?? r.platform;
     const blocking = r.findings.filter((f) => f.severity === "blocking").map((f) => f.message);
     const note = r.notes.length ? ` (${r.notes.map(esc).join("; ")})` : "";
-    if (!r.complianceOk) {
+    if (r.retryQueued) {
+      lines.push(`• ${name} — failed, retry queued${note}`);
+    } else if (!r.complianceOk) {
       lines.push(`• ${name} — blocked by the compliance check, edit it in the dashboard${note}`);
     } else if (blocking.length) {
       lines.push(`• ${name} — ⚠️ ${blocking.map(esc).join("; ")}${note}`);

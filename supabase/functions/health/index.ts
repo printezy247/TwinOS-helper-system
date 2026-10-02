@@ -13,13 +13,13 @@
 import { serve, json, readJson, routeOf, reqString, oneOf, optString, bad } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
-import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
+import { admin, requireSetting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import { logAction } from "_shared/log.ts";
 import { tokenWarnings } from "_shared/meta.ts";
 import { sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
 import { runProviderChecks } from "_shared/providers.ts";
-import { deskAlert } from "_shared/alerts.ts";
+import { deskAlert, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
 
 const SOURCES = ["ezyai", "ops_bot", "scheduler", "pc_worker", "poller", "abdul", "sales_bot"] as const;
 const STALE_DEFAULT_MIN: Record<string, number> = {
@@ -31,7 +31,7 @@ async function latestBeats() {
   const out: Record<string, { status: string; at: string; detail: unknown; stale: boolean; stale_after_min: number }> = {};
   for (const source of SOURCES) {
     const { data } = await db.from("health_checks").select("status, detail, at").eq("source", source).order("at", { ascending: false }).limit(1).maybeSingle();
-    const staleMin = Number((await setting(`health_stale_${source}`)) ?? STALE_DEFAULT_MIN[source]);
+    const staleMin = Number((await settingTyped(`health_stale_${source}`)) ?? STALE_DEFAULT_MIN[source]);
     const at = data?.at ?? null;
     const stale = !at || Date.now() - Date.parse(at) > staleMin * 60_000;
     out[source] = { status: data?.status ?? "never", at: at ?? "", detail: data?.detail ?? null, stale, stale_after_min: staleMin };
@@ -146,6 +146,21 @@ serve(async (req) => {
       } else {
         await deskAlert({ db, key: src, kind: "provider_down", severity: "high", message: `⚠️ ${r.provider} check failed: ${r.detail}` });
       }
+    }
+    // Webhook handler failures cluster when Telegram or the database misbehaves:
+    // past the threshold the Desk hears once (deskAlert dedupes inside cooldown).
+    const { count: updateFailures } = await db.from("action_log")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "tg.update_failed")
+      .gte("created_at", new Date(Date.now() - UPDATE_FAILURE_WINDOW_MS).toISOString());
+    if (updateFailuresExceeded(updateFailures ?? 0)) {
+      await deskAlert({
+        db,
+        key: "tg-update-failures",
+        kind: "webhook_failures",
+        severity: "high",
+        message: `\u26A0\uFE0F The Desk webhook failed ${updateFailures} times in the last hour. Check the tg-webhook logs.`,
+      });
     }
     await db.from("health_checks").insert({ source: "poller", status: "ok", detail: { checked: SOURCES.length, stale: stale.map(([s]) => s) } });
     return json({ ok: true, stale: stale.map(([s]) => s), providers: live, changed });

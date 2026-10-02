@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
 import {
-  casBanned, evaluate, isQuestion, ladder, matchRepeat, type ModRule, normalizeQuestion, similarity,
+  casBanned, evaluate, floodWindowS, isQuestion, ladder, matchRepeat, type ModRule, normalizeQuestion, similarity,
 } from "./moderation.ts";
 
 const RULES: ModRule[] = [
@@ -62,6 +62,16 @@ Deno.test("evaluate: our own domains pass for a new member; a handle does not", 
   assertEquals(evaluate(ctx({ text: "join t.me/ezymap or https://evil.example", ...fresh }), RULES, 0).final, "delete");
   assertEquals(evaluate(ctx({ text: "dm @scammer_handle", ...fresh }), RULES, 0).final, "delete");
   assertEquals(evaluate(ctx({ text: "look", hasLinkEntity: true, ...fresh }), RULES, 0).final, "delete");
+});
+
+Deno.test("flood window: the widest enabled flood rule wins, default ten seconds", () => {
+  assertEquals(floodWindowS(RULES), 10);
+  assertEquals(floodWindowS([]), 10);
+  const wide: ModRule[] = [
+    ...RULES,
+    { key: "flood2", kind: "flood", patterns: [], params: { max_msgs: 8, window_s: 30 }, action: "mute", enabled: true },
+  ];
+  assertEquals(floodWindowS(wide), 30);
 });
 
 Deno.test("evaluate: more than five messages in ten seconds is a ten-minute mute", () => {
