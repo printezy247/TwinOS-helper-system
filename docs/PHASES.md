@@ -22,7 +22,7 @@ Exit: schema reviewed; baseline logged.
 - [x] API keys minted for pc_worker, abdul, ezyai (2 Oct, `./scripts/mint-keys.sh`; keys live in the keyring and ride on `X-TwinOS-Key`). The ezyai key still has to be copied to the signal bot host by Jack
 - [x] @EzyOps_bot created; token in keyring and function secrets
 - [x] EzyMap Desk group created (Jack + bot); chat ids in `settings`
-- [x] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean (redeploy with `scripts/deploy.sh` after each merge that touches functions)
+- [x] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean (redeploy with `scripts/deploy.sh` after each merge that touches functions, then run `scripts/desk-tour.sh`: it walks /status, /friday, /hours today, /batch, /help, makes one draft, fans it out, rejects every post it made and checks nothing was queued to publish; `--dry-run` prints the payloads only)
 - [x] Cron schedules installed (publish, health/check, stop-if, friday, backup, keep-alive)
 - [x] Lovable project created (frontend-only, Jack's Supabase via public key, no Lovable Cloud), knowledge set — 2 Oct; GitHub sync optional (own repo)
 - [ ] Reference-channel benchmark study + `benchmarks` seed + high-capital ICP note — research task

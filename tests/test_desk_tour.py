@@ -47,7 +47,7 @@ class DeskTourTest(unittest.TestCase):
 
     def test_hours_is_read_only(self):
         # "/hours today" reads; "/hours <task> <minutes>" would write a baseline row.
-        for cmd in re.findall(r"/hours[^\"'\n]*", self.src):
+        for cmd in re.findall(r"/hours[^\"',\n]*", self.src):
             if cmd.strip() == "/hours":
                 continue
             self.assertEqual(cmd.strip(), "/hours today", cmd)
