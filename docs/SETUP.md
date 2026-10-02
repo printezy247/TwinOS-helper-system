@@ -302,6 +302,16 @@ one (step 0.3). There is no public registration.
 it on the phone without the Lovable login, press **Publish** in the editor; the
 app still needs your Supabase login, and RLS guards the data.
 
+### 4.1 Discussion group moderation (Phase 4)
+1. Link a discussion group to the @ezymap channel (channel settings → Discussion). Add `@EzyOps_bot` to the group as an **admin** with *Delete messages*, *Ban users* and *Invite users via link* (restrict is part of ban).
+2. Put the group's chat id in `settings` (a negative number, `-100…`):
+   ```sql
+   update settings set value = '-1001234567890' where key = 'discussion_group_chat_id';
+   ```
+3. The rules are the `mod_rules` rows from the seed. Read them in the dashboard or SQL (`select key, kind, action, enabled from mod_rules;`); switch one off with `update mod_rules set enabled = false where key = '…';`.
+4. What the bot does, and never does: scam phrases are deleted with a warning (second strike: a 24 hour mute, third: ban); a member younger than 24 hours cannot post links or handles (t.me/ezymap and printezy.money pass); a name that copies Jack's or EzyMap's is **flagged to the Desk and nothing is removed**; a question asked twice is posted to the Desk for the FAQ sheet (`select * from v_repeat_questions;`). Jack and group admins are never moderated. It reads no member text with AI.
+5. Join requests: create invite links with *approval required* (`POST /links` with `creates_join_request`). Each request is checked against cas.chat; a banned account is declined and logged, everyone else gets a private "I am a person" button and is let in when they tap it.
+
 ### 0.11 Baseline week, price list, benchmark study
 Not technical: log hours by task for one week (`baseline_hours`), decide the monthly price list (§16 Q2) and give the five reference-channel handles (§16 Q1).
 

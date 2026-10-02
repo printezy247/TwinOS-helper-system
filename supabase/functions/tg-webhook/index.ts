@@ -25,11 +25,14 @@ import { logAction } from "_shared/log.ts";
 import { fanOut } from "_shared/fanout.ts";
 import { fanoutSummary } from "_shared/platforms.ts";
 import { readyToApprove, summaryLines, sweepPlan, type SweepItem } from "_shared/batch.ts";
+import {
+  casLookup, evaluate, isQuestion, matchRepeat, type ModRule, normalizeQuestion, similarity,
+} from "_shared/moderation.ts";
 
 const ACTOR = "ops_bot";
 
 /* ------------------------------ types ------------------------------ */
-interface User { id: number; is_bot?: boolean; username?: string; first_name?: string }
+interface User { id: number; is_bot?: boolean; username?: string; first_name?: string; last_name?: string }
 interface Chat { id: number; type: string; title?: string }
 interface Message {
   message_id: number;
@@ -61,7 +64,7 @@ interface Update {
   callback_query?: { id: string; from: User; data?: string; message?: Message };
   chat_member?: ChatMemberUpdated;
   my_chat_member?: ChatMemberUpdated;
-  chat_join_request?: { chat: Chat; from: User; date: number; invite_link?: { invite_link: string; name?: string } };
+  chat_join_request?: { chat: Chat; from: User; user_chat_id?: number; date: number; invite_link?: { invite_link: string; name?: string } };
   message_reaction_count?: { chat: Chat; message_id: number; date: number; reactions: Array<{ type: { type: string; emoji?: string }; total_count: number }> };
 }
 
@@ -91,6 +94,7 @@ function largestPhoto(m: Message): string | undefined {
 
 /* ------------------------------ callback buttons ------------------------------ */
 async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<void> {
+  if (cq.data?.startsWith("cap:")) { await onCaptcha(cq); return; }
   const jack = await jackId();
   // callback_data is client-controlled: only Jack's id may press (ASAP decision.py).
   if (cq.from.id !== jack) {
@@ -474,49 +478,160 @@ async function onMember(u: ChatMemberUpdated, kind: "chat_member" | "my_chat_mem
   });
 }
 
+/** The enabled moderation rules (seeded in mod_rules; docs/SETUP.md Phase 4). */
+async function modRules(): Promise<ModRule[]> {
+  const { data } = await admin().from("mod_rules").select("key, kind, patterns, params, action, enabled").eq("enabled", true);
+  return (data ?? []).map((r) => ({
+    key: r.key as string, kind: r.kind as string, patterns: (r.patterns as string[] | null) ?? [],
+    params: (r.params as Record<string, unknown> | null) ?? {}, action: r.action as string, enabled: true,
+  }));
+}
+
+const NOTED: Record<string, string> = { flag: "flagged", delete: "deleted", warn: "warned", mute: "muted", ban: "banned" };
+
+/**
+ * A join request: CAS first (a banned account is declined and logged), then the
+ * captcha through Telegram's join-request flow (a button the person taps in a
+ * private message from the bot; only then are they let in). With no captcha
+ * rule enabled the request is approved once CAS has passed.
+ */
 async function onJoinRequest(r: NonNullable<Update["chat_join_request"]>) {
-  await admin().from("member_events").insert({
+  const db = admin();
+  await db.from("member_events").insert({
     chat_id: r.chat.id, user_id: r.from.id, username: r.from.username ?? null, event: "chat_join_request",
     old_status: null, new_status: "requested", invite_link: r.invite_link?.invite_link ?? null,
     invite_link_name: r.invite_link?.name ?? null, at: new Date(r.date * 1000).toISOString(),
   });
-  // TODO(phase4): CAS check + captcha before approveChatJoinRequest (plan §9.I.72–73).
+  const rules = await modRules();
+  const cas = rules.find((x) => x.kind === "cas");
+  if (cas && (await casLookup(r.from.id)) === true) {
+    try { await tg.declineChatJoinRequest(r.chat.id, r.from.id); } catch (err) { console.warn("[join] decline failed", err); }
+    await db.from("moderation_events").insert({
+      chat_id: r.chat.id, user_id: r.from.id, rule_key: cas.key, action_taken: "cas_blocked",
+      detail: "on the CAS ban list", hits: [{ rule: cas.key, action: "ban" }], at: new Date().toISOString(),
+    });
+    return;
+  }
+  const captcha = rules.find((x) => x.kind === "captcha");
+  if (!captcha) { await tg.approveChatJoinRequest(r.chat.id, r.from.id); return; }
+  const dm = r.user_chat_id ?? r.from.id;
+  try {
+    await tg.sendMessage(dm, `Welcome to ${tg.escapeHtml(r.chat.title ?? "EzyMap")}. Tap the button to confirm you are a person and you are in.`, {
+      parse_mode: "HTML",
+      buttons: [[{ text: "I am a person, let me in", callback_data: `cap:${r.chat.id}:${r.from.id}` }]],
+    });
+  } catch (err) {
+    console.warn("[join] could not send the captcha", err);
+  }
+}
+
+/** The captcha button. Only the person who asked to join can press it. */
+async function onCaptcha(cq: NonNullable<Update["callback_query"]>): Promise<void> {
+  const m = /^cap:(-?\d+):(\d+)$/.exec(cq.data ?? "");
+  if (!m) return;
+  const chatId = Number(m[1]);
+  const userId = Number(m[2]);
+  if (cq.from.id !== userId) { await tg.answerCallbackQuery(cq.id, "This button is for someone else.", true); return; }
+  try {
+    await tg.approveChatJoinRequest(chatId, userId);
+    // Telegram answers an approval with a chat_member update, which onMember records as the join.
+    await tg.answerCallbackQuery(cq.id, "Welcome! You are in.");
+  } catch {
+    await tg.answerCallbackQuery(cq.id, "That request has expired. Ask to join again.", true);
+  }
 }
 
 /* ------------------------------ discussion group moderation ------------------------------ */
+/**
+ * Pattern rules only (plan §6: no AI on member text), through _shared/moderation.ts.
+ * Jack and chat admins are never moderated. Every action is recorded in
+ * moderation_events with only a 200-character excerpt. Flood control needs a
+ * per-message counter that is not stored yet, so `recent` is 1 here (docs/PHASES.md).
+ */
 async function onDiscussionMessage(m: Message) {
+  if (!m.from || m.from.is_bot) return;
   const db = admin();
   const text = m.text ?? m.caption ?? "";
-  const { data: rules } = await db.from("mod_rules").select("id, kind, pattern, action, enabled").eq("enabled", true);
-  const hasLink = /(?:https?:\/\/|t\.me\/|@[a-z0-9_]{5,})/i.test(text) ||
-    (m.entities ?? []).some((e) => e.type === "url" || e.type === "text_link" || e.type === "mention");
-  const hits: Array<{ rule: string; action: string }> = [];
-  for (const r of rules ?? []) {
-    if (r.kind === "keyword" && r.pattern && new RegExp(r.pattern, "i").test(text)) hits.push({ rule: r.id, action: r.action });
-    if (r.kind === "link_new_member" && hasLink) {
-      const { count } = await db.from("member_events").select("id", { count: "exact", head: true })
-        .eq("chat_id", m.chat.id).eq("user_id", m.from?.id ?? 0).eq("new_status", "member")
-        .gte("at", new Date(Date.now() - 7 * 86400_000).toISOString());
-      if ((count ?? 0) > 0) hits.push({ rule: r.id, action: r.action });
-    }
-    if (r.kind === "impersonation" && m.from && /\b(?:jack|ezymap)\b/i.test(`${m.from.first_name ?? ""} ${m.from.username ?? ""}`)) {
-      hits.push({ rule: r.id, action: "flag" });
-    }
+  const rules = await modRules();
+  if (!rules.length) return;
+
+  const { data: joined } = await db.from("member_events").select("at")
+    .eq("chat_id", m.chat.id).eq("user_id", m.from.id).eq("new_status", "member")
+    .order("at", { ascending: false }).limit(1).maybeSingle();
+  const { count: strikes } = await db.from("moderation_events").select("id", { count: "exact", head: true })
+    .eq("chat_id", m.chat.id).eq("user_id", m.from.id).in("action_taken", ["warned", "muted"])
+    .gte("occurred_at", new Date(Date.now() - 30 * 86_400_000).toISOString());
+
+  const ctx = {
+    text,
+    hasLinkEntity: (m.entities ?? []).some((e) => e.type === "url" || e.type === "text_link" || e.type === "mention"),
+    from: { id: m.from.id, first_name: m.from.first_name, last_name: m.from.last_name, username: m.from.username },
+    joinedAt: joined?.at ? Date.parse(joined.at as string) : null,
+    recent: 1,
+    isAdmin: m.from.id === await jackId(),
+    now: Date.now(),
+  };
+  let verdict = evaluate(ctx, rules, strikes ?? 0);
+
+  if (verdict.final) {
+    try {
+      const member = await tg.getChatMember(m.chat.id, m.from.id);
+      if (member.status === "creator" || member.status === "administrator") verdict = evaluate({ ...ctx, isAdmin: true }, rules, 0);
+    } catch { /* if the lookup fails we moderate, the safe side for a group */ }
   }
-  if (!hits.length) return;
+
+  if (!verdict.final) {
+    await noteRepeatQuestion(m, text, rules);
+    return;
+  }
+
+  const final = verdict.final;
   await db.from("moderation_events").insert({
-    chat_id: m.chat.id, user_id: m.from?.id ?? null, message_id: m.message_id,
-    hits, text_excerpt: text.slice(0, 200), at: new Date(m.date * 1000).toISOString(),
+    chat_id: m.chat.id, user_id: m.from.id, message_id: m.message_id,
+    rule_key: verdict.hits[0].rule, action_taken: NOTED[final], detail: verdict.hits.map((h) => h.rule).join(", "),
+    hits: verdict.hits, text_excerpt: text.slice(0, 200), at: new Date(m.date * 1000).toISOString(),
   });
-  const strongest = hits.map((h) => h.action).includes("ban") ? "ban" : hits.map((h) => h.action).includes("mute") ? "mute" : hits.map((h) => h.action).includes("delete") ? "delete" : "flag";
   try {
-    if (strongest === "delete" || strongest === "mute" || strongest === "ban") await tg.deleteMessage(m.chat.id, m.message_id);
-    if (strongest === "mute" && m.from) await tg.restrictChatMember(m.chat.id, m.from.id, Math.floor(Date.now() / 1000) + 3600);
-    if (strongest === "ban" && m.from) await tg.banChatMember(m.chat.id, m.from.id);
+    if (verdict.deleteMessage) await tg.deleteMessage(m.chat.id, m.message_id);
+    if (final === "warn") {
+      await tg.sendMessage(m.chat.id, `⚠️ ${tg.escapeHtml(m.from.first_name ?? "Hi")}, that kind of message is not allowed here. The next one is a 24 hour mute.`, { parse_mode: "HTML" });
+    }
+    if (final === "mute") await tg.restrictChatMember(m.chat.id, m.from.id, Math.floor(Date.now() / 1000) + verdict.muteSeconds);
+    if (final === "ban") await tg.banChatMember(m.chat.id, m.from.id);
+    if (final === "flag") {
+      const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
+      const who = `${m.from.first_name ?? ""}${m.from.username ? ` (@${m.from.username})` : ""}`.trim();
+      await tg.sendMessage(desk, `🚩 A name that looks like yours or EzyMap's just posted in the group: <b>${tg.escapeHtml(who)}</b>. Nothing was removed. Check it.`, { parse_mode: "HTML" });
+    }
   } catch (err) {
     console.warn("[moderation] action failed", err);
   }
-  // No AI on group text (plan §6): only pattern rules, only the excerpt stored.
+}
+
+/**
+ * A question asked twice goes to the FAQ sheet (v_repeat_questions). Every
+ * question is stored once, reduced to its words; the Desk hears about it the
+ * second time, not the third.
+ */
+async function noteRepeatQuestion(m: Message, text: string, rules: ModRule[]): Promise<void> {
+  const rule = rules.find((r) => r.kind === "repeat_question");
+  if (!rule || !m.from || text.length < 12 || !isQuestion(text)) return;
+  const db = admin();
+  const days = Number(rule.params.window_days ?? 14);
+  const min = Number(rule.params.min_similarity ?? 0.8);
+  const key = normalizeQuestion(text);
+  if (!key) return;
+  const { data: seen } = await db.from("moderation_events").select("detail, user_id")
+    .eq("rule_key", rule.key).gte("occurred_at", new Date(Date.now() - days * 86_400_000).toISOString()).limit(500);
+  const earlier = (seen ?? []).filter((s) => similarity((s.detail as string) ?? "", key) >= min);
+  await db.from("moderation_events").insert({
+    chat_id: m.chat.id, user_id: m.from.id, message_id: m.message_id, rule_key: rule.key, action_taken: "flagged",
+    detail: key, hits: [{ rule: rule.key, action: "flag" }], text_excerpt: text.slice(0, 200), at: new Date(m.date * 1000).toISOString(),
+  });
+  if (earlier.length === 1 && matchRepeat(earlier.map((e) => ({ detail: (e.detail as string) ?? "" })), text, min)) {
+    const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
+    await tg.sendMessage(desk, `❓ A question was asked twice in the group:\n<code>${tg.escapeHtml(text.slice(0, 200))}</code>\nAdd it to the FAQ reply sheet.`, { parse_mode: "HTML" });
+  }
 }
 
 /* ------------------------------ reactions ------------------------------ */

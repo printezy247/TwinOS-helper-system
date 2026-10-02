@@ -290,6 +290,10 @@ export function restrictChatMember(
   });
 }
 
+export function getChatMember(chat_id: number | string, user_id: number) {
+  return call<{ status: string }>("getChatMember", { chat_id, user_id });
+}
+
 export function banChatMember(chat_id: number | string, user_id: number) {
   return call<true>("banChatMember", { chat_id, user_id });
 }

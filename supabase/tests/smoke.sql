@@ -580,5 +580,24 @@ begin
   raise notice 'ok: hours cut and fan-out views';
 end $$;
 
+-- 19. repeat questions are counted per question for the FAQ sheet (0022)
+do $$
+declare r record;
+begin
+  insert into public.moderation_events (chat_id, user_id, rule_key, action_taken, detail, text_excerpt, occurred_at) values
+    (-1001, 11, 'repeat_question', 'flagged', 'loss set stop', 'How do I set my stop loss?', now() - interval '3 days'),
+    (-1001, 12, 'repeat_question', 'flagged', 'loss set stop', 'how to set stop-loss', now() - interval '1 day'),
+    (-1001, 13, 'repeat_question', 'flagged', 'loss set stop', 'where do I set the stop loss', now()),
+    (-1001, 14, 'repeat_question', 'flagged', 'plan price pro', 'price of the pro plan?', now()),
+    (-1001, 15, 'repeat_question', 'flagged', 'old question', 'an old one', now() - interval '40 days'),
+    (-1001, 16, 'scam_keywords_en', 'warned', 'x', 'not a question', now());
+  select * into r from public.v_repeat_questions where detail = 'loss set stop';
+  assert r.times_asked = 3, 'three askers of the same question: ' || coalesce(r.times_asked::text, 'null');
+  assert r.askers = 3, 'three different members';
+  assert not exists (select 1 from public.v_repeat_questions where detail = 'plan price pro'), 'asked once is not a repeat';
+  assert not exists (select 1 from public.v_repeat_questions where detail = 'old question'), 'older than 14 days is outside the window';
+  raise notice 'ok: v_repeat_questions';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
