@@ -22,7 +22,7 @@ ring() { secret-tool lookup service twinos key "$1" 2>/dev/null || true; }
 
 query() {
   local out
-  if ! out="$(supabase db query --linked "$1" 2>&1)"; then
+  if ! out="$(supabase db query --linked --output-format json "$1" 2>&1)"; then
     die "db query failed (is the Supabase CLI logged in and linked? try: supabase projects list)"
   fi
   printf '%s' "$out"
