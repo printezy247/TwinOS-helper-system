@@ -61,7 +61,9 @@ for fn in content approve publish signals-ingest results health friday jobs link
   # 401/403 = deployed and refusing an anonymous caller. 404 = not deployed.
   case "$code" in 401|403) echo "ok   $fn ($code)";; *) echo "FAIL $fn ($code)"; fail=1;; esac
 done
-for fn in tg-webhook tv-webhook tg-auth; do
+# tg-auth has no bare route (unknown route = 400 by design): probe GET /me,
+# which refuses a caller without a Mini App session (401).
+for fn in tg-webhook tv-webhook tg-auth/me; do
   code="$(curl -s -o /dev/null -w '%{http_code}' "https://$REF.supabase.co/functions/v1/$fn")"
   case "$code" in 200|401|403|405) echo "ok   $fn ($code)";; *) echo "FAIL $fn ($code)"; fail=1;; esac
 done
