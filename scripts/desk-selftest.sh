@@ -45,10 +45,8 @@ setting() {
 }
 
 # --- preflight ---------------------------------------------------------------
-command -v supabase >/dev/null || die "the Supabase CLI is not installed (npm i -g supabase)"
-command -v secret-tool >/dev/null || die "secret-tool is missing (sudo apt install libsecret-tools)"
-command -v jq >/dev/null || die "jq is missing"
-command -v curl >/dev/null || die "curl is missing"
+# Dry-run needs only bash (CI has no keyring, no Supabase CLI). The live path
+# checks its own tools before it uses them.
 
 if [ "$DRY" = yes ]; then
   URL="https://placeholder.supabase.co"
@@ -56,6 +54,11 @@ if [ "$DRY" = yes ]; then
   DESK_ID="-1009999999999"
   SINCE="2026-10-02T00:00:00Z"
 else
+  command -v supabase >/dev/null || die "the Supabase CLI is not installed (npm i -g supabase)"
+  command -v secret-tool >/dev/null || die "secret-tool is missing (sudo apt install libsecret-tools)"
+  command -v jq >/dev/null || die "jq is missing"
+  command -v curl >/dev/null || die "curl is missing"
+
   URL="$(ring url)"; TOKEN="$(ring ops_bot_token)"
   [ -n "$URL" ] || die "keyring entry 'url' is missing (docs/SETUP.md 0.2)"
   [ -n "$TOKEN" ] || die "keyring entry 'ops_bot_token' is missing (docs/SETUP.md 0.5)"

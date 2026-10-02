@@ -43,6 +43,26 @@ class DeskSelftestTest(unittest.TestCase):
         self.assertNotIn('"data":"ok:', r.stdout)
         self.assertIn("DRY RUN", r.stdout)
 
+    def test_dry_run_needs_no_tools_beyond_coreutils(self):
+        # CI has no supabase CLI and no secret-tool: run the dry-run with a
+        # PATH that contains only the tools it is allowed to need.
+        import os
+        import shutil
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            for tool in ("bash", "cat", "date", "cut"):
+                src = shutil.which(tool)
+                self.assertIsNotNone(src, f"{tool} missing on this machine")
+                os.symlink(src, os.path.join(d, tool))
+            r = subprocess.run(
+                ["bash", str(SCRIPT), "--dry-run"],
+                capture_output=True, text=True, timeout=60,
+                env={"PATH": d},
+            )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("DRY RUN", r.stdout)
+
     def test_update_ids_stay_above_telegrams(self):
         # Real update_ids are ~1e10; synthetic ones must never collide.
         self.assertIn("900000000000", self.src)
