@@ -54,7 +54,7 @@ VIDEO_EXT = {".mp4", ".mov", ".webm"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 # Live recordings are often OBS .mkv; they live in LIVES_DIR, not the drop folder, so VIDEO_EXT stays as it is.
 LIVE_EXT = VIDEO_EXT | {".mkv", ".flv", ".ts"}
-KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "research_batch", "scorecard_image", "llm_variants"]
+KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "clip_candidates", "research_batch", "scorecard_image", "llm_variants"]
 LLM_ANGLES = 3
 
 
@@ -267,6 +267,18 @@ def job_clip(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
         src = found
     if not src.exists():
         raise RuntimeError(f"source not found: {src}")
+    if payload.get("clip_start") is not None and payload.get("clip_end") is not None:
+        # A Desk-approved candidate window: cut exactly it, no transcription.
+        from studio import moments  # noqa: WPS433 (optional dependency)
+
+        start, end = float(payload["clip_start"]), float(payload["clip_end"])
+        out = src.parent / "clips" / f"{src.stem}_{int(start)}-{int(end)}.mp4"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        exe = shutil.which("ffmpeg")
+        if not exe:
+            raise RuntimeError("ffmpeg not on PATH")
+        subprocess.run(moments.window_cut_command(exe, src, start, end, out), check=True, capture_output=True)
+        return {"file": out.name, "start": start, "end": end, "candidate_cut": True}
     box = payload.get("face_box")
     return clipper.run(
         src, lang=payload.get("lang", "en"), max_clips=int(payload.get("max_clips", 5)),
@@ -376,11 +388,39 @@ def job_llm_variants(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     return {"variants": variants}
 
 
+def job_clip_candidates(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
+    """Wave 4 item 3: scene splits + transcript bursts → ranked moments.
+
+    Nothing is cut here: moments wait for Jack in clip_candidates and the
+    Desk use tap queues the cut. Needs ffmpeg + faster-whisper on the PC.
+    """
+    try:
+        from studio import moments  # noqa: WPS433 (optional dependency)
+    except ImportError as e:
+        raise RuntimeError(f"studio extras not installed (pip install -r requirements.txt): {e}") from e
+    raw = payload.get("path")
+    src = Path(str(raw)).expanduser() if raw else None
+    if src is None or not src.exists():
+        source, date = str(payload.get("source") or "tiktok"), str(payload.get("date") or "")
+        found = find_recording(LIVES_DIR, source, date) if date else None
+        if found is None:
+            raise RuntimeError(f"no {source} recording for {date or 'that day'} in {LIVES_DIR}")
+        src = found
+    found_moments = moments.find_moments(src, lang=str(payload.get("lang") or "en"),
+                                         max_moments=int(payload.get("max_moments", 5)))
+    return {"source_path": str(src), "candidates": [
+        {"start_s": m["start"], "end_s": m["end"], "score": m["score"],
+         "reason": m["reason"], "hook_text": None}
+        for m in found_moments
+    ]}
+
+
 HANDLERS: dict[str, Callable[[Api, dict[str, Any]], dict[str, Any]]] = {
     "drop_folder_watch": job_drop_folder_watch,
     "telechurn_import": job_telechurn_import,
     "backup": job_backup,
     "clip": job_clip,
+    "clip_candidates": job_clip_candidates,
     "research_batch": job_research_batch,
     "scorecard_image": job_scorecard_image,
     "llm_variants": job_llm_variants,

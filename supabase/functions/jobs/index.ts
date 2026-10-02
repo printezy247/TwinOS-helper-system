@@ -23,11 +23,12 @@ import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { aiNumberGuard, check as complianceCheck } from "_shared/compliance.ts";
 import { logAction } from "_shared/log.ts";
+import { nextHook } from "_shared/hooks.ts";
 import * as tg from "_shared/tg.ts";
 
 export const JOB_KINDS = [
   "drop_folder_watch", "telechurn_import", "backup", "clip", "research_batch",
-  "rewrite", "result_reply", "scorecard_image", "thumbnail", "llm_variants",
+  "rewrite", "result_reply", "scorecard_image", "thumbnail", "llm_variants", "clip_candidates",
 ] as const;
 const ASSETS_BUCKET = "assets";
 const STALE_CLAIM_MIN = 30;
@@ -176,6 +177,47 @@ serve(async (req) => {
             `<b>${shown} angles</b> from the local model for <code>#${tg.escapeHtml(contentId.slice(0, 8))}</code> (blocked ones kept out):\n${lines.join("\n")}`,
             { parse_mode: "HTML", buttons: buttons.slice(0, 6) },
           );
+        }
+      }
+      // Clip candidates wait for Jack: each moment lands in clip_candidates
+      // with a hook line, and the Desk gets Use / Drop buttons per moment.
+      if (ok && job.kind === "clip_candidates" && Array.isArray(result.candidates)) {
+        const p = job.payload as Record<string, unknown>;
+        const lang = p.lang === "ms" ? "ms" : "en";
+        const stamp = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+        const lines: string[] = [];
+        const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+        for (const c of (result.candidates as Array<Record<string, unknown>>).slice(0, 8)) {
+          const start = Number(c.start_s);
+          const end = Number(c.end_s);
+          if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+          const hook = await nextHook(db, { pillar: null, lang });
+          const { data: row } = await db.from("clip_candidates").insert({
+            job_id,
+            source_path: String(result.source_path ?? p.path ?? ""),
+            start_s: start,
+            end_s: end,
+            score: Number(c.score ?? 0),
+            reason: String(c.reason ?? "").slice(0, 300),
+            hook_text: hook?.text ?? null,
+          }).select("id").maybeSingle();
+          if (!row?.id || typeof row.id !== "string") continue;
+          const short = row.id.replace(/-/g, "").slice(0, 8);
+          lines.push(
+            `🎬 <code>${short}</code> ${stamp(start)}\u2013${stamp(end)} (score ${Number(c.score ?? 0)}): ` +
+            `${tg.escapeHtml(String(c.reason ?? ""))}` +
+            (hook ? `\nopen: ${tg.escapeHtml(hook.text)}` : ""),
+          );
+          buttons.push([
+            { text: `Use ${short}`, callback_data: "clip:" + short + ":use" },
+            { text: `Drop ${short}`, callback_data: "clip:" + short + ":drop" },
+          ]);
+        }
+        if (lines.length) {
+          const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
+          await tg.sendMessage(desk, `<b>Clip candidates</b> (tap Use to cut, Drop to discard):\n${lines.join("\n")}`, {
+            parse_mode: "HTML", buttons: buttons.slice(0, 8),
+          });
         }
       }
       await logAction({ actor: caller.actor, action: `job.${final}`, target: job_id, payload: { kind: job.kind, error } });

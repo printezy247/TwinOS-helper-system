@@ -660,5 +660,15 @@ begin
   raise notice 'ok: first comment queue';
 end $$;
 
+-- 23. clip candidates wait for Jack before anything is cut (0030)
+do $$
+begin
+  assert (select count(*) from information_schema.columns
+    where table_name = 'clip_candidates'
+    and column_name in ('source_path', 'start_s', 'end_s', 'score', 'reason', 'hook_text', 'status', 'content_id')) = 8,
+    'candidate columns exist';
+  raise notice 'ok: clip candidates';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
