@@ -15,6 +15,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from .layouts import _drawtext_escape  # one escaper for every drawtext overlay
+
 KEYWORDS = (
     "stop loss", "take profit", "entry", "risk", "zone", "gold", "xauusd",
     "breakout", "bias", "liquidity", "drawdown", "lot size", "sl ", "tp ",
@@ -101,11 +103,6 @@ def window_cut_command(ff: str, source: str | Path, start_s: float, end_s: float
         raise ValueError(f"bad window {start_s}..{end_s}")
     return [ff, "-y", "-ss", f"{start_s:.2f}", "-to", f"{end_s:.2f}", "-i", str(source),
             "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", str(dest)]
-
-
-def _drawtext_escape(text: str) -> str:
-    """A quote or backslash must not break the drawtext filter expression."""
-    return text.replace("\\", "\\\\").replace("'", "\\'")
 
 
 def cover_command(ff: str, source: str | Path, at_s: float, dest: str | Path, text: str) -> list[str]:

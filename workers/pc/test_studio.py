@@ -200,8 +200,12 @@ class CoverThumbnail(unittest.TestCase):
         self.assertEqual(cmd[-1], "/tmp/cover.jpg")
 
     def test_the_text_is_escaped_so_a_quote_cannot_break_the_filter(self):
-        cmd = " ".join(moments.cover_command("ffmpeg", "/tmp/live.mp4", 1, "/tmp/cover.jpg", "it's a trap"))
-        self.assertIn("it\\'s", cmd)
+        # ffmpeg does not honour \' inside a quoted drawtext value, and reads
+        # ':' and '%' as syntax: the same escaping as the layout overlays.
+        cmd = moments.cover_command("ffmpeg", "/tmp/live.mp4", 1, "/tmp/cover.jpg", "Don't chase: 50% off")
+        vf = cmd[cmd.index("-vf") + 1]
+        self.assertIn("Don’t chase\\: 50\\% off", vf)
+        self.assertEqual(vf.count("'"), 2, vf)  # only the two quotes around the text
 
 
 if __name__ == "__main__":

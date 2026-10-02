@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects } from "std/assert/mod.ts";
-import { mintSession, parseInitData, verifyInitData, verifySession } from "./miniapp.ts";
+import { mintSession, parseInitData, SESSION_TTL_MS, verifyInitData, verifySession } from "./miniapp.ts";
 
 // Wave 4 item 1: the Mini App proves Jack's Telegram id (initData HMAC) and
 // gets a short-lived session the functions accept as Jack.
@@ -10,9 +10,9 @@ const NOW = new Date("2026-10-03T12:00:00Z").getTime();
 async function signedInitData(userId: number, authDate: number): Promise<string> {
   // Telegram's algorithm (mirrored, not imported: the test must pin it).
   const tokenKey = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(BOT_TOKEN), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    "raw", new TextEncoder().encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
-  const secretBytes = await crypto.subtle.sign("HMAC", tokenKey, new TextEncoder().encode("WebAppData"));
+  const secretBytes = await crypto.subtle.sign("HMAC", tokenKey, new TextEncoder().encode(BOT_TOKEN));
   const secret = await crypto.subtle.importKey(
     "raw", secretBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
@@ -53,4 +53,23 @@ Deno.test("parse keeps every field and the hash apart", () => {
   assertEquals(hash, "abc");
   assertEquals(fields["auth_date"], "1");
   assert(!("hash" in fields));
+});
+
+// Independent vector: signed with Python's hmac module per Telegram's spec
+// (secret = HMAC_SHA256(key="WebAppData", msg=bot_token)), not with this file's
+// helper, so a mirrored mistake in both cannot pass.
+const PY_VECTOR =
+  "user=%7B%22id%22%3A6282941580%2C%22first_name%22%3A%22Jack%22%7D&auth_date=1790942340&hash=e6df2ff6dc5b289f7bcfdac5c9ae974426a1ab48fbea6432bbf0d7140c89968b";
+
+Deno.test("initData signed by Telegram's own algorithm (Python vector) verifies", async () => {
+  const v = await verifyInitData(PY_VECTOR, BOT_TOKEN, 1790942400_000);
+  assertEquals(v.user.id, 6282941580);
+});
+
+Deno.test("initData older than an hour is refused (replay window)", async () => {
+  await assertRejects(() => verifyInitData(PY_VECTOR, BOT_TOKEN, (1790942340 + 3601) * 1000));
+});
+
+Deno.test("a Mini App session lasts at most two hours", () => {
+  assert(SESSION_TTL_MS <= 2 * 3600_000);
 });

@@ -1,6 +1,8 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
 import {
   APPROVE_HOP_HEADERS,
+  promptStateExpired,
+  replaceRowsFor,
   buildApprovePayload,
   cancelKeyboard,
   DESK_STATES,
@@ -65,4 +67,35 @@ Deno.test("contract: the tg-webhook approve hop matches what approve re-checks (
   const payload = buildApprovePayload(ID, "approve", 6282941580, "cb:abc123");
   assertEquals(typeof (payload.telegram as { user_id: string }).user_id, "string");
   assertEquals((payload.telegram as { user_id: string }).user_id, "6282941580");
+});
+
+// Review 3 Oct: a rewritten card (desk_state 'rewritten', no timestamp) was
+// treated as an expired prompt, so Jack's edit to it was refused.
+Deno.test("promptStateExpired: only awaiting_* prompts expire", () => {
+  const now = Date.parse("2026-10-03T10:00:00Z");
+  assertEquals(promptStateExpired("rewritten", null, now), false);
+  assertEquals(promptStateExpired("kit", null, now), false);
+  assertEquals(promptStateExpired("awaiting_edit", null, now), true);
+  assertEquals(promptStateExpired("awaiting_time", "2026-10-03T09:50:00Z", now), false);
+  assertEquals(promptStateExpired("awaiting_slot", "2026-10-03T09:00:00Z", now), true);
+});
+
+// Review 3 Oct: tapping ✅ on one item of a shared panel (drafts list, angles,
+// clip candidates) replaced the whole keyboard, so every other item lost its
+// buttons. Only the tapped item's rows change on a shared keyboard.
+Deno.test("replaceRowsFor: a single card collapses; a shared panel keeps the other items", () => {
+  const A = "aaaaaaaa", B = "bbbbbbbb";
+  const stamp = [[{ text: "✅ Approved", callback_data: "nop" }]];
+  const card = [[{ text: "✅", callback_data: `ok:${A}` }, { text: "❌", callback_data: `no:${A}` }]];
+  assertEquals(replaceRowsFor(card, A, stamp), stamp);
+  const panel = [
+    [{ text: "1 ✅", callback_data: `ok:${A}` }, { text: "1 👁", callback_data: `vw:${A}` }],
+    [{ text: "2 ✅", callback_data: `ok:${B}` }, { text: "2 👁", callback_data: `vw:${B}` }],
+    [{ text: "🏠 Home", callback_data: "nav:home@abc" }],
+  ];
+  const out = replaceRowsFor(panel, A, stamp);
+  assertEquals(out[0], stamp[0]);
+  assertEquals(out[1], panel[1]);
+  assertEquals(out[2], panel[2]);
+  assertEquals(replaceRowsFor(undefined, A, stamp), stamp);
 });

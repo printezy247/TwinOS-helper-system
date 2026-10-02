@@ -21,7 +21,7 @@ import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
-import { aiNumberGuard, check as complianceCheck } from "_shared/compliance.ts";
+import { aiNumberGuard, check as complianceCheck, withRewriteGuard } from "_shared/compliance.ts";
 import { logAction } from "_shared/log.ts";
 import { nextHook } from "_shared/hooks.ts";
 import * as tg from "_shared/tg.ts";
@@ -56,9 +56,13 @@ serve(async (req) => {
       requireRole(caller.role, "jobs.claim");
       const worker = reqString(body, "worker", { max: 64 });
       const kinds = Array.isArray(body.kinds) ? body.kinds.filter((k): k is string => typeof k === "string") : [...JOB_KINDS];
-      // Requeue stale claims first.
+      // Stale claims: a job that keeps crashing the worker fails at the cap
+      // instead of being reclaimed every 30 minutes forever; the rest requeue.
+      const staleBefore = new Date(Date.now() - STALE_CLAIM_MIN * 60_000).toISOString();
+      await db.from("jobs").update({ status: "failed", claimed_by: null, claimed_at: null })
+        .eq("status", "claimed").lt("claimed_at", staleBefore).gte("attempts", MAX_ATTEMPTS);
       await db.from("jobs").update({ status: "queued", claimed_by: null, claimed_at: null })
-        .eq("status", "claimed").lt("claimed_at", new Date(Date.now() - STALE_CLAIM_MIN * 60_000).toISOString());
+        .eq("status", "claimed").lt("claimed_at", staleBefore);
       const { data: due } = await db.from("jobs").select("id, kind, payload, attempts, priority")
         .eq("status", "queued").in("kind", kinds).lte("run_at", new Date().toISOString())
         .order("priority", { ascending: false }).order("run_at", { ascending: true }).limit(1).maybeSingle();
@@ -95,20 +99,20 @@ serve(async (req) => {
         const p = job.payload as Record<string, unknown>;
         const variantId = String(p.variant_id);
         const contentId = String(p.content_id);
-        const { data: v } = await db.from("content_variants").select("platform").eq("id", variantId).maybeSingle();
+        const { data: v } = await db.from("content_variants").select("platform, body").eq("id", variantId).maybeSingle();
         const { data: it } = await db.from("content_items").select("post_type, lang").eq("id", contentId).maybeSingle();
         const lang = (typeof p.lang === "string" ? p.lang : it?.lang) === "ms" ? "ms" : "en";
         // A rewritten body is a new body: run the checklist again and keep the
         // evidence, exactly like createDraft and the Desk edit path do. Without
         // this the variant kept the old compliance/claim_flags and no row was
         // written to compliance_checks.
-        const checked = complianceCheck({
+        const checked = withRewriteGuard(complianceCheck({
           post_type: (it?.post_type ?? "gold_map") as never,
           platform: (v?.platform ?? "telegram") as never,
           lang,
           body: result.body,
           long_form: ["lesson", "start_here", "channel_audit"].includes(String(it?.post_type)),
-        });
+        }), String(v?.body ?? ""), result.body);
         await db.from("content_variants").update({
           body: result.body,
           compliance: checked,

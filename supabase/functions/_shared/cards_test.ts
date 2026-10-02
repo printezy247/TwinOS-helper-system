@@ -3,6 +3,7 @@ import {
   batchListKeyboard,
   cmdCallback,
   editKeyboard,
+  heldKeyboard,
   laterKeyboard,
   parseCallback,
   presetCallback,
@@ -49,4 +50,18 @@ Deno.test("later / edit / batch keyboards: every verb handled, data under 64 byt
   const missing = [...emitted].filter((v) => !(HANDLED_CALLBACK_VERBS as readonly string[]).includes(v));
   assertEquals(missing, [], `unhandled callback verbs: ${missing.join(", ")}`);
   assert(emitted.has("rs") && emitted.has("ed") && emitted.has("cmd"), [...emitted].join(","));
+});
+
+Deno.test("a held send asks Jack: It's posted / Send again, both handled and under 64 bytes", () => {
+  const kb = heldKeyboard(ID, "telegram");
+  for (const b of kb.flat()) {
+    const d = b.callback_data ?? "";
+    assert(new TextEncoder().encode(d).length <= 64, d);
+    const p = parseCallback(d);
+    assert(p?.kind === "item" && p.extra === "telegram", d);
+  }
+  const verbs = keyboardVerbs(kb);
+  assertEquals(verbs.sort(), ["hp", "hs"]);
+  const missing = verbs.filter((v) => !(HANDLED_CALLBACK_VERBS as readonly string[]).includes(v));
+  assertEquals(missing, []);
 });

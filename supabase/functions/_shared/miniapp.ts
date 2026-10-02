@@ -9,8 +9,8 @@
  */
 import { HttpError } from "./http.ts";
 
-export const INITDATA_MAX_AGE_S = 24 * 3600;
-export const SESSION_TTL_MS = 24 * 3600_000;
+export const INITDATA_MAX_AGE_S = 3600; // Telegram suggests about an hour; limits replay
+export const SESSION_TTL_MS = 2 * 3600_000;
 
 export interface MiniAppUser {
   id: number;
@@ -59,11 +59,11 @@ export async function verifyInitData(
   if (!botToken) throw new HttpError(503, "not_configured", "ops bot token is not set");
   const { fields, hash } = parseInitData(raw);
   if (!hash) throw new HttpError(401, "unauthorized", "initData has no hash");
-  // Telegram: secret = HMAC_SHA256(key = bot token, message = "WebAppData").
+  // Telegram: secret = HMAC_SHA256(key = "WebAppData", message = bot token).
   const tokenKey = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(botToken), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    "raw", new TextEncoder().encode("WebAppData"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
-  const secretBytes = await crypto.subtle.sign("HMAC", tokenKey, new TextEncoder().encode("WebAppData"));
+  const secretBytes = await crypto.subtle.sign("HMAC", tokenKey, new TextEncoder().encode(botToken));
   const secret = await crypto.subtle.importKey(
     "raw", secretBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );

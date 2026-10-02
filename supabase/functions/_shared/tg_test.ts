@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "std/assert/mod.ts";
-import { answerCallbackQuery, call, TgError } from "./tg.ts";
+import { answerCallbackQuery, call, editMessageReplyMarkup, editMessageText, TgError } from "./tg.ts";
 
 // A token-shaped value would trip the CI secret grep; the client never
 // validates its shape, so anything non-empty works.
@@ -85,6 +85,16 @@ Deno.test("answerCallbackQuery: a good answer is true", async () => {
   const state = stubFetch([ok(true)]);
   try {
     assertEquals(await answerCallbackQuery("live-id"), true);
+  } finally {
+    restore(state);
+  }
+});
+
+Deno.test("editMessageText: 'message is not modified' is success, not an error (a second Refresh must not post a new panel)", async () => {
+  const state = stubFetch([{ status: 400, body: { ok: false, error_code: 400, description: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same" } }]);
+  try {
+    assertEquals(await editMessageText(1, 2, "same"), true);
+    assertEquals(await editMessageReplyMarkup(1, 2, null), true);
   } finally {
     restore(state);
   }

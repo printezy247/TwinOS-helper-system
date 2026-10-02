@@ -21,9 +21,9 @@ import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { setStatus } from "_shared/content.ts";
-import { check as complianceCheck } from "_shared/compliance.ts";
+import { check as complianceCheck, checkComment } from "_shared/compliance.ts";
 import {
-  classify, duplicateLanded, isUnknownOutcome, MAX_ATTEMPTS, retryPlan, UNKNOWN_HOLD_MS, type Kind,
+  classify, isUnknownOutcome, MAX_ATTEMPTS, retryPlan, type Kind, unknownOutcomePatch,
 } from "_shared/backoff.ts";
 import { deskAlert } from "_shared/alerts.ts";
 import {
@@ -180,7 +180,9 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
       .eq("id", job.variant_id).maybeSingle(),
   ]);
   if (!item || !variant) return { ok: false, kind: "permanent", reason: "item or variant missing" };
-  if (!["approved", "scheduled", "publishing"].includes(item.status)) {
+  // A comment goes out after its post, when the item is already published.
+  const allowed = job.kind === "comment" ? ["approved", "scheduled", "publishing", "published"] : ["approved", "scheduled", "publishing"];
+  if (!allowed.includes(item.status)) {
     return { ok: false, kind: "permanent", reason: `item status ${item.status}` };
   }
 
@@ -200,9 +202,7 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
       .limit(1)
       .maybeSingle();
     if (!posted) return { ok: false, kind: "throttled", reason: "post not out yet; the comment waits" };
-    const commentCheck = complianceCheck({
-      post_type: item.post_type as never, platform: "telegram", lang: variant.lang, body: text,
-    });
+    const commentCheck = checkComment(text, item.post_type as never, variant.lang);
     if (!commentCheck.ok) {
       return { ok: false, kind: "permanent", reason: "comment blocked: " + commentCheck.findings.map((f) => f.message).join("; ") };
     }
@@ -220,36 +220,6 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
   });
   if (!final.ok || (variant.needed_fields ?? []).length) {
     return { ok: false, kind: "permanent", reason: "compliance block at publish: " + final.findings.map((f) => f.message).join("; ") };
-  }
-
-  // Unknown-outcome guard (Wave 3 item 4): the last attempt may have reached
-  // the platform before it failed. Check for a landed post before sending again.
-  if (job.result?.unknown_hold) {
-    const { data: landed } = await db.from("tg_posts")
-      .select("chat_id, message_id, posted_at")
-      .eq("variant_id", job.variant_id)
-      .order("posted_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (landed && duplicateLanded(job.result.held_at, landed.posted_at as string)) {
-      const chatId = landed.chat_id as number;
-      const messageId = landed.message_id as number;
-      await setStatus(item.id, "published", actor, {
-        published_at: new Date().toISOString(),
-        published_ref: `${chatId}:${messageId} (held send had landed)`,
-      });
-      if (item.signal_id) {
-        const { data: sp } = await db.from("signal_posts").select("id").eq("content_id", item.id).limit(1).maybeSingle();
-        if (!sp) {
-          await db.from("signal_posts").insert({
-            signal_id: item.signal_id, chat_id: chatId, message_id: messageId,
-            content_id: item.id, kind: item.post_type === "result_reply" ? "result" : "signal",
-          });
-        }
-      }
-      await logTimeSaved(actor, "content.publish", item.id);
-      return { ok: true, kind: "success", reason: "duplicate suppressed: the held send had already landed" };
-    }
   }
 
   await setStatus(item.id, "publishing", actor);
@@ -271,24 +241,30 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
     return { ok: false, ...c };
   }
 
-  if (posted) {
-    await db.from("tg_posts").insert({
-      chat_id: posted.chat_id, message_id: posted.message_id, content_id: item.id,
-      variant_id: variant.id, post_type: item.post_type, posted_at: new Date().toISOString(),
-    });
-    if (item.signal_id) {
-      await db.from("signal_posts").insert({
-        signal_id: item.signal_id, chat_id: posted.chat_id, message_id: posted.message_id,
-        content_id: item.id, kind: item.post_type === "result_reply" ? "result" : "signal",
+  // The post is out. Bookkeeping errors from here must not make it look
+  // unsent: a retry would post it twice. Log and carry on.
+  try {
+    if (posted) {
+      await db.from("tg_posts").insert({
+        chat_id: posted.chat_id, message_id: posted.message_id, content_id: item.id,
+        variant_id: variant.id, post_type: item.post_type, posted_at: new Date().toISOString(),
       });
+      if (item.signal_id) {
+        await db.from("signal_posts").insert({
+          signal_id: item.signal_id, chat_id: posted.chat_id, message_id: posted.message_id,
+          content_id: item.id, kind: item.post_type === "result_reply" ? "result" : "signal",
+        });
+      }
     }
+    await setStatus(item.id, "published", actor, {
+      published_at: new Date().toISOString(),
+      published_ref: posted ? `${posted.chat_id}:${posted.message_id}` : externalId,
+    });
+    await logTimeSaved(actor, "content.publish", item.id);
+    await logTimeSaved(actor, "log.row", item.id);
+  } catch (err) {
+    await logAction({ actor, action: "publish.bookkeeping_failed", target: item.id, payload: { error: String(err).slice(0, 300) } });
   }
-  await setStatus(item.id, "published", actor, {
-    published_at: new Date().toISOString(),
-    published_ref: posted ? `${posted.chat_id}:${posted.message_id}` : externalId,
-  });
-  await logTimeSaved(actor, "content.publish", item.id);
-  await logTimeSaved(actor, "log.row", item.id);
   return { ok: true, kind: "success" };
 }
 
@@ -309,48 +285,76 @@ serve(async (req) => {
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     last = Date.now();
 
-    const r = await run(job, caller.actor);
+    let r: { ok: boolean; kind: Kind; reason?: string };
+    try {
+      r = await run(job, caller.actor);
+    } catch (err) {
+      // Unknown whether the send happened: treat it like a timeout (parked).
+      r = { ok: false, kind: "unknown", reason: `run failed: ${String(err).slice(0, 200)}` };
+    }
     if (r.ok) {
       await db.from("publish_jobs").update({ status: "done", done_at: new Date().toISOString(), last_error: null }).eq("id", job.id);
     } else if (r.kind === "permanent" || (job.attempts >= MAX_ATTEMPTS && retryPlan(job.attempts, r.reason ?? "").burnsAttempt)) {
       await db.from("publish_jobs").update({ status: "failed", last_error: r.reason ?? r.kind }).eq("id", job.id);
-      await db.from("alerts").insert({
-        kind: "publish_failed", severity: "high",
-        message: `publish failed for ${job.content_id} (${job.platform}): ${r.reason ?? r.kind}`,
-        payload: { job_id: job.id, content_id: job.content_id },
+      await deskAlert({
+        db,
+        key: `failed:${job.content_id}:${job.platform}`,
+        kind: "publish_failed",
+        severity: "high",
+        message: `\u274C Publish failed for #${job.content_id.slice(0, 8)} (${job.platform}): ${tg.escapeHtml(r.reason ?? r.kind)}`,
       });
     } else {
-      // Unknown outcomes hold the retry (no 30 s quick retry into a possible
-      // duplicate), flag the job and tell the Desk once per cooldown. This
-      // covers Telegram and every fan-out child: they share this queue.
+      // Ordinary failures retry with backoff. Unknown outcomes (the send may
+      // have landed) are parked below. This covers Telegram and every fan-out
+      // child: they share this queue.
       const reason = r.reason ?? r.kind;
-      const unknown = r.kind === "unknown" && isUnknownOutcome(reason);
-      const plan = unknown ? { delayMs: UNKNOWN_HOLD_MS, burnsAttempt: true } : retryPlan(job.attempts, reason);
-      await db.from("publish_jobs").update({
-        status: "queued",
-        run_at: new Date(Date.now() + plan.delayMs).toISOString(),
-        last_error: reason,
-        ...(unknown
-          ? { error_class: "unknown", result: { unknown_hold: true, held_at: new Date().toISOString() } }
-          : {}),
-        ...(plan.burnsAttempt ? {} : { attempts: Math.max(job.attempts - 1, 0) }),
-      }).eq("id", job.id);
+      const unknown = r.kind === "unknown" && (isUnknownOutcome(reason) || reason.startsWith("run failed:"));
       if (unknown) {
+        // It may already be posted. Never re-send on a timer: park the job and
+        // let Jack answer on the Desk (It's posted / Send again).
+        await db.from("publish_jobs").update({ ...unknownOutcomePatch(job.result, new Date().toISOString()), last_error: reason })
+          .eq("id", job.id);
         await deskAlert({
           db,
           key: `unknown:${job.content_id}:${job.platform}`,
           kind: "publish_unknown",
           severity: "medium",
-          message: `\u26A0\uFE0F Send to ${job.platform} timed out \u2014 it may already be posted. Check the channel; retry held 10 min.`,
+          cooldownMs: 0,
+          message: `\u26A0\uFE0F Send to ${job.platform} timed out \u2014 it may already be posted. Check, then tell me:`,
+          buttons: tg.heldKeyboard(job.content_id, job.platform),
         });
+      } else {
+        const plan = retryPlan(job.attempts, reason);
+        await db.from("publish_jobs").update({
+          status: "queued",
+          run_at: new Date(Date.now() + plan.delayMs).toISOString(),
+          last_error: reason,
+          ...(plan.burnsAttempt ? {} : { attempts: Math.max(job.attempts - 1, 0) }),
+        }).eq("id", job.id);
       }
     }
     results.push({ job_id: job.id, content_id: job.content_id, platform: job.platform, ...r });
   }
 
-  // Stuck jobs: claimed > 10 min ago (function died mid-send) → back to queued.
-  await db.from("publish_jobs").update({ status: "queued" })
+  // Stuck jobs: claimed > 10 min ago (the function died, maybe mid-send).
+  // Re-queueing could post twice, so they are parked and Jack is asked.
+  const { data: stuck } = await db.from("publish_jobs").select("id, content_id, platform, result")
     .eq("status", "claimed").lt("claimed_at", new Date(Date.now() - 10 * 60_000).toISOString());
+  for (const j of stuck ?? []) {
+    await db.from("publish_jobs").update({
+      ...unknownOutcomePatch(j.result as Record<string, unknown> | null, new Date().toISOString()),
+      last_error: "claimed for over 10 minutes; may have posted",
+    }).eq("id", j.id);
+    await deskAlert({
+      db,
+      key: `unknown:${j.content_id}:${j.platform}`,
+      kind: "publish_unknown",
+      severity: "medium",
+      cooldownMs: 0,
+      message: `\u26A0\uFE0F A send to ${j.platform} stopped half-way \u2014 it may already be posted. Check, then tell me:`,
+      buttons: tg.heldKeyboard(j.content_id as string, j.platform as string),
+    });
+  }
 
   await db.from("health_checks").insert({ source: "scheduler", status: "ok", detail: { ran: results.length } });
   await logAction({ actor: caller.actor, action: "publish.tick", payload: { ran: results.length } });

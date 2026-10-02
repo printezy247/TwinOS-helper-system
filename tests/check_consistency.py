@@ -403,14 +403,16 @@ def wave3_guard() -> None:
     )
     publish = read("supabase/functions/publish/index.ts")
     check(
-        "publish: unknown failures hold, flag error_class and alert the Desk",
-        "isUnknownOutcome(" in publish and "error_class" in publish and "deskAlert(" in publish,
-        "Wave 3 item 4: hold + error_class='unknown' + Desk alert",
+        "publish: unknown failures park the job and ask on the Desk (It's posted / Send again)",
+        "isUnknownOutcome(" in publish and "unknownOutcomePatch(" in publish
+        and "deskAlert(" in publish and "heldKeyboard(" in publish,
+        "Wave 3 item 4 (review 3 Oct): park + error_class='unknown' + Desk buttons",
     )
     check(
-        "publish: a held job is checked for a landed post before resending",
-        "duplicateLanded(" in publish and "unknown_hold" in publish,
-        "Wave 3 item 4: no blind resend after a timeout",
+        "publish: never re-sends on a timer after an unknown outcome or a stuck claim",
+        "UNKNOWN_HOLD_MS" not in publish and publish.count("unknownOutcomePatch(") >= 2
+        and '.update({ status: "queued" })' not in publish,
+        "Wave 3 item 4 (review 3 Oct): no blind resend; Jack decides",
     )
     compliance = read("supabase/functions/_shared/compliance.ts")
     check(

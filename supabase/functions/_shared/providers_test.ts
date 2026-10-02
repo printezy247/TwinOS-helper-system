@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { checkMetaToken, checkTelegram } from "./providers.ts";
+import { checkMetaToken, checkTelegram, redactSecrets } from "./providers.ts";
 
 const json = (body: unknown, status = 200) => () =>
   Promise.resolve(new Response(JSON.stringify(body), { status }));
@@ -42,4 +42,28 @@ Deno.test("meta: a good token is up, a bad one names the failure", async () => {
     fetchOf(json({ error: { message: "Invalid OAuth access token." } }, 400)),
   );
   assertEquals(down, { provider: "threads", ok: false, detail: "Invalid OAuth access token." });
+});
+
+// A network error message carries the request URL, and both URLs hold a token.
+// What health stores, returns and sends to the Desk must never include it.
+const throwsWithUrl: typeof fetch = (input) =>
+  Promise.reject(new TypeError(`error sending request for url (${String(input)}): dns error`));
+
+Deno.test("a failed Telegram check never echoes the bot token", async () => {
+  const token = "123456789:AAH-secretPart_xyz";
+  const r = await checkTelegram(token, throwsWithUrl);
+  assertEquals(r.ok, false);
+  assertEquals(r.detail.includes("secretPart"), false, r.detail);
+  assertEquals(r.detail.includes("123456789:"), false, r.detail);
+});
+
+Deno.test("a failed Meta check never echoes the access token", async () => {
+  const r = await checkMetaToken("instagram", "EAAGsecretTokenValue123", throwsWithUrl);
+  assertEquals(r.ok, false);
+  assertEquals(r.detail.includes("secretTokenValue"), false, r.detail);
+});
+
+Deno.test("redactSecrets strips bot tokens and access_token values", () => {
+  const s = redactSecrets("x https://api.telegram.org/bot1:AB-c_d/getMe y ?access_token=EAAx&z=1");
+  assertEquals(/AB-c_d|EAAx/.test(s), false, s);
 });

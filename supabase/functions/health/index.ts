@@ -16,7 +16,7 @@ import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import { logAction } from "_shared/log.ts";
 import { tokenWarnings } from "_shared/meta.ts";
-import { sendMessage } from "_shared/tg.ts";
+import { escapeHtml, sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
 import { runProviderChecks } from "_shared/providers.ts";
 import { deskAlert, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
@@ -86,7 +86,7 @@ serve(async (req) => {
     requireRole(caller.role, "reports.read");
     const beats = await latestBeats();
     const { data: alerts } = await db.from("alerts").select("id, kind, severity, message, at").is("resolved_at", null).order("at", { ascending: false }).limit(20);
-    const { data: failed } = await db.from("publish_jobs").select("id", { count: "exact", head: true }).eq("status", "failed");
+    const { count: failedCount } = await db.from("publish_jobs").select("id", { count: "exact", head: true }).eq("status", "failed");
     const broken = Object.entries(beats).filter(([, b]) => b.stale || b.status === "down").map(([s]) => s);
     // "Anything broken?" one-line answer (plan §9.M.104)
     const tokens = metaTokenWarnings();
@@ -96,7 +96,7 @@ serve(async (req) => {
     const summary = broken.length || (alerts ?? []).length || tokens.length || provDown.length
       ? `${broken.length ? "stale: " + broken.join(", ") : "beats ok"}; ${(alerts ?? []).length} open alert(s)${tokens.length ? "; " + tokens.map((t) => t.message).join("; ") : ""}${provDown.length ? "; provider down: " + provDown.join(", ") : ""}`
       : "all good";
-    return json({ ok: broken.length === 0 && provDown.length === 0 && !tokens.some((t) => t.severity === "high"), summary, beats, tokens, integrations, providers, open_alerts: alerts ?? [], failed_jobs: (failed as unknown as { count?: number } | null)?.count ?? null });
+    return json({ ok: broken.length === 0 && provDown.length === 0 && !tokens.some((t) => t.severity === "high"), summary, beats, tokens, integrations, providers, open_alerts: alerts ?? [], failed_jobs: failedCount ?? null });
   }
 
   if (method !== "POST") throw bad("method not allowed");
@@ -145,7 +145,7 @@ serve(async (req) => {
       if (r.ok) {
         await deskAlert({ db, key: src, kind: "provider_recovery", severity: "info", message: `✅ ${r.provider} is back.` });
       } else {
-        await deskAlert({ db, key: src, kind: "provider_down", severity: "high", message: `⚠️ ${r.provider} check failed: ${r.detail}` });
+        await deskAlert({ db, key: src, kind: "provider_down", severity: "high", message: `⚠️ ${r.provider} check failed: ${escapeHtml(r.detail)}` });
       }
     }
     // A channel that goes quiet loses members (2026 research): past the gap,

@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
-import { adaptCaption, FANOUT_DEFAULT, type FanResult, fanoutSummary, isKit, isKitPlatform, kitRefuses, validatePlatform, withSignature } from "./platforms.ts";
+import { adaptCaption, FANOUT_DEFAULT, type FanResult, fanoutFailure, fanoutSummary, isKit, isKitPlatform, isPublishableVariant, kitRefuses, validatePlatform, withSignature } from "./platforms.ts";
 import { hasRiskLine } from "./compliance.ts";
 
 const RISK = "Map only, not financial advice.";
@@ -135,4 +135,26 @@ Deno.test("withSignature: the saved sign-off rides below the caption, once", () 
   assertEquals(once.added, false);
   assertEquals(withSignature("Gold held.", "").added, false);
   assertEquals(withSignature("Gold held.", null).added, false);
+});
+
+// Review 3 Oct: the retry drain called fanOut and marked the job done, but
+// fanOut records a platform failure as a row instead of throwing, so retries
+// never retried and the last-failure alert never fired.
+Deno.test("fanoutFailure: a failed platform row is reported, a made one is not", () => {
+  const made: FanResult = { platform: "instagram", content_id: "abc", kit: false, body: "x", notes: [], findings: [], complianceOk: true };
+  const failed: FanResult = { platform: "threads", content_id: "", kit: false, body: "", notes: ["threads is not configured"], findings: [], complianceOk: false };
+  assertEquals(fanoutFailure([made]), null);
+  assertEquals(fanoutFailure([made, failed]), "threads: threads is not configured");
+  assertEquals(fanoutFailure([{ ...failed, notes: [] }]), "threads: failed");
+});
+
+// Review 3 Oct (critical): approving queued every variant of an item, so each
+// unpicked AI angle would have gone out as its own channel post.
+Deno.test("isPublishableVariant: originals and the picked angle publish; other angles never do", () => {
+  assertEquals(isPublishableVariant({}), true);
+  assertEquals(isPublishableVariant(null), true);
+  assertEquals(isPublishableVariant({ via: "fanout", platform: "instagram" }), true);
+  assertEquals(isPublishableVariant({ via: "llm_variants", angle: "contrarian", picked: false }), false);
+  assertEquals(isPublishableVariant({ via: "llm_variants", angle: "problem", picked: false, blocked: true }), false);
+  assertEquals(isPublishableVariant({ via: "llm_variants", angle: "proof", picked: true }), true);
 });

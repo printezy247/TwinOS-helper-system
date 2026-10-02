@@ -483,3 +483,26 @@ export function summarise(result: CheckResult): string {
     .map((x) => `${x.severity === "blocking" ? "✗" : x.severity === "needs_approval" ? "!" : "·"} ${x.check}: ${x.message}`)
     .join("\n");
 }
+
+/**
+ * A delayed first comment is a reply under a post that already carries the
+ * risk line, so the risk-line rules do not apply to it. Every other check
+ * (banned claims, [NEEDED], numbers, format) still does.
+ */
+export function checkComment(text: string, postType: PostType, lang: "en" | "ms"): CheckResult {
+  const r = check({ post_type: postType, platform: "telegram", lang, body: text } as VariantInput);
+  const findings = r.findings.filter((f) => f.check !== "risk_line" && f.check !== "meta_more_cut");
+  return { ...r, findings, ok: !findings.some((f) => f.severity === "blocking") };
+}
+
+/**
+ * A worker rewrite (soften, BM, shorter) is generated text: it may only use
+ * numbers that were already in the body it replaces. Adds the blocking AI
+ * number guard to the checklist result.
+ */
+export function withRewriteGuard(checked: CheckResult, oldBody: string, newBody: string): CheckResult {
+  const guard = aiNumberGuard(newBody, extractNumbers(oldBody));
+  if (!guard.length) return checked;
+  const findings = [...checked.findings, ...guard];
+  return { ...checked, findings, ok: false };
+}

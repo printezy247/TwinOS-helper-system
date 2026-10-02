@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
-import { backoffMs, duplicateLanded, isUnknownOutcome, UNKNOWN_HOLD_MS } from "./backoff.ts";
+import { backoffMs, duplicateLanded, isUnknownOutcome, resendPatch, UNKNOWN_HOLD_MS, unknownOutcomePatch } from "./backoff.ts";
 import { classify } from "./backoff.ts";
 
 // Wave 3 item 4: after a timeout the send may already have landed, so the
@@ -38,4 +38,25 @@ Deno.test("a post that landed after the hold began suppresses the retry", () => 
   assert(!duplicateLanded(held, new Date("2026-10-02T07:59:00Z").toISOString()));
   assert(!duplicateLanded(held, null));
   assert(!duplicateLanded(null, new Date("2026-10-02T08:00:05Z").toISOString()));
+});
+
+// Review 3 Oct: the 10-minute hold re-sent automatically, and the landed check
+// only sees tg_posts, which a timed-out send never wrote. An unknown outcome
+// now parks the job (failed + unknown) until Jack answers on the Desk.
+Deno.test("an unknown outcome parks the job and keeps what the result held", () => {
+  const p = unknownOutcomePatch({ first_comment: "Map below." }, "2026-10-03T10:00:00.000Z");
+  assertEquals(p.status, "failed");
+  assertEquals(p.error_class, "unknown");
+  assertEquals(p.result.first_comment, "Map below.");
+  assertEquals(p.result.unknown_hold, true);
+  assertEquals(p.result.held_at, "2026-10-03T10:00:00.000Z");
+});
+
+Deno.test("Send again requeues once, clean, keeping the comment text", () => {
+  const p = resendPatch({ first_comment: "Map below.", unknown_hold: true, held_at: "x" }, "2026-10-03T10:05:00.000Z");
+  assertEquals(p.status, "queued");
+  assertEquals(p.attempts, 0);
+  assertEquals(p.error_class, null);
+  assertEquals(p.run_at, "2026-10-03T10:05:00.000Z");
+  assertEquals(p.result, { first_comment: "Map below." });
 });
