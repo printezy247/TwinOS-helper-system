@@ -578,6 +578,8 @@ begin
   assert (select count(*) from public.v_fanout_week where week_start = '2026-10-12' and providers > 0 and providers = published) = 1,
     'exactly one master reached every provider platform';
   raise notice 'ok: hours cut and fan-out views';
+end $$;
+
 -- 19. repeat questions are counted per question for the FAQ sheet (0022)
 do $$
 declare r record;
