@@ -41,8 +41,11 @@ and views (RLS allows it for a logged-in user) but **never** `insert`,
 | Send to Desk group | `POST /functions/v1/content/{id}/request-approval` |
 | Approve / reject / reschedule | `POST /functions/v1/approve` `{content_id, decision, run_at?, note?}` |
 | Schedule | `POST /functions/v1/content/{id}/schedule` `{run_at}` |
-| Friday manual numbers | `POST /functions/v1/friday/manual` |
-| Result reply | `POST /functions/v1/results` `{signal_id}` |
+| Friday manual numbers | `POST /functions/v1/friday/manual` `{week_start, source: vantage\|tiktok\|telechurn\|ads, metrics: {...}}` |
+| One campaign's numbers | `POST /functions/v1/friday/campaign` `{week_start, campaign, ad_spend_usd?, first_time_depositors?, ib_accounts_opened?}` |
+| Result reply | `POST /functions/v1/results` `{signal_id, dry_run?}` (`dry_run: true` returns the text without posting) |
+| CSI reading | `POST /functions/v1/research/csi` `{topic, category?, metric?, value?, trend?, note?}` |
+| Article brief | `POST /functions/v1/research/article` `{cluster_id}` → `{text, titles, questions, keywords}` |
 | Health | `GET /functions/v1/health` |
 | Friday numbers | `GET /functions/v1/friday?week=YYYY-MM-DD` |
 | Queue counts | `GET /functions/v1/jobs` |
@@ -75,24 +78,24 @@ The server enforces it again (403), so the UI is not the guard, just honest.
    Variants join on `content_variants.content_id`; load them in a second query
    (an embedded select is ambiguous: two foreign keys point at `content_items`).
    `compliance` is `{ ok, needs_approval, findings: [{ check, severity, message, evidence? }], claim_flags }`.
-2. **Content Calendar** — week view from `publish_jobs` (run_at, status) joined to
+2. **Content Calendar** (built) — week view from `publish_jobs` (run_at, status) joined to
    `content_items` (post_type, lang). The 15 post types as filters. Click → inbox detail.
    Failed jobs in red with `last_error`.
-3. **Health** — `GET /health`: beats per source with stale flag, open `alerts`,
+3. **Health** (built) — `GET /health`: beats per source with stale flag, open `alerts`,
    failed publish jobs, one-line "anything broken?" summary at the top.
-4. **Analytics / Friday** — `v_friday_scoreboard` for the selected week, the
+4. **Analytics / Friday** (built; plus the optional ad-spend form and the Campaign cost section from `v_campaign_cost`) — `v_friday_scoreboard` for the selected week, the
    missing-input list, and the two-minute forms (Vantage: ib_accounts_opened,
    first_time_depositors, active_funded_clients, rebates_usd; TikTok: followers,
    profile_views, watch_time_min, pct_watched_full) posting to `friday/manual`.
    Quarter targets from `v_quarter_targets`; stop-if rules from `v_stop_if`.
-5. **Signal board** — `signals` with status, entry/SL/TP, result R, whether the
+5. **Signal board** (built; `/signals`, live signals only, results via `results` with a dry-run preview first) — `signals` with status, entry/SL/TP, result R, whether the
    card and result were posted (`signal_posts`), strict win rate
    W/(W+L) over 4 weeks with break-evens excluded, and a "post result" button
    for closed signals without a reply (calls `results`).
-6. **Research briefs** — `briefs`, `topic_clusters`, `csi_captures` read-only
-   list + a CSI capture form (Phase 5; build a placeholder page now).
-7. **Inbox** — `inbox_items` from IG/FB/YouTube/Threads with suggested replies
-   (Phase 3/4; placeholder now).
+6. **Research** (built; `/research`: the Monday brief, scored topics, `v_repeat_questions`, CSI readings and the CSI form, the article brief button) —
+   `briefs`, `topic_clusters`, `csi_captures`.
+7. **Messages** (built as a placeholder; `/inbox`: `inbox_items` with suggested replies, no send buttons) —
+   it fills when Phase 3 comment polling exists.
 
 Also a thin **Settings** page that only reads `settings` (editing stays in SQL for now).
 
