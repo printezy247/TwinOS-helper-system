@@ -162,7 +162,7 @@ Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every f
 - [x] Banned words / humanizer rules as compliance warnings (`compliance.ts` `HUMANIZER_WORDS_EN/MS` + `humanizerHits`, warn-level `humanizer` finding apart from the blocking claim checks; `compliance_test.ts` + consistency)
 
 ### Wave 4 — bigger bets (each needs Jack's go)
-- [ ] Telegram Mini App approval view (initData → session)
+- [x] Telegram Mini App approval view (initData → session) (`tg-auth/verify` checks the Telegram HMAC and mints a 24 h `tma.` session; `auth.ts` accepts it as Jack, re-checked against the id setting; `GET tg-auth/me`; deploys `--no-verify-jwt`; Lovable `/mini` prompt in `docs/LOVABLE-WAVE4-PROMPTS.md`; `miniapp_test.ts` 4 passed incl. a caught key-mixup, shared 195, consistency 56/56)
 - [ ] Postiz-style calendar scheduler
 - [ ] Clip pipeline upgrade (scene detection, moment scoring, reframe, `clip_candidates`)
 - [ ] Fan-out on Supabase Queues (pgmq)
