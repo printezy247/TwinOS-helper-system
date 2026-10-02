@@ -18,6 +18,7 @@ import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, pushToDesk } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
+import { fanoutLine, hoursCutLine } from "_shared/hours.ts";
 import { sendMessage } from "_shared/tg.ts";
 
 const MANUAL_SOURCES = ["vantage", "tiktok", "telechurn"] as const;
@@ -117,17 +118,18 @@ serve(async (req) => {
       }
       : {};
     const fields: Record<string, unknown> = { week, ...sb, ...weekly, board_url: boardRow?.value ?? "" };
-    // The hours line (P1.10): what the week cost by hand vs what TwinOS did.
-    const [{ data: baseline }, { data: saved }] = await Promise.all([
-      db.from("baseline_hours").select("minutes").eq("week_start", week),
-      db.from("time_saved").select("minutes_saved").gte("occurred_at", `${week}T00:00:00Z`),
+    // The hours lines: TwinOS's saved time against the baseline week (v_hours_cut, Phase 3 exit: 60%
+    // or more) and how many fanned-out posts reached every platform (v_fanout_week).
+    const [{ data: cut }, { data: fan }] = await Promise.all([
+      db.from("v_hours_cut").select("baseline_min, saved_min").eq("week_start", week).maybeSingle(),
+      db.from("v_fanout_week").select("providers, published").eq("week_start", week),
     ]);
-    const baselineMin = (baseline ?? []).reduce((a, r) => a + Number(r.minutes ?? 0), 0);
-    const savedMin = Math.round((saved ?? []).reduce((a, r) => a + Number(r.minutes_saved ?? 0), 0));
-    if (baselineMin > 0 || savedMin > 0) {
-      const h = (n: number) => (n / 60).toFixed(1);
-      fields.hours = `Hours: *${h(baselineMin)}h* logged by hand, TwinOS saved *${h(savedMin)}h*.`;
-    }
+    const fanRows = (fan ?? []).filter((r) => Number(r.providers) > 0);
+    const hoursLines = [
+      hoursCutLine(Number(cut?.baseline_min ?? 0), Number(cut?.saved_min ?? 0)),
+      fanoutLine(fanRows.length, fanRows.filter((r) => Number(r.published) === Number(r.providers)).length),
+    ].filter((l): l is string => !!l);
+    if (hoursLines.length) fields.hours = hoursLines.join("\n");
     const nums = [...Object.values(sb), ...Object.values(weekly), wk?.best_trade?.r, wk?.worst_trade?.r].map(Number).filter(Number.isFinite);
     const draft = await createDraft({
       post_type: "scorecard", lang: "en", fields, allowed_numbers: nums,

@@ -32,7 +32,7 @@ Exit: schema reviewed; baseline logged.
 
 **Phase 1 is live.** Jack confirmed the Supabase project and the functions are
 deployed (`cdnyybrfoclexjlroqcf`, all 11 at v8 as of 2 Oct); migrations
-`0001`–`0020` are applied live and match the repo. What remains unverified is
+`0001`–`0021` are applied live and match the repo. What remains unverified is
 anything that needs a real Telegram tap or a real posted signal: the Desk loop
 end to end, a result reply under a posted card, and the TradingView/signal-bot
 handoffs.
@@ -76,8 +76,8 @@ Exit: one TikTok reaches seven places with only the TikTok, YouTube and X taps b
 - [ ] YouTube API project; audit form submitted; private uploads until it passes
 - [ ] Per-platform validator (caption length, hashtags, duration, size)
 - [ ] Metrics pollers (IG/FB/Threads/YouTube) — Meta token-expiry watch is done (`health` warns 7 days ahead and alerts once a day); the pollers wait for the Meta tokens
-- [ ] "All platforms posted" Friday report line
-- [ ] Hours cut ≥60% vs baseline (from `time_saved`)
+- [x] "All platforms posted" Friday report line (`v_fanout_week` + `fanoutLine`, migration 0021, in the scorecard `hours` field)
+- [ ] Hours cut ≥60% vs baseline — measured by `v_hours_cut` (saved minutes per KL week against the first baseline week) and printed on the Friday scorecard; it needs the baseline week Jack logs from Mon 5 Oct, then a real week of use
 
 ## Phase 4 — Community + tracking (Nov–Dec)
 Exit: every swap shows joins and 7-day retention.

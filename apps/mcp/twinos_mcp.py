@@ -104,7 +104,8 @@ ENDPOINTS = {
 # bad name is refused locally instead of becoming a confusing PostgREST error.
 ANALYTICS_VIEWS = ("v_results_board", "v_funnel", "v_quarter_targets", "v_stop_if", "v_friday_scoreboard",
                    "v_results_weekly", "v_content_log", "post_metrics", "channel_daily", "manual_metrics",
-                   "benchmarks", "time_saved", "signals", "content_items", "publish_jobs", "alerts")
+                   "benchmarks", "time_saved", "signals", "content_items", "publish_jobs", "alerts",
+                   "v_hours_cut", "v_fanout_week")
 
 # --------------------------------------------------------------------------- tools (plan §11 list + three reads)
 # (name, description, {arg: type}, required args)
