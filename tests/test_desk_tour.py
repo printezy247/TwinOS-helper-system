@@ -101,6 +101,50 @@ class DeskTourTest(unittest.TestCase):
             self.assertNotIn("is unset", out, script.name)
             self.assertIn("Access token not provided", out, script.name)
 
+    def test_settings_are_read_the_way_a_person_s_terminal_answers(self):
+        # Outside an agent the CLI prints a box table, and with
+        # --output-format json a bare [...] (no "rows" key). Jack's run hit both.
+        fake_cli = (
+            "#!/bin/sh\n"
+            "echo 'Initialising login role...'\n"
+            "case \"$*\" in *'--output-format json'*) ;; *) echo '┌───┐'; exit 0;; esac\n"
+            "echo '['\n"
+            "echo '  {\"v\": \"6282941580\"}'\n"
+            "echo ']'\n"
+        )
+        for script in (SCRIPT, REPO / "scripts" / "desk-selftest.sh"):
+            with tempfile.TemporaryDirectory() as d:
+                fake = {
+                    "supabase": fake_cli,
+                    "secret-tool": "#!/bin/sh\necho fake-value\n",
+                    "curl": "#!/bin/sh\necho 200\n",
+                    "sleep": "#!/bin/sh\nexit 0\n",
+                }
+                for name, body in fake.items():
+                    p = Path(d) / name
+                    p.write_text(body)
+                    p.chmod(0o755)
+                for tool in ("bash", "cat", "date", "cut", "dirname", "sed", "jq", "grep",
+                             "sha256sum", "head", "tr", "wc"):
+                    src = shutil.which(tool)
+                    if src:
+                        os.symlink(src, os.path.join(d, tool))
+                r = subprocess.run(["bash", str(script)], capture_output=True, text=True,
+                                   timeout=60, env={"PATH": d})
+            out = r.stdout + r.stderr
+            self.assertNotIn("is unset", out, script.name)
+            self.assertNotIn("gave no rows", out, script.name)
+            # Past the settings: the first webhook call was made.
+            self.assertIn("HTTP 200", out, script.name)
+
+    def test_every_script_asks_the_cli_for_json(self):
+        # In a real terminal the CLI prints a box-drawn table by default; it
+        # only prints JSON when nobody is watching. Jack's live run hit this.
+        for script in sorted((REPO / "scripts").glob("*.sh")):
+            for line in script.read_text().splitlines():
+                if "supabase db query" in line and not line.lstrip().startswith("#"):
+                    self.assertIn("--output-format json", line, f"{script.name}: {line.strip()}")
+
     def test_update_ids_do_not_collide_with_the_selftest(self):
         # The selftest uses 900000000000 + epoch; the tour sits 1e10 above it.
         self.assertIn("910000000000", self.src)

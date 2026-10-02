@@ -42,7 +42,7 @@ redact() { sed -E 's/twk_[a-z_]+_[0-9a-f]{8,}/twk_…(hidden)/g'; }
 query() {
   # Both streams are captured: whichever one the CLI uses, nothing reaches the terminal unread.
   local out
-  if ! out="$(supabase db query --linked "$1" 2>&1)"; then
+  if ! out="$(supabase db query --linked --output-format json "$1" 2>&1)"; then
     printf '%s\n' "$out" | redact | tail -5 >&2
     die "the database query failed (is the CLI logged in and linked? try: supabase projects list)"
   fi
