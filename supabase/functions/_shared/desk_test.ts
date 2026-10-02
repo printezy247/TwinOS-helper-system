@@ -50,7 +50,7 @@ Deno.test("dead buttons: every emitted callback verb has a handler (Wave 0 fix 5
     ...keyboardVerbs(laterKeyboard(ID)),
     ...keyboardVerbs(editKeyboard(ID)),
     ...keyboardVerbs([[{ text: "x", callback_data: shortCallback("fan", ID) }]]),
-    ...keyboardVerbs([[{ text: "x", callback_data: `mo:ban:${ID.replace(/-/g, "").slice(0, 8)}` }]]),
+    ...keyboardVerbs([[{ text: "x", callback_data: `mo:${ID.replace(/-/g, "").slice(0, 8)}:ban` }]]),
   ]);
   const missing = [...emitted].filter((v) => !(HANDLED_CALLBACK_VERBS as readonly string[]).includes(v));
   assertEquals(missing, [], `unhandled callback verbs: ${missing.join(", ")}`);

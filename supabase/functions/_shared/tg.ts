@@ -442,7 +442,7 @@ export function batchListKeyboard(items: Array<{ n: number; id: string }>, ready
  * carries backHomeRows; both land on home (one-level nav, thumb reach).
  * Unknown screens fall back home.
  */
-export const MENU_SCREENS = ["status", "batch", "friday", "hours", "help"] as const;
+export const MENU_SCREENS = ["status", "batch", "friday", "hours", "help", "drafts"] as const;
 
 export function menuKeyboard(fp = NAV_LAYOUT): InlineButton[][] {
   return [
@@ -455,6 +455,15 @@ export function menuKeyboard(fp = NAV_LAYOUT): InlineButton[][] {
       { text: "⏱ Hours", callback_data: navCallback("hours", undefined, fp) },
     ],
     [{ text: "❓ Help", callback_data: navCallback("help", undefined, fp) }],
+    [{ text: "📥 Pending drafts", callback_data: navCallback("drafts", undefined, fp) }],
+  ];
+}
+
+/** Status/Friday/Hours panels: Refresh on top, Back + Home below. */
+export function screenKeyboard(screen: string, fp = NAV_LAYOUT): InlineButton[][] {
+  return [
+    [{ text: "🔄 Refresh", callback_data: navCallback(screen, undefined, fp) }],
+    ...backHomeRows(fp),
   ];
 }
 

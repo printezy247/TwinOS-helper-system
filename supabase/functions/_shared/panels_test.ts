@@ -17,7 +17,7 @@ Deno.test("fan-out rides on approved cards (Wave 1 item 8)", () => {
 
 Deno.test("moderation and repeat alerts answer with buttons (Wave 1 item 11)", () => {
   for (const a of ["ban", "mute", "ignore", "faq", "drop"]) {
-    const p = parseCallback(`mo:${a}:${ID8}`);
+    const p = parseCallback(`mo:${ID8}:${a}`);
     assert(p?.kind === "item" && p.verb === "mo" && p.extra === a, `${a}: ${JSON.stringify(p)}`);
   }
 });

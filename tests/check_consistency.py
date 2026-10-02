@@ -361,7 +361,7 @@ def desk_state_wave0() -> None:
     check(
         "desk panels: refresh stamps, drafts paging, alert buttons",
         "updated " in webhook and "draftsPanel" in webhook
-        and "mo:ban" in webhook and "mo:faq" in webhook,
+        and "mo:${" in webhook and "banChatMember" in webhook and "faq.proposed" in webhook,
         "Wave 1 items 9-11: updated hh:mm, pg: paging, mo: actions",
     )
 
