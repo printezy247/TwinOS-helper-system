@@ -47,6 +47,11 @@ export function isKit(source: Record<string, unknown> | null | undefined): boole
   return !!source && source.kit === true;
 }
 
+/** A kit is never approved or rescheduled (nothing publishes it), but Jack can still reject it off the Desk. */
+export function kitRefuses(source: Record<string, unknown> | null | undefined, decision: string): boolean {
+  return isKit(source) && decision !== "reject";
+}
+
 const HASHTAG = /(^|\s)#[\p{L}\p{N}_]+/gu;
 const chars = (s: string) => Array.from(s);
 

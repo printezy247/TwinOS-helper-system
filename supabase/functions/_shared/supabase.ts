@@ -11,6 +11,7 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { HttpError } from "./http.ts";
+import { settingText } from "./settings.ts";
 
 let cached: SupabaseClient | null = null;
 
@@ -49,7 +50,7 @@ export async function setting(key: string, envFallback?: string): Promise<string
   let value: string | null = null;
   try {
     const { data } = await admin().from("settings").select("value").eq("key", key).maybeSingle();
-    value = (data?.value as string | undefined) ?? null;
+    value = settingText(data?.value);
   } catch (err) {
     console.warn(`[settings] read failed for ${key}`, err);
   }
