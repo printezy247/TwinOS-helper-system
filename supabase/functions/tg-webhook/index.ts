@@ -19,8 +19,9 @@ import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
 import { buildApprovePayload, isDeskPromptExpired } from "_shared/desk.ts";
-import { createDraft, pushToDesk, resolveShort, shortIdRange } from "_shared/content.ts";
-import { check as complianceCheck, type PostType } from "_shared/compliance.ts";
+import { createDraft, pushToDesk, resolveShort, resolveVariantShort, shortIdRange } from "_shared/content.ts";
+import { check as complianceCheck, ctaCount, extractNumbers, type PostType } from "_shared/compliance.ts";
+import { nextCta, nextHook } from "_shared/hooks.ts";
 import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
 import { logAction } from "_shared/log.ts";
 import { fanOut } from "_shared/fanout.ts";
@@ -119,6 +120,11 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
   }
   if (parsed.verb === "mo") {
     await onModAction(cq, parsed.short, parsed.extra);
+    return;
+  }
+  // Pick buttons point at variants, not items: resolve before the item path.
+  if (parsed.kind === "item" && parsed.verb === "pk") {
+    await onPick(cq, parsed.short);
     return;
   }
 
@@ -235,6 +241,15 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       }
       return;
     }
+    case "adj": {
+      await onAdjust(cq, content_id);
+      return;
+    }
+    case "pk": {
+      // Reached only for malformed data: real picks return before the item path.
+      await tg.answerCallbackQuery(cq.id, "Use the Pick buttons on the angles message.", true);
+      return;
+    }
     case "cancel": {
       await admin().from("content_items").update({ desk_state: null, desk_state_at: null }).eq("id", content_id);
       await tg.answerCallbackQuery(cq.id, "Cancelled.");
@@ -245,6 +260,137 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
     }
     default:
       await tg.answerCallbackQuery(cq.id, "Unknown button.");
+  }
+}
+
+/**
+ * Adjust a draft (Wave 3 item 7). With the local model on, it queues an
+ * `llm_variants` job (3 angles per platform, strict JSON, guarded on the way
+ * back in). With it off (the default), it refreshes the draft from the
+ * no-AI hook + CTA library instead: hook up top, CTA at the bottom when the
+ * body has none. Either way the draft stays unapproved until Jack taps ✅.
+ */
+async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: string): Promise<void> {
+  const chat = cq.message?.chat.id;
+  const mid = cq.message?.message_id;
+  const { data: item } = await admin().from("content_items")
+    .select("post_type, lang, pillar, status").eq("id", content_id).maybeSingle();
+  if (!item) { await tg.answerCallbackQuery(cq.id, "That draft is gone.", true); return; }
+  if (["published", "publishing"].includes(String(item.status))) {
+    await tg.answerCallbackQuery(cq.id, "Already out: adjust a fresh draft instead.", true);
+    return;
+  }
+  const lang = (item.lang === "ms" ? "ms" : "en") as "en" | "ms";
+  const { data: primary } = await admin().from("content_variants")
+    .select("id, platform, body").eq("content_id", content_id)
+    .order("created_at", { ascending: true }).limit(1).maybeSingle();
+  if (!primary) { await tg.answerCallbackQuery(cq.id, "That draft is gone.", true); return; }
+
+  const db = admin();
+  if ((await setting(SETTING_KEYS.llmVariantsEnabled)) === "true") {
+    const angles = Math.min(Math.max(Number(await setting(SETTING_KEYS.llmAngles)) || 3, 1), 5);
+    const { data: variants } = await db.from("content_variants").select("platform").eq("content_id", content_id);
+    const platforms = [...new Set((variants ?? []).map((v) => String(v.platform)))];
+    const body = String(primary.body ?? "");
+    await db.from("jobs").insert({
+      kind: "llm_variants",
+      payload: {
+        content_id,
+        platforms: platforms.length ? platforms : ["telegram"],
+        lang,
+        angles,
+        allowed_numbers: extractNumbers(body),
+        raw_lines: body.split(/\n+/).map((s) => s.trim()).filter(Boolean).slice(0, 12),
+      },
+      status: "queued",
+      created_by: "jack",
+    });
+    await logAction({ actor: "jack", action: "content.adjust_llm", target: content_id, payload: { angles } });
+    await tg.answerCallbackQuery(cq.id, `Angles cooking on the PC (${angles} each) — I'll bring them here.`);
+    return;
+  }
+  const hook = await nextHook(db, { pillar: item.pillar as string | null, lang });
+  const cta = await nextCta(db, { platform: String(primary.platform), lang });
+  let body = String(primary.body ?? "");
+  if (hook && !body.startsWith(hook.text)) body = `${hook.text}\n${body}`;
+  if (cta && ctaCount(body) === 0) body = `${body}\n${cta.text}`;
+  const checked = complianceCheck({
+    post_type: item.post_type as PostType,
+    platform: String(primary.platform) as never,
+    lang,
+    body,
+  });
+  await db.from("content_variants").update({
+    body, compliance: checked, claim_flags: checked.claim_flags,
+  }).eq("id", primary.id);
+  await db.from("compliance_checks").insert({
+    variant_id: primary.id, ok: checked.ok, needs_approval: true, findings: checked.findings,
+  });
+  await logAction({ actor: "jack", action: "content.adjust", target: content_id });
+  await tg.answerCallbackQuery(cq.id, checked.ok ? "Adjusted (no AI): hook up top, CTA below." : "Adjusted, but the checklist blocks: see the draft.");
+  if (chat) {
+    await tg.sendMessage(chat, `🎛 Adjusted <code>#${content_id.slice(0, 8)}</code> (no AI):\n<pre>${tg.escapeHtml(body).slice(0, 3000)}</pre>`, {
+      parse_mode: "HTML", reply_to_message_id: mid,
+    });
+  }
+}
+
+/**
+ * Use one local-model angle (Wave 3 item 6): the picked body becomes the
+ * platform draft (re-checked), the card collapses, Jack still taps ✅.
+ */
+async function onPick(cq: NonNullable<Update["callback_query"]>, short: string): Promise<void> {
+  const chat = cq.message?.chat.id;
+  const mid = cq.message?.message_id;
+  let variantId: string;
+  try {
+    variantId = await resolveVariantShort(short);
+  } catch {
+    await tg.answerCallbackQuery(cq.id, "That angle is gone.", true);
+    return;
+  }
+  const db = admin();
+  const { data: v } = await db.from("content_variants")
+    .select("content_id, platform, lang, body, compliance, source").eq("id", variantId).maybeSingle();
+  const src = (v?.source ?? {}) as Record<string, unknown>;
+  const stored = (v?.compliance ?? {}) as { ok?: boolean };
+  if (!v || src.via !== "llm_variants") {
+    await tg.answerCallbackQuery(cq.id, "That is not an angle.", true);
+    return;
+  }
+  if (stored.ok !== true || src.blocked === true) {
+    await tg.answerCallbackQuery(cq.id, "Blocked: the number guard refused that angle.", true);
+    return;
+  }
+  const body = String(v.body ?? "");
+  const { data: parent } = await db.from("content_items").select("post_type").eq("id", v.content_id).maybeSingle();
+  const { data: sibs } = await db.from("content_variants")
+    .select("id, source").eq("content_id", v.content_id).eq("platform", v.platform);
+  const sibling = (sibs ?? []).find((s) => ((s.source ?? {}) as Record<string, unknown>).via !== "llm_variants");
+  const sibSrc = ((sibling?.source ?? {}) as Record<string, unknown>);
+  const targetId = (sibling?.id as string | undefined) ?? variantId;
+  const rechecked = complianceCheck({
+    post_type: (parent?.post_type ?? "gold_map") as PostType,
+    platform: String(v.platform) as never,
+    lang: (v.lang === "ms" ? "ms" : "en") as "en" | "ms",
+    body,
+    allowed_numbers: extractNumbers(body), // the pick may only repeat its own numbers
+  });
+  await db.from("content_variants").update({
+    body, compliance: rechecked, claim_flags: rechecked.claim_flags, needed_fields: [],
+    source: { ...sibSrc, picked: true },
+  }).eq("id", targetId);
+  await db.from("compliance_checks").insert({
+    variant_id: targetId, ok: rechecked.ok, needs_approval: true, findings: rechecked.findings,
+  });
+  if (targetId !== variantId) {
+    await db.from("content_variants").update({ source: { ...src, picked: false } }).eq("id", variantId);
+  }
+  await db.from("content_items").update({ status: "draft" }).eq("id", v.content_id);
+  await logAction({ actor: "jack", action: "content.pick", target: String(v.content_id), payload: { variant_id: variantId } });
+  await tg.answerCallbackQuery(cq.id, "Angle live on the draft. Tap ✅ to approve.");
+  if (chat && mid) {
+    await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton(`\u2705 Angle live · ${v.platform}`)]]).catch(() => null);
   }
 }
 

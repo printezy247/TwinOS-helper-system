@@ -87,4 +87,7 @@ export const SETTING_KEYS = {
   timezone: "timezone", // Asia/Kuala_Lumpur
   signalExpiryHours: "signal_expiry_hours", // stop-if window (§9.D.25)
   offerMaxPerWeek: "offer_posts_per_week_max", // one offer post a week (§9.E.41)
+  llmVariantsEnabled: "llm_variants_enabled", // Wave 3 item 6: local-model variants, off by default
+  llmAngles: "llm_angles", // Wave 3 item 6: angles per platform (default 3)
+  llmLocalUrl: "llm_local_url", // Wave 3 item 6: loopback llama-server base URL
 } as const;

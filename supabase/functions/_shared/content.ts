@@ -289,6 +289,21 @@ export async function resolveShort(short: string): Promise<string> {
   return data[0].id as string;
 }
 
+/** Resolve an 8-hex variant prefix the same way (Wave 3 item 6: Pick buttons). */
+export async function resolveVariantShort(short: string): Promise<string> {
+  const { from, to } = shortIdRange(short);
+  const { data, error } = await admin()
+    .from("content_variants")
+    .select("id")
+    .gte("id", from)
+    .lte("id", to)
+    .limit(2);
+  if (error) throw new HttpError(503, "upstream_failed", error.message);
+  if (!data || data.length === 0) throw notFound("variant");
+  if (data.length > 1) throw new HttpError(409, "conflict", "short id is ambiguous");
+  return data[0].id as string;
+}
+
 /**
  * Post the draft to the EzyMap Desk group with the approval keyboard and
  * record the message id on the item (plan §9.C.13–14).

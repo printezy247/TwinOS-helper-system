@@ -61,6 +61,7 @@ class DeskTourTest(unittest.TestCase):
         for cmd in ("/status", "/friday", "/hours today", "/batch", "/menu", "/fanout #"):
             self.assertIn(cmd, r.stdout, cmd)
         self.assertIn('"data":"no:', r.stdout)
+        self.assertIn('"data":"adj:', r.stdout, "the tour walks the Adjust tap")
         self.assertNotIn('"data":"ok:', r.stdout)
         self.assertIn("DRY RUN", r.stdout)
 

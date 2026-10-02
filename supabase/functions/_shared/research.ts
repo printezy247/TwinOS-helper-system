@@ -51,23 +51,33 @@ export function scoreTopic(p: { demand: number; icpFit: number; risk: number }):
 
 export interface BriefSlot { dow: number; pillar: string | null; topic: string | null }
 export interface BriefCluster { name: string; pillar: string | null; persona: string | null; score: number }
-export interface ProposedSlot { dow: number; pillar: string | null; calendar_topic: string | null; suggested: string | null; score: number | null }
+export interface ProposedSlot {
+  dow: number; pillar: string | null; calendar_topic: string | null; suggested: string | null; score: number | null;
+  hook: string | null;
+}
+export interface BriefHook { pillar: string | null; text: string }
 
 const DAYS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-export function buildBrief(p: { week: string; cycleWeek: number; slots: BriefSlot[]; clusters: BriefCluster[] }): { body: string; proposed_slots: ProposedSlot[] } {
+export function buildBrief(p: {
+  week: string; cycleWeek: number; slots: BriefSlot[]; clusters: BriefCluster[]; hooks?: BriefHook[];
+}): { body: string; proposed_slots: ProposedSlot[] } {
   const pool = p.clusters.filter((c) => c.score > 0).sort((a, b) => b.score - a.score);
   const used = new Set<string>();
   const proposed: ProposedSlot[] = [...p.slots].sort((a, b) => a.dow - b.dow).map((s) => {
     const pick = pool.find((c) => !used.has(c.name) && c.pillar !== null && c.pillar === s.pillar);
     if (pick) used.add(pick.name);
-    return { dow: s.dow, pillar: s.pillar, calendar_topic: s.topic, suggested: pick?.name ?? null, score: pick?.score ?? null };
+    // Grounded: each day carries its evidence — calendar topic, best scored
+    // topic, and a hook-bank line to open with.
+    const hook = (p.hooks ?? []).find((h) => h.pillar !== null && h.pillar === s.pillar)?.text ?? null;
+    return { dow: s.dow, pillar: s.pillar, calendar_topic: s.topic, suggested: pick?.name ?? null, score: pick?.score ?? null, hook };
   });
   const lines = [`Monday brief: week of ${p.week} (calendar week ${p.cycleWeek} of the 28-day cycle)`, ""];
   for (const s of proposed) {
     const cal = s.calendar_topic ?? "(no calendar topic)";
     lines.push(`${DAYS[s.dow] ?? s.dow} ${s.pillar ?? ""}: ${cal}`);
     if (s.suggested) lines.push(`    better fit this week: ${s.suggested} (score ${s.score!.toFixed(2)})`);
+    if (s.hook) lines.push(`    open with: ${s.hook}`);
   }
   const rest = pool.filter((c) => !used.has(c.name)).slice(0, 3);
   if (!pool.length) lines.push("", "No scored topics yet: the weekly autocomplete run has not found any.");

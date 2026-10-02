@@ -13,6 +13,8 @@ import { createDraft } from "./content.ts";
 import { HttpError, notFound } from "./http.ts";
 import type { Lang, Platform, PostType } from "./compliance.ts";
 import { adaptCaption, FANOUT_DEFAULT, type FanResult, isKitPlatform, validatePlatform } from "./platforms.ts";
+import { nextCta, nextHook } from "./hooks.ts";
+import { renderScriptKit, scriptKit, type KitLang, type KitPlatform } from "./kits.ts";
 
 type Media = { kind: "photo" | "video"; url?: string; asset_id?: string; file_id?: string };
 
@@ -53,11 +55,26 @@ export async function fanOut(
   const done = new Set((existing ?? []).map((e) => (e.source as { platform?: string }).platform));
 
   const results: FanResult[] = [];
+  const lang = (item.lang === "ms" ? "ms" : "en") as KitLang;
   for (const platform of wanted) {
     if (done.has(platform)) continue;
     const adapted = adaptCaption(master.body as string, platform as Platform);
     const findings = validatePlatform({ platform: platform as Platform, body: adapted.body, media: meta });
     const kit = isKitPlatform(platform);
+    // TikTok / YouTube kits ship a shooting script: hook + beats + the risk
+    // line spoken, from the no-AI libraries (Wave 3 item 7).
+    let scriptKitText: string | null = null;
+    if (platform === "tiktok" || platform === "youtube") {
+      const hook = await nextHook(db, { pillar: item.pillar as string | null, lang });
+      const cta = await nextCta(db, { platform, lang });
+      scriptKitText = renderScriptKit(scriptKit({
+        platform: platform as KitPlatform,
+        lang,
+        hook: hook?.text ?? String(item.title ?? item.post_type),
+        topic: String(item.title ?? item.post_type),
+        cta: cta?.text ?? "",
+      }));
+    }
     const draft = await createDraft({
       post_type: item.post_type as PostType,
       lang: item.lang as Lang,
@@ -68,7 +85,10 @@ export async function fanOut(
       pillar: item.pillar as string | null,
       title: item.title as string | null,
       scheduled_at: item.scheduled_at as string | null,
-      source: { via: "fanout", parent: masterId, platform, kit, notes: adapted.notes, platform_findings: findings },
+      source: {
+        via: "fanout", parent: masterId, platform, kit, notes: adapted.notes,
+        platform_findings: findings, ...(scriptKitText ? { script_kit: scriptKitText } : {}),
+      },
       actor: opts.actor,
     });
     if (kit) {
@@ -76,7 +96,7 @@ export async function fanOut(
     }
     results.push({
       platform: platform as Platform, content_id: draft.content_id, kit, body: adapted.body,
-      notes: adapted.notes, findings, complianceOk: draft.compliance.ok,
+      notes: adapted.notes, findings, complianceOk: draft.compliance.ok, script_kit: scriptKitText,
     });
   }
   return results;

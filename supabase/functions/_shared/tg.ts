@@ -490,6 +490,9 @@ export function approvalKeyboard(contentId: string): InlineButton[][] {
       { text: "🕒 Reschedule", callback_data: shortCallback("later", contentId) },
       { text: "❌ Reject", callback_data: shortCallback("no", contentId) },
     ],
+    [
+      { text: "🎛 Adjust", callback_data: shortCallback("adj", contentId) },
+    ],
   ];
 }
 
