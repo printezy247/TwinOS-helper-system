@@ -16,8 +16,10 @@ times in `Asia/Kuala_Lumpur`; approvals must work at 390 px.
 
 Backend contracts this wave (already deployed; the prompts below assume them):
 `tg-auth/verify { init_data }` returns `{ session, expires_at }`, a
-`tma.…` bearer the edge functions accept as Jack; `GET tg-auth/me`
-confirms it. (Signatures and first-comment fields arrive with item 2;
+`tma.…` session (2 h) the edge functions accept as Jack. The gateway in front
+of the functions admits only JWTs, so the session rides in the
+`x-twinos-session` header while `Authorization` carries the anon key, as
+supabase-js does by default; `GET tg-auth/me` confirms it. (Signatures and first-comment fields arrive with item 2;
 the prompts below assume them.)
 
 ## 1. Mini App approval route
@@ -25,8 +27,9 @@ the prompts below assume them.)
 > Add a `/mini` route for the Telegram Mini App approval view, opened from
 > the Desk menu button. On load, read `initData` from tma.js, POST it to
 > `tg-auth/verify` as `{ init_data }`, keep the returned `session` in memory
-> (never in localStorage), and send it as the Bearer on every
-> `supabase.functions.invoke` from this route. Confirm the session with `GET
+> (never in localStorage), and send it in an `x-twinos-session` header on
+> every `supabase.functions.invoke` from this route (keep the default
+> Authorization; do not replace it with the session). Confirm the session with `GET
 > tg-auth/me` before showing anything. The view is the Approval Inbox
 > condensed for 390 px: pending drafts with Approve / Reject + confirm,
 > blocking findings hide Approve, one item per screen with prev/next. Any

@@ -174,6 +174,18 @@ async function callerFromJwt(req: Request, jwt: string): Promise<Caller> {
 }
 
 /** A Mini App session acts as Jack: initData proved the Telegram id at mint. */
+/**
+ * The Mini App's `tma.` session. The gateway only admits JWTs, so the app
+ * sends the anon JWT on Authorization and the session in x-twinos-session;
+ * a `tma.` bearer is still read for routes deployed without the gateway check.
+ */
+export function miniAppSession(req: Request): string {
+  const header = normalise(req.headers.get("x-twinos-session"));
+  if (header.startsWith("tma.")) return header;
+  const token = bearer(req);
+  return token.startsWith("tma.") ? token : "";
+}
+
 async function callerFromMiniApp(token: string): Promise<Caller> {
   const { user_id } = await verifySession(token, Deno.env.get("TWINOS_OPS_BOT_TOKEN") ?? "");
   const jack = await setting(SETTING_KEYS.jackTelegramId);
@@ -188,9 +200,10 @@ export async function authenticate(req: Request): Promise<Caller> {
   // caller that asked.
   const key = apiKeyFrom(req);
   if (key) return await callerFromKey(key);
+  const session = miniAppSession(req);
+  if (session) return await callerFromMiniApp(session);
   const token = bearer(req);
   if (!token) throw new HttpError(401, "unauthorized", "no bearer token");
-  if (token.startsWith("tma.")) return await callerFromMiniApp(token);
   return await callerFromJwt(req, token);
 }
 
