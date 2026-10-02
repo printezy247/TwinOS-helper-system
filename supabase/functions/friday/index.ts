@@ -19,6 +19,7 @@ import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, pushToDesk } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
 import { fanoutLine, hoursCutLine } from "_shared/hours.ts";
+import { campaignRows } from "_shared/campaign.ts";
 import { sendMessage } from "_shared/tg.ts";
 
 const MANUAL_SOURCES = ["vantage", "tiktok", "telechurn"] as const;
@@ -75,11 +76,12 @@ serve(async (req) => {
     requireRole(caller.role, "metrics.manual");
     const week = reqString(body, "week_start", { max: 10 });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw bad("week_start must be YYYY-MM-DD");
-    const source = oneOf(body, "source", MANUAL_SOURCES);
+    // "ads" (the week's ad spend) is optional: it is never listed as a missing input, so a week with no ads is not nagged.
+    const source = oneOf(body, "source", [...MANUAL_SOURCES, "ads"] as const);
     const metrics = body.metrics && typeof body.metrics === "object" ? body.metrics as Record<string, unknown> : null;
     if (!metrics) throw bad("metrics object is required");
     const clean: Record<string, number> = {};
-    for (const f of MANUAL_FIELDS[source]) {
+    for (const f of source === "ads" ? ["ad_spend_usd"] : MANUAL_FIELDS[source]) {
       const n = Number(metrics[f]);
       if (!Number.isFinite(n)) throw bad(`metrics.${f} must be a number`, { field: f });
       clean[f] = n;
@@ -95,6 +97,24 @@ serve(async (req) => {
     if (error) throw bad(`manual_metrics: ${error.message}`);
     await logAction({ actor: caller.actor, action: "metrics.manual", target: `${week}/${source}`, payload: clean });
     return json({ ok: true, week_start: week, source, missing_inputs: await missingInputs(week) });
+  }
+
+  // POST /friday/campaign { week_start, campaign, ad_spend_usd?, first_time_depositors?, ib_accounts_opened? }
+  // One campaign's numbers (a TikTok live, a swap, an ad set) for cost per first-time depositor (v_campaign_cost).
+  // They are rows of their own kind, so they never add to the week's totals.
+  if (tail[0] === "campaign") {
+    requireRole(caller.role, "metrics.manual");
+    let rows;
+    try {
+      rows = campaignRows(body);
+    } catch (err) {
+      throw bad(err instanceof Error ? err.message : String(err));
+    }
+    const { error } = await db.from("manual_metrics")
+      .upsert(rows.map((r) => ({ ...r, entered_by: caller.actor })), { onConflict: "week_start,kind,metric,campaign" });
+    if (error) throw bad(`manual_metrics: ${error.message}`);
+    await logAction({ actor: caller.actor, action: "metrics.campaign", target: `${rows[0].week_start}/${rows[0].campaign}`, payload: { metrics: rows.map((r) => r.metric) } });
+    return json({ ok: true, week_start: rows[0].week_start, campaign: rows[0].campaign, metrics: rows.length });
   }
 
   if (tail[0] === "post") {

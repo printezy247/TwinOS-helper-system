@@ -599,5 +599,29 @@ begin
   raise notice 'ok: v_repeat_questions';
 end $$;
 
+-- 20. cost per first-time depositor per campaign, kept apart from the weekly totals (0025)
+do $$
+declare r record;
+begin
+  delete from public.manual_metrics where week_start = '2026-10-12';
+  insert into public.manual_metrics (week_start, kind, metric, value, source) values
+    ('2026-10-12', 'campaign', 'ad_spend_usd', 150, 'campaign'),
+    ('2026-10-12', 'campaign', 'first_time_depositors', 3, 'campaign'),
+    ('2026-10-12', 'campaign', 'ib_accounts_opened', 9, 'campaign'),
+    ('2026-10-12', 'vantage', 'first_time_depositors', 100, 'vantage');   -- a weekly total must not leak into a campaign
+  update public.manual_metrics set campaign = 'tt-live-2610' where week_start = '2026-10-12' and kind = 'campaign';
+  insert into public.manual_metrics (week_start, kind, metric, value, source, campaign) values
+    ('2026-10-12', 'campaign', 'ad_spend_usd', 40, 'campaign', 'ig-bio-2610');
+  select * into r from public.v_campaign_cost where week_start = '2026-10-12' and campaign = 'tt-live-2610';
+  assert r.ad_spend_usd = 150, 'spend: ' || coalesce(r.ad_spend_usd::text, 'null');
+  assert r.first_time_depositors = 3, 'depositors: ' || coalesce(r.first_time_depositors::text, 'null');
+  assert r.ib_accounts_opened = 9, 'accounts';
+  assert r.cost_per_ftd_usd = 50.00, 'cost per depositor: ' || coalesce(r.cost_per_ftd_usd::text, 'null');
+  select * into r from public.v_campaign_cost where week_start = '2026-10-12' and campaign = 'ig-bio-2610';
+  assert r.ad_spend_usd = 40 and r.cost_per_ftd_usd is null, 'spend with no depositor has no cost per depositor, not a division error';
+  assert (select count(*) from public.v_campaign_cost where week_start = '2026-10-12') = 2, 'two campaigns that week';
+  raise notice 'ok: v_campaign_cost';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;

@@ -101,8 +101,8 @@ Exit: a live becomes clips without CapCut's help for the cut list; Monday brief 
 ## Phase 6 — Pilot readiness (January 2027)
 Exit: cost per FTD visible daily.
 - [ ] Ad landing attribution checked end to end (printezy read endpoint)
-- [ ] Cost per first-time depositor per campaign
-- [ ] Quarter target tracker + stop-if alarms (`v_quarter_targets`, `v_stop_if`)
+- [x] Cost per first-time depositor per campaign (`POST /friday/campaign`, `v_campaign_cost`, migration 0025: spend, accounts and depositors per campaign, kept apart from the weekly totals so nothing double-counts; the week's ad spend is an optional Friday source `ads`). It fills as Jack enters numbers
+- [x] Quarter target tracker + stop-if alarms (`v_quarter_targets`: Q4 2026 / Q1 / Q2 targets and days left read live; `v_stop_if`: no-result signal, cost per depositor over $120 two weeks running, refunds over 3%, none flagged yet). Actuals follow the data
 - [ ] Lawyer's opinion on compliance obtained before paid ads (decision 7) — Jack
 
 ## Phase 7 — Q1–Q2 extras (Feb–Jun 2027)
