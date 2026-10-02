@@ -121,11 +121,11 @@ Exit: payments match the old bot for two weeks.
 Plan: `UPGRADE-PLAN.md` §17. Builder prompt: `docs/AI-CODER-PROMPT.md`. Every function change ends with `scripts/deploy.sh` + `scripts/desk-tour.sh` PASS (Jack runs both).
 
 ### Wave 0 — fixes
-- [ ] `desk_state` check allows `'kit'` (+ `awaiting_slot`), `desk_state_at` added; fan-out kits get their state
-- [ ] Reschedule keeps the card's buttons
-- [ ] Edit / Later prompts get ✖ Cancel and expire after 30 minutes
-- [ ] Contract test for the `tg-webhook` → `approve` hop
-- [ ] Dead-button test (every emitted callback verb has a handler)
+- [x] `desk_state` check allows `'kit'` (+ `awaiting_slot`), `desk_state_at` added; fan-out kits get their state (`0026_desk_state_wave0.sql`, `fanout.ts`; `desk_test.ts` 5 passed, consistency 30/30)
+- [x] Reschedule keeps the card's buttons (`approve/index.ts`: clear skipped on reschedule; consistency guard)
+- [x] Edit / Later prompts get ✖ Cancel and expire after 30 minutes (`desk.ts` `PROMPT_TTL_MS` + `cancelKeyboard`, `tg-webhook` expiry + `cancel` handler)
+- [x] Contract test for the `tg-webhook` → `approve` hop (`desk.ts` `buildApprovePayload`, all 4 call sites; user_id always text)
+- [x] Dead-button test (every emitted callback verb has a handler) (`HANDLED_CALLBACK_VERBS` vs emitted verbs)
 
 ### Wave 1 — Desk bot navigation
 - [ ] Callback grammar v2 (`nav:` `pg:` `nop` + stale-menu fingerprint)
