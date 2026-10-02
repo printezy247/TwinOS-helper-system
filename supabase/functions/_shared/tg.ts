@@ -350,9 +350,10 @@ export function shortCallback(verb: string, id: string): string {
 export const NAV_LAYOUT = "v1";
 
 export type Callback =
-  | { kind: "item"; verb: string; short: string }
+  | { kind: "item"; verb: string; short: string; extra?: string }
   | { kind: "nav"; screen: string; arg?: string; fp: string }
   | { kind: "page"; screen: string; n: number; fp: string }
+  | { kind: "cmd"; name: string }
   | { kind: "nop" };
 
 export function navCallback(screen: string, arg?: string, fp = NAV_LAYOUT): string {
@@ -377,8 +378,63 @@ export function parseCallback(data: string): Callback | null {
   if (m) return { kind: "nav", screen: m[1], arg: m[2], fp: m[3] };
   m = /^pg:([a-z_]{1,16}):(\d{1,3})@([a-z0-9]{1,8})$/.exec(data);
   if (m) return { kind: "page", screen: m[1], n: Number(m[2]), fp: m[3] };
-  m = /^([a-z_]{1,16}):([0-9a-f]{8})$/.exec(data);
-  return m ? { kind: "item", verb: m[1], short: m[2] } : null;
+  m = /^cmd:([a-z_]{1,16})$/.exec(data);
+  if (m) return { kind: "cmd", name: m[1] };
+  m = /^([a-z_]{1,16}):([0-9a-f]{8})(?::([a-z0-9]{1,16}))?$/.exec(data);
+  return m ? { kind: "item", verb: m[1], short: m[2], extra: m[3] } : null;
+}
+
+/** Later quick picks: `rs:<id8>:<slot>` (13, 18, tom). Custom stays a reply. */
+export function slotCallback(id: string, slot: string): string {
+  return checkCallbackLen(`rs:${id.replace(/-/g, "").slice(0, 8)}:${slot}`);
+}
+
+/** Edit presets: `ed:<id8>:<preset>` (soften, bm, shorter, own). */
+export function presetCallback(id: string, preset: string): string {
+  return checkCallbackLen(`ed:${id.replace(/-/g, "").slice(0, 8)}:${preset}`);
+}
+
+/** Stateless command buttons (`cmd:refresh`, `cmd:ready`, …). */
+export function cmdCallback(name: string): string {
+  return checkCallbackLen(`cmd:${name}`);
+}
+
+/** Later prompt: quick picks + Custom (reply) + Cancel. */
+export function laterKeyboard(contentId: string): InlineButton[][] {
+  const rs = (slot: string, text: string): InlineButton => ({ text, callback_data: slotCallback(contentId, slot) });
+  return [
+    [rs("13", "13:00"), rs("18", "18:00")],
+    [
+      rs("tom", "Tomorrow 08:00"),
+      { text: "Custom…", callback_data: shortCallback("later", contentId) },
+    ],
+    [{ text: "✖ Cancel", callback_data: shortCallback("cancel", contentId) }],
+  ];
+}
+
+/** Edit prompt: presets + write-your-own (reply) + Cancel. */
+export function editKeyboard(contentId: string): InlineButton[][] {
+  const ed = (preset: string, text: string): InlineButton => ({
+    text,
+    callback_data: presetCallback(contentId, preset),
+  });
+  return [
+    [ed("soften", "Soften"), ed("bm", "BM")],
+    [ed("shorter", "Shorter"), ed("own", "Write my own")],
+    [{ text: "✖ Cancel", callback_data: shortCallback("cancel", contentId) }],
+  ];
+}
+
+/** /batch list: per-item approve/edit/preview, Refresh, confirmed approve-ready. */
+export function batchListKeyboard(items: Array<{ n: number; id: string }>, ready: number): InlineButton[][] {
+  const rows: InlineButton[][] = items.map((i) => [
+    { text: `✅ ${i.n}`, callback_data: shortCallback("ok", i.id) },
+    { text: `✏️ ${i.n}`, callback_data: shortCallback("edit", i.id) },
+    { text: `👁 ${i.n}`, callback_data: shortCallback("vw", i.id) },
+  ]);
+  rows.push([{ text: "🔄 Refresh", callback_data: cmdCallback("refresh") }]);
+  rows.push([{ text: `✅ Approve ready (${ready})`, callback_data: cmdCallback("ready") }]);
+  return rows;
 }
 
 /**

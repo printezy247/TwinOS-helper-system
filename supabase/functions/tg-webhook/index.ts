@@ -18,7 +18,7 @@ import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import * as tg from "_shared/tg.ts";
-import { buildApprovePayload, cancelKeyboard, isDeskPromptExpired } from "_shared/desk.ts";
+import { buildApprovePayload, isDeskPromptExpired } from "_shared/desk.ts";
 import { createDraft, pushToDesk, resolveShort } from "_shared/content.ts";
 import { check as complianceCheck, type PostType } from "_shared/compliance.ts";
 import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
@@ -113,6 +113,10 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
     await onNav(cq, parsed);
     return;
   }
+  if (parsed.kind === "cmd") {
+    await onBatchCmd(cq, parsed.name);
+    return;
+  }
 
   let content_id: string;
   try { content_id = await resolveShort(parsed.short); } catch (err) {
@@ -132,19 +136,24 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
     case "ok": {
       const r = await callApprove(buildApprovePayload(content_id, "approve", cq.from.id, `cb:${cq.id}`, { callback_id: cq.id }));
       await tg.answerCallbackQuery(cq.id, r.ok ? "Approved. Publishing on schedule." : `Not approved: ${r.message ?? r.error}`, !r.ok);
-      if (chat && mid && r.ok) await tg.sendMessage(chat, `✅ Approved <code>#${content_id.slice(0, 8)}</code>`, { parse_mode: "HTML", reply_to_message_id: mid });
+      if (chat && mid && r.ok) {
+        await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton(await approvedStamp(content_id))]]).catch(() => null);
+      }
       return;
     }
     case "no": {
       const r = await callApprove(buildApprovePayload(content_id, "reject", cq.from.id, `cb:${cq.id}`));
       await tg.answerCallbackQuery(cq.id, r.ok ? "Rejected." : `Failed: ${r.message ?? r.error}`, !r.ok);
+      if (chat && mid && r.ok) {
+        await tg.editMessageReplyMarkup(chat, mid, [[tg.nopButton("❌ Rejected")]]).catch(() => null);
+      }
       return;
     }
     case "edit": {
       await admin().from("content_items").update({ desk_state: "awaiting_edit", desk_state_at: new Date().toISOString() }).eq("id", content_id);
       await tg.answerCallbackQuery(cq.id);
       if (chat && mid) {
-        await tg.sendMessage(chat, `✏️ Reply to the draft with the new text, or a one-liner like <code>soften</code> / <code>BM</code> / <code>shorter</code>.`, { parse_mode: "HTML", reply_to_message_id: mid, buttons: cancelKeyboard(content_id) });
+        await tg.sendMessage(chat, `✏️ Pick a preset, or reply with the new text.`, { parse_mode: "HTML", reply_to_message_id: mid, buttons: tg.editKeyboard(content_id) });
       }
       return;
     }
@@ -152,7 +161,52 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       await admin().from("content_items").update({ desk_state: "awaiting_time", desk_state_at: new Date().toISOString() }).eq("id", content_id);
       await tg.answerCallbackQuery(cq.id);
       if (chat && mid) {
-        await tg.sendMessage(chat, `🕒 Reply with a time, e.g. <code>13:00</code> or <code>tomorrow 08:00</code> (MYT).`, { parse_mode: "HTML", reply_to_message_id: mid, buttons: cancelKeyboard(content_id) });
+        await tg.sendMessage(chat, `🕒 Pick a time, or reply with one like <code>13:00</code> (MYT).`, { parse_mode: "HTML", reply_to_message_id: mid, buttons: tg.laterKeyboard(content_id) });
+      }
+      return;
+    }
+    case "rs": {
+      const labels: Record<string, string> = { "13": "13:00", "18": "18:00", "tom": "tomorrow 08:00" };
+      const label = labels[parsed.extra ?? ""];
+      if (!label) { await tg.answerCallbackQuery(cq.id, "Unknown time."); return; }
+      const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+      const when = parseTime(label, tz);
+      if (!when) { await tg.answerCallbackQuery(cq.id, "I need a time like 13:00.", true); return; }
+      const r = await callApprove(buildApprovePayload(content_id, "reschedule", cq.from.id, `rs:${cq.id}`, { run_at: when }));
+      await tg.answerCallbackQuery(cq.id, r.ok ? `Rescheduled to ${label}.` : `Failed: ${r.message ?? r.error}`, !r.ok);
+      if (chat && mid && r.ok) await tg.editMessageReplyMarkup(chat, mid, null).catch(() => null);
+      return;
+    }
+    case "ed": {
+      const preset = parsed.extra;
+      if (preset === "own") {
+        await tg.answerCallbackQuery(cq.id, "Reply with the full new text.");
+        return;
+      }
+      const instructions: Record<string, string> = { soften: "soften", bm: "BM", shorter: "shorter" };
+      const instruction = preset ? instructions[preset] : undefined;
+      if (!instruction || !chat || !mid) {
+        await tg.answerCallbackQuery(cq.id, !instruction ? "Unknown preset." : "That draft is gone.", true);
+        return;
+      }
+      const { data: item } = await admin().from("content_items")
+        .select("post_type, lang").eq("id", content_id).maybeSingle();
+      if (!item) { await tg.answerCallbackQuery(cq.id, "That draft is gone.", true); return; }
+      await applyEdit(content_id, item.post_type as PostType, item.lang as "en" | "ms", instruction, {
+        message_id: mid,
+        chat: { id: chat, type: "supergroup" },
+        date: Math.floor(Date.now() / 1000),
+      });
+      await tg.answerCallbackQuery(cq.id, "Rewriting…");
+      await tg.editMessageReplyMarkup(chat, mid, null).catch(() => null);
+      return;
+    }
+    case "vw": {
+      const { data: v } = await admin().from("content_variants")
+        .select("body").eq("content_id", content_id).limit(1).maybeSingle();
+      await tg.answerCallbackQuery(cq.id);
+      if (chat && v?.body) {
+        await tg.sendMessage(chat, `👁 <code>#${content_id.slice(0, 8)}</code>\n\n${tg.escapeHtml(String(v.body)).slice(0, 3500)}`, { parse_mode: "HTML", reply_to_message_id: mid });
       }
       return;
     }
@@ -215,30 +269,114 @@ async function onBatch(m: Message): Promise<void> {
   const states = await loadBatchStates(batch);
 
   if (arg === "ok") {
-    const jack = await jackId();
-    const done: number[] = [];
-    const refused: string[] = [];
-    for (const s of states) {
-      if (!readyToApprove(s)) continue;
-      const r = await callApprove(buildApprovePayload(s.id, "approve", jack, `batch-ok:${s.id}`));
-      if (r.ok) done.push(s.n); else refused.push(`${s.n} (${tg.escapeHtml(String(r.message ?? r.error))})`);
-    }
-    const left = sweepPlan(states.filter((s) => !done.includes(s.n)), new Date(0)).nudge
-      .filter((n) => n.why !== "ready: /batch ok");
-    await say([
-      done.length ? `✅ Approved ${done.join(", ")}. They go out at their slot.` : "Nothing was ready to approve.",
-      ...(refused.length ? [`⚠️ Not approved: ${refused.join("; ")}`] : []),
-      ...(left.length ? ["Still waiting on you:", ...left.map((n) => `${n.n}. ${n.why}`)] : []),
-    ].join("\n"));
-    await logAction({ actor: "jack", action: "batch.ok", payload: { approved: done, refused: refused.length } });
+    const { done, refused } = await approveReadyBatch(states, await jackId());
+    await say(batchResultLines(states, done, refused).join("\n"));
     return;
   }
 
   const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
-  await say(renderBatchList(batch, states, tz));
+  await tg.sendMessage(m.chat.id, renderBatchList(batch, states, tz).slice(0, 4096), {
+    parse_mode: "HTML",
+    reply_to_message_id: m.message_id,
+    buttons: tg.batchListKeyboard(batch.items.map((i) => ({ n: i.batch_no, id: i.id })), states.filter(readyToApprove).length),
+  });
 }
 
 /* ------------------------------ Desk group input ------------------------------ */
+/** Status line for a collapsed decision card (Wave 1 item 4). */
+async function approvedStamp(content_id: string): Promise<string> {
+  const { data } = await admin().from("content_items").select("scheduled_at").eq("id", content_id).maybeSingle();
+  const at = data?.scheduled_at as string | null;
+  if (!at) return "✅ Approved";
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  const hm = new Date(at).toLocaleTimeString("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+  return `✅ Approved · ${hm}`;
+}
+
+/** Approve every ready batch item; shared by `/batch ok` and the Yes button. */
+async function approveReadyBatch(states: SweepItem[], jack: number): Promise<{ done: number[]; refused: string[] }> {
+  const done: number[] = [];
+  const refused: string[] = [];
+  for (const s of states) {
+    if (!readyToApprove(s)) continue;
+    const r = await callApprove(buildApprovePayload(s.id, "approve", jack, `batch-ok:${s.id}`));
+    if (r.ok) done.push(s.n); else refused.push(`${s.n} (${tg.escapeHtml(String(r.message ?? r.error))})`);
+  }
+  await logAction({ actor: "jack", action: "batch.ok", payload: { approved: done, refused: refused.length } });
+  return { done, refused };
+}
+
+function batchResultLines(states: SweepItem[], done: number[], refused: string[]): string[] {
+  const left = sweepPlan(states.filter((s) => !done.includes(s.n)), new Date(0)).nudge
+    .filter((n) => n.why !== "ready: /batch ok");
+  return [
+    done.length ? `✅ Approved ${done.join(", ")}. They go out at their slot.` : "Nothing was ready to approve.",
+    ...(refused.length ? [`⚠️ Not approved: ${refused.join("; ")}`] : []),
+    ...(left.length ? ["Still waiting on you:", ...left.map((n) => `${n.n}. ${n.why}`)] : []),
+  ];
+}
+
+/** The /batch list as an editable panel (Wave 1 item 5). */
+async function batchPanel(): Promise<{ text: string; buttons: tg.InlineButton[][]; states: SweepItem[] } | null> {
+  const batch = await openBatch();
+  if (!batch) return null;
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  const states = await loadBatchStates(batch);
+  return {
+    text: renderBatchList(batch, states, tz),
+    buttons: tg.batchListKeyboard(batch.items.map((i) => ({ n: i.batch_no, id: i.id })), states.filter(readyToApprove).length),
+    states,
+  };
+}
+
+/** Refresh / Approve-ready / Yes / Cancel on the batch panel. Yes re-checks first. */
+async function onBatchCmd(cq: NonNullable<Update["callback_query"]>, name: string): Promise<void> {
+  const chat = cq.message?.chat.id;
+  const mid = cq.message?.message_id;
+  if (!chat || !mid) {
+    await tg.answerCallbackQuery(cq.id, "Open /batch for the list.");
+    return;
+  }
+  if (name === "refresh") {
+    const panel = await batchPanel();
+    if (!panel) { await tg.answerCallbackQuery(cq.id, "No batch yet."); return; }
+    await tg.answerCallbackQuery(cq.id, "Refreshed.");
+    await tg.editMessageText(chat, mid, panel.text.slice(0, 4096), { parse_mode: "HTML", buttons: panel.buttons }).catch(() => null);
+    return;
+  }
+  if (name === "ready") {
+    const panel = await batchPanel();
+    const ready = (panel?.states ?? []).filter(readyToApprove);
+    if (!ready.length) { await tg.answerCallbackQuery(cq.id, "Nothing is ready to approve.", true); return; }
+    await tg.answerCallbackQuery(cq.id);
+    await tg.editMessageText(chat, mid, `Approve ${ready.map((s) => s.n).join(", ")}? They go out at their slot.`, {
+      parse_mode: "HTML",
+      buttons: [[
+        { text: "✅ Yes, approve", callback_data: tg.cmdCallback("batchyes") },
+        { text: "Cancel", callback_data: tg.cmdCallback("batchno") },
+      ]],
+    }).catch(() => null);
+    return;
+  }
+  if (name === "batchyes") {
+    const panel = await batchPanel();
+    const states = panel?.states ?? [];
+    const { done, refused } = await approveReadyBatch(states, await jackId());
+    await tg.answerCallbackQuery(cq.id, done.length ? `Approved ${done.join(", ")}.` : "Nothing was ready.");
+    await tg.editMessageText(chat, mid, batchResultLines(states, done, refused).join("\n").slice(0, 4096), { parse_mode: "HTML" }).catch(() => null);
+    return;
+  }
+  if (name === "batchno") {
+    const panel = await batchPanel();
+    await tg.answerCallbackQuery(cq.id, "Kept as drafts.");
+    if (panel) {
+      await tg.editMessageText(chat, mid, panel.text.slice(0, 4096), { parse_mode: "HTML", buttons: panel.buttons }).catch(() => null);
+    }
+    return;
+  }
+  await tg.answerCallbackQuery(cq.id, "Unknown button.");
+}
+
 function parseTime(text: string, tz: string): string | null {
   const m = /^(?:(today|tomorrow|esok)\s+)?(\d{1,2}):(\d{2})$/i.exec(text.trim());
   if (!m) return null;
