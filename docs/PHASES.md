@@ -93,9 +93,9 @@ Exit: every swap shows joins and 7-day retention.
 Exit: a live becomes clips without CapCut's help for the cut list; Monday brief every week; ≥70% hours cut.
 - [ ] `studio/clipper.py` on the GPU: transcript, cut points, SRT, clean clips, cover text
 - [ ] Layout templates (chart full, chart + face, blurred fill) and the end card
-- [ ] Research: personas, autocomplete expansion (ms/MY), Search Console, Bing, YouTube competition score, channel RSS
-- [ ] CSI weekly capture form; Monday brief against the 28-day calendar
-- [ ] Double-down alert (part 2 within 48 h)
+- [ ] Research: personas, autocomplete expansion (ms/MY), Search Console, Bing, YouTube competition score, channel RSS — autocomplete expansion is built and checked against the real endpoint (`research/expand`, weekly: every persona seed in en/ms/manglish plus its core words, scored into `topic_clusters`; a CSI reading Jack typed lifts a matching topic). Search Console, Bing and the YouTube Data API need Jack's accounts and keys, so they are not built
+- [x] Monday brief against the 28-day calendar (`research/brief`, Monday 07:00 MYT: the week's calendar slots, the best fitting scored topic per pillar, each used once, to `briefs` and the Desk; score = demand x ICP fit x (1 - compliance risk)). CSI capture: `POST /research/csi` is live-ready; the dashboard form is in the Research screen
+- [ ] Double-down alert (part 2 within 48 h) — not buildable yet: it needs per-video TikTok views and there is no source for them (only the weekly totals Jack types). It starts as soon as a source exists
 - [ ] Research briefs screen in Lovable
 
 ## Phase 6 — Pilot readiness (January 2027)

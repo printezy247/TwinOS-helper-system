@@ -40,6 +40,7 @@ export type Action =
   | "health.beat"
   | "research.csi"
   | "research.brief"
+  | "research.run"
   | "jobs.claim"
   | "jobs.result"
   | "jobs.enqueue";
@@ -79,6 +80,7 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "health.beat": ["ezyai", "ops_bot", "pc_worker", "cron", "abdul", "jack"],
   "research.csi": ["jack", "abdul"],
   "research.brief": ["jack", "abdul", "pc_worker"],
+  "research.run": ["jack", "abdul", "cron"],
   "jobs.claim": ["pc_worker"],
   "jobs.result": ["pc_worker"],
   "jobs.enqueue": ["jack", "abdul", "cron"],
