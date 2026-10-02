@@ -20,35 +20,11 @@ import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { setStatus } from "_shared/content.ts";
 import { check as complianceCheck } from "_shared/compliance.ts";
+import { backoffMs, classify, MAX_ATTEMPTS, type Kind } from "_shared/backoff.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
 import * as tg from "_shared/tg.ts";
 
-const MAX_ATTEMPTS = 4;
-const BACKOFF_BASE_MS = 30_000;
-const BACKOFF_CAP_MS = 15 * 60_000;
 const PACE_MS = 1100; // Telegram: ~1 msg/s to one chat, 20/min to a group
-
-type Kind = "success" | "throttled" | "permanent" | "unknown";
-
-/** Ported from the ops dashboard's classifyMetaError, adapted to Bot API codes. */
-function classify(err: unknown): { kind: Kind; reason: string } {
-  if (err instanceof tg.TgError) {
-    if (err.code === 429) return { kind: "throttled", reason: err.message };
-    if (err.code >= 500) return { kind: "throttled", reason: err.message };
-    if (err.code === 401 || err.code === 403) return { kind: "permanent", reason: err.message };
-    if (/chat not found|message to reply not found|wrong file identifier|too long|can't parse/i.test(err.message)) {
-      return { kind: "permanent", reason: err.message };
-    }
-    return { kind: "permanent", reason: err.message };
-  }
-  const msg = err instanceof Error ? err.message : String(err);
-  if (/permanent:/.test(msg)) return { kind: "permanent", reason: msg };
-  return { kind: "unknown", reason: msg };
-}
-
-function backoffMs(attempts: number): number {
-  return Math.min(BACKOFF_BASE_MS * 2 ** Math.max(attempts - 1, 0), BACKOFF_CAP_MS);
-}
 
 interface Job {
   id: string;
