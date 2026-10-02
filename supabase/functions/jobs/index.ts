@@ -21,6 +21,7 @@ import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin } from "_shared/supabase.ts";
+import { check as complianceCheck } from "_shared/compliance.ts";
 import { logAction } from "_shared/log.ts";
 
 export const JOB_KINDS = [
@@ -90,8 +91,32 @@ serve(async (req) => {
       // A rewrite that came back re-enters the Desk flow through the content function (next tick).
       if (ok && job.kind === "rewrite" && typeof result.body === "string") {
         const p = job.payload as Record<string, unknown>;
-        await db.from("content_variants").update({ body: result.body, needed_fields: [] }).eq("id", String(p.variant_id));
-        await db.from("content_items").update({ status: "draft", desk_state: "rewritten" }).eq("id", String(p.content_id));
+        const variantId = String(p.variant_id);
+        const contentId = String(p.content_id);
+        const { data: v } = await db.from("content_variants").select("platform").eq("id", variantId).maybeSingle();
+        const { data: it } = await db.from("content_items").select("post_type, lang").eq("id", contentId).maybeSingle();
+        const lang = (typeof p.lang === "string" ? p.lang : it?.lang) === "ms" ? "ms" : "en";
+        // A rewritten body is a new body: run the checklist again and keep the
+        // evidence, exactly like createDraft and the Desk edit path do. Without
+        // this the variant kept the old compliance/claim_flags and no row was
+        // written to compliance_checks.
+        const checked = complianceCheck({
+          post_type: (it?.post_type ?? "gold_map") as never,
+          platform: (v?.platform ?? "telegram") as never,
+          lang,
+          body: result.body,
+          long_form: ["lesson", "start_here", "channel_audit"].includes(String(it?.post_type)),
+        });
+        await db.from("content_variants").update({
+          body: result.body,
+          compliance: checked,
+          claim_flags: checked.claim_flags,
+          needed_fields: [],
+        }).eq("id", variantId);
+        await db.from("compliance_checks").insert({
+          variant_id: variantId, ok: checked.ok, needs_approval: checked.needs_approval, findings: checked.findings,
+        });
+        await db.from("content_items").update({ status: "draft", desk_state: "rewritten" }).eq("id", contentId);
       }
       await logAction({ actor: caller.actor, action: `job.${final}`, target: job_id, payload: { kind: job.kind, error } });
       return json({ ok: true, status: final });

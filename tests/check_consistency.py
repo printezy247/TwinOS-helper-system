@@ -279,8 +279,30 @@ def auth_paths() -> None:
         check(f"{client}: sends its key on X-TwinOS-Key", '"X-TwinOS-Key"' in read(client))
 
 
+# ---------------------------------------------------------------------------
+# 7. Every write of a variant body leaves compliance evidence. The checklist
+#    runs in TypeScript, so a DB trigger cannot enforce this; three writers
+#    (createDraft, the Desk edit, the rewrite job) all have to remember.
+#    The rewrite path forgot, so a rewritten body kept the old compliance and
+#    claim_flags and wrote no compliance_checks row.
+# ---------------------------------------------------------------------------
+def compliance_evidence() -> None:
+    missing = []
+    for p in sorted((ROOT / "supabase/functions").rglob("*.ts")):
+        if p.name.endswith("_test.ts"):
+            continue
+        src = p.read_text(encoding="utf-8")
+        write = re.search(r'from\("content_variants"\)\s*\.(?:insert|update)\(', src)
+        if not write:
+            continue
+        tail = src[write.end(): write.end() + 400]
+        if re.search(r"\bbody\b\s*[,:]", tail) and 'from("compliance_checks")' not in src:
+            missing.append(str(p.relative_to(ROOT)))
+    check("functions: every variant body write also writes compliance_checks", not missing, str(missing))
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
