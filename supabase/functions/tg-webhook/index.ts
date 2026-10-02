@@ -14,6 +14,7 @@
  *   message in discussion group → moderation rules (mod_rules, moderation_events)
  *   message_reaction_count → post_snapshots (reactions)
  */
+import { isPoisonedUpdate } from "_shared/backoff.ts";
 import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
@@ -317,7 +318,10 @@ async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: s
   const hook = await nextHook(db, { pillar: item.pillar as string | null, lang });
   const cta = await nextCta(db, { platform: String(primary.platform), lang });
   let body = String(primary.body ?? "");
-  if (hook && !body.startsWith(hook.text)) body = `${hook.text}\n${body}`;
+  // A/B (research 2026-10-02): record which library hook opened the draft so
+  // v_hook_performance can say which hooks earn views.
+  const hookUsed = hook && !body.startsWith(hook.text) ? hook : null;
+  if (hookUsed) body = `${hookUsed.text}\n${body}`;
   if (cta && ctaCount(body) === 0) body = `${body}\n${cta.text}`;
   const checked = complianceCheck({
     post_type: item.post_type as PostType,
@@ -327,6 +331,7 @@ async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: s
   });
   await db.from("content_variants").update({
     body, compliance: checked, claim_flags: checked.claim_flags,
+    ...(hookUsed ? { hook_id: hookUsed.id } : {}),
   }).eq("id", primary.id);
   await db.from("compliance_checks").insert({
     variant_id: primary.id, ok: checked.ok, needs_approval: true, findings: checked.findings,
@@ -1317,8 +1322,22 @@ serve(async (req) => {
   if (!update || typeof update.update_id !== "number") return json({ ok: true });
 
   // De-dupe: Telegram re-sends on any non-200; store the id and ignore repeats.
-  const { error: dup } = await admin().from("tg_updates").insert({ update_id: update.update_id });
-  if (dup && /duplicate|unique/i.test(dup.message)) return json({ ok: true, duplicate: true });
+  // A replay of a FAILED update is the retry (0 < failures < limit); past the
+  // limit the update is poison and dropped, not replayed forever.
+  const db = admin();
+  const { data: seen } = await db.from("tg_updates").select("failures")
+    .eq("update_id", update.update_id).maybeSingle();
+  const failures = Number(seen?.failures ?? 0);
+  if (seen) {
+    if (failures <= 0) return json({ ok: true, duplicate: true });
+    if (isPoisonedUpdate(failures)) {
+      await logAction({ actor: ACTOR, action: "tg.update_poisoned", payload: { update_id: update.update_id, failures } });
+      return json({ ok: true, poisoned: true });
+    }
+  } else {
+    const { error: dup } = await db.from("tg_updates").insert({ update_id: update.update_id });
+    if (dup && /duplicate|unique/i.test(dup.message)) return json({ ok: true, duplicate: true });
+  }
 
   const deskId = Number((await setting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID")) ?? 0);
   const discussionId = Number((await setting(SETTING_KEYS.discussionChatId, "TWINOS_DISCUSSION_CHAT_ID")) ?? 0);
@@ -1338,6 +1357,7 @@ serve(async (req) => {
     await admin().from("health_checks").insert({ source: "ops_bot", status: "ok", detail: { update_id: update.update_id } });
   } catch (err) {
     console.error("[tg-webhook] handler failed", err);
+    await db.from("tg_updates").update({ failures: failures + 1 }).eq("update_id", update.update_id);
     await logAction({ actor: ACTOR, action: "tg.update_failed", payload: { update_id: update.update_id, error: String(err).slice(0, 300) } });
   }
   return json({ ok: true });

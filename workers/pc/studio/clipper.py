@@ -63,6 +63,55 @@ def pick_highlights(segments: list[dict[str, Any]], max_clips: int) -> list[dict
     return picks
 
 
+def ass_time(t: float) -> str:
+    """ASS clock H:MM:SS.CC; a time before the clip start clamps to zero."""
+    t = max(t, 0.0)
+    h, r = divmod(t, 3600)
+    m, s = divmod(r, 60)
+    cs = int(round((s - int(s)) * 100))
+    return f"{int(h)}:{int(m):02}:{int(s):02}.{cs:02}"
+
+
+def ass_words(segments: list[dict[str, Any]], offset: float = 0.0) -> str:
+    """Word-level ASS captions for a clip (research 2026-10-02: burned-in
+    word-by-word captions are the standard shorts treatment).
+
+    Segments carrying faster-whisper `words` timings get one Dialogue per
+    word, times shifted by the clip start; a segment without them falls back
+    to one Dialogue with its text. Nothing is written to disk here.
+    """
+    header = (
+        "[Script Info]\n"
+        "ScriptType: v4.00+\n"
+        "PlayResX: 1080\n"
+        "PlayResY: 1920\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Outline, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+        "Style: Caption,DejaVu Sans,72,&H00FFFFFF,&H00000000,&H7F000000,-1,3,2,60,60,90,1\n\n"
+        "[Events]\n"
+        "Format: Layer, Start, End, Style, MarginL, MarginR, MarginV, Text\n"
+    )
+    lines = []
+    for seg in segments:
+        words = seg.get("words") or []
+        if words:
+            for w in words:
+                text = str(w.get("word", "")).strip()
+                if not text:
+                    continue
+                start = ass_time(float(w["start"]) - offset)
+                end = ass_time(float(w["end"]) - offset)
+                lines.append(f"Dialogue: 0,{start},{end},Caption,60,60,90,{text}")
+        else:
+            text = str(seg.get("text", "")).strip()
+            if not text:
+                continue
+            start = ass_time(float(seg["start"]) - offset)
+            end = ass_time(float(seg["end"]) - offset)
+            lines.append(f"Dialogue: 0,{start},{end},Caption,60,60,90,{text}")
+    return header + "\n".join(lines) + ("\n" if lines else "")
+
+
 def srt(segments: list[dict[str, Any]], offset: float) -> str:
     def ts(t: float) -> str:
         t = max(t - offset, 0.0)

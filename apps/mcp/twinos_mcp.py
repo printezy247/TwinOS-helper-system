@@ -106,7 +106,8 @@ ENDPOINTS = {
 ANALYTICS_VIEWS = ("v_results_board", "v_funnel", "v_quarter_targets", "v_stop_if", "v_friday_scoreboard",
                    "v_results_weekly", "v_content_log", "post_metrics", "channel_daily", "manual_metrics",
                    "benchmarks", "time_saved", "signals", "content_items", "publish_jobs", "alerts",
-                   "v_hours_cut", "v_fanout_week")
+                   "v_hours_cut", "v_fanout_week",
+                   "v_best_times", "v_post_engagement", "v_hook_performance", "v_signal_ledger")
 
 # --------------------------------------------------------------------------- tools (plan §11 list + three reads)
 # (name, description, {arg: type}, required args)

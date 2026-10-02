@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
-import { adaptCaption, FANOUT_DEFAULT, type FanResult, fanoutSummary, isKit, isKitPlatform, kitRefuses, validatePlatform } from "./platforms.ts";
+import { adaptCaption, FANOUT_DEFAULT, type FanResult, fanoutSummary, isKit, isKitPlatform, kitRefuses, validatePlatform, withSignature } from "./platforms.ts";
 import { hasRiskLine } from "./compliance.ts";
 
 const RISK = "Map only, not financial advice.";
@@ -56,14 +56,14 @@ Deno.test("validatePlatform: a reel over its length or size is blocked, an unkno
   const unknown = validatePlatform({ platform: "instagram", body: "ok", media: { kind: "video" } });
   assert(unknown.every((f) => f.severity === "warn"));
   assert(unknown.length > 0);
-  assertEquals(validatePlatform({ platform: "instagram", body: "ok", media: { kind: "video", duration_s: 30, bytes: 20e6 } }), []);
+  assertEquals(validatePlatform({ platform: "instagram", body: "ok #gold #xau #tips", media: { kind: "video", duration_s: 30, bytes: 20e6 } }), []);
 });
 
 Deno.test("validatePlatform: Instagram and Facebook cannot post without media; Threads and X can", () => {
   assert(validatePlatform({ platform: "instagram", body: "x" }).some((f) => f.severity === "blocking"));
   assert(validatePlatform({ platform: "facebook", body: "x" }).some((f) => f.severity === "blocking"));
-  assertEquals(validatePlatform({ platform: "threads", body: "x" }), []);
-  assertEquals(validatePlatform({ platform: "x", body: "x" }), []);
+  assertEquals(validatePlatform({ platform: "threads", body: "x #gold" }), []);
+  assertEquals(validatePlatform({ platform: "x", body: "x #gold #xau" }), []);
 });
 
 Deno.test("validatePlatform: too many hashtags and an over-long caption are called out", () => {
@@ -118,4 +118,21 @@ Deno.test("kitRefuses: a kit cannot be approved or rescheduled, but it can be re
   assertEquals(kitRefuses(kit, "reject"), false);
   assertEquals(kitRefuses({ via: "fanout", kit: false }, "approve"), false);
   assertEquals(kitRefuses(null, "approve"), false);
+});
+
+Deno.test("hashtags under the platform's floor are a warning, never a block", () => {
+  const f = validatePlatform({ platform: "instagram", body: "Gold held 4590. Risk 1% or less. #gold" });
+  const hit = f.find((x) => x.check === "hashtags");
+  assert(hit && hit.severity === "warn", "too few hashtags must warn");
+  assert(!validatePlatform({ platform: "instagram", body: "x #gold #xau #trading" }).some((x) => x.check === "hashtags" && x.severity === "warn"));
+  // A platform with no hashtag culture never warns.
+  assert(!validatePlatform({ platform: "telegram", body: "Gold held 4590." }).some((x) => x.check === "hashtags"));
+});
+
+Deno.test("withSignature: the saved sign-off rides below the caption, once", () => {
+  assertEquals(withSignature("Gold held 4590.", "— EzyMap"), { body: "Gold held 4590.\n\n— EzyMap", added: true });
+  const once = withSignature("Gold held 4590.\n\n— EzyMap", "— EzyMap");
+  assertEquals(once.added, false);
+  assertEquals(withSignature("Gold held.", "").added, false);
+  assertEquals(withSignature("Gold held.", null).added, false);
 });

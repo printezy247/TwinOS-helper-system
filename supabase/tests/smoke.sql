@@ -680,5 +680,23 @@ begin
   raise notice 'ok: flood counters';
 end $$;
 
+-- 25. research upgrades: poison counter, hook A/B, insight views, ledger guard (0032)
+do $$
+begin
+  assert (select count(*) from information_schema.columns
+    where table_name = 'tg_updates' and column_name = 'failures') = 1,
+    'tg_updates.failures exists';
+  assert (select count(*) from information_schema.columns
+    where table_name = 'content_variants' and column_name = 'hook_id') = 1,
+    'content_variants.hook_id exists';
+  assert (select count(*) from information_schema.views
+    where table_name in ('v_best_times', 'v_post_engagement', 'v_hook_performance', 'v_signal_ledger')) = 4,
+    'the four insight views exist';
+  assert exists (
+    select 1 from pg_trigger where tgname = 'trg_signal_posts_no_delete'
+  ), 'a posted signal can never be deleted';
+  raise notice 'ok: research upgrades';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;

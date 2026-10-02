@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from studio import clipper, layouts
+from studio import clipper, layouts, moments
 
 
 def seg(start, end, text):
@@ -158,6 +158,50 @@ class RunWiring(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     clipper.run(src, layout="nope")
         self.assertEqual(calls, [])
+
+
+class WordCaptions(unittest.TestCase):
+    def test_word_timings_become_ass_events_shifted_by_the_clip_start(self):
+        segs = [seg(70, 73, "gold held the zone")]
+        segs[0]["words"] = [
+            {"start": 70.0, "end": 70.5, "word": "gold"},
+            {"start": 70.5, "end": 71.2, "word": "held"},
+        ]
+        ass = clipper.ass_words(segs, offset=70.0)
+        self.assertIn("[Script Info]", ass)
+        self.assertIn("Dialogue:", ass)
+        self.assertIn("gold", ass)
+        # gold 70.0-70.5 and held 70.5-71.2, shifted by the 70.0 clip start:
+        # the word events carry 0:00:00.50 and 0:00:01.20, never the raw times.
+        self.assertIn("0:00:00.50", ass)
+        self.assertIn("0:00:00.00,0:00:00.50", ass)
+        self.assertIn("0:00:00.50,0:00:01.20", ass)
+        self.assertNotIn("0:01:1", ass)  # unshifted 70 s never leaks through
+
+    def test_without_word_timings_the_segment_text_still_captions(self):
+        ass = clipper.ass_words([seg(10, 12, "risk one percent")], offset=10.0)
+        self.assertIn("risk one percent", ass)
+        self.assertIn("Dialogue:", ass)
+
+    def test_negative_times_are_clamped_to_zero(self):
+        segs = [seg(0, 2, "hello")]
+        segs[0]["words"] = [{"start": 0.2, "end": 0.9, "word": "hello"}]
+        ass = clipper.ass_words(segs, offset=0.5)
+        self.assertIn("0:00:00.00", ass)
+
+
+class CoverThumbnail(unittest.TestCase):
+    def test_the_cover_grabs_a_frame_and_draws_the_hook_text(self):
+        cmd = moments.cover_command("ffmpeg", "/tmp/live.mp4", 72.5, "/tmp/cover.jpg", "Gold held 4590")
+        self.assertEqual(cmd[0], "ffmpeg")
+        self.assertIn("72.50", cmd)
+        self.assertIn("drawtext", " ".join(cmd))
+        self.assertIn("4590", " ".join(cmd))
+        self.assertEqual(cmd[-1], "/tmp/cover.jpg")
+
+    def test_the_text_is_escaped_so_a_quote_cannot_break_the_filter(self):
+        cmd = " ".join(moments.cover_command("ffmpeg", "/tmp/live.mp4", 1, "/tmp/cover.jpg", "it's a trap"))
+        self.assertIn("it\\'s", cmd)
 
 
 if __name__ == "__main__":

@@ -86,6 +86,11 @@ Deno.test("humanizer tells are warnings in EN and MS, never blocks", () => {
   assert(humanizerHits("Let's delve into the gold tapestry, furthermore it is seamless").length >= 2);
   assert(humanizerHits("Dalam dunia yang serba pantas, jom merevolusikan cara trade").length >= 1);
   assertEquals(humanizerHits("Gold held the 4590 zone. Risk 1% or less."), []);
+});
+
+Deno.test("humanizer: the 2026 tell words are on the list too", () => {
+  assert(humanizerHits("Leverage our robust, cutting-edge solution to unlock seamless growth").length >= 2);
+  assert(humanizerHits("Dengan penyelesaian menyeluruh kami yang inovatif, jom memperkasakan trade anda").length >= 2);
   const r = check({
     post_type: "lesson", platform: "telegram", lang: "en",
     body: "Let's delve into a seamless setup. Furthermore, keep risk small.",

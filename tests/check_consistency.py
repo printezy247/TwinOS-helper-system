@@ -634,8 +634,65 @@ def next_fixes() -> None:
     )
 
 
+def research_upgrades() -> None:
+    mig = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted((ROOT / "supabase/migrations").glob("*.sql"))
+    )
+    check(
+        "insights: the pure metrics module exists and is tested",
+        (ROOT / "supabase/functions/_shared/insights.ts").exists()
+        and (ROOT / "supabase/functions/_shared/insights_test.ts").exists(),
+        "Wave 5: bestHours/engagementRate/hookWinner/channelStale live in _shared/insights.ts",
+    )
+    check(
+        "insights: the four research views are in the schema",
+        all(v in mig for v in ("v_best_times", "v_post_engagement", "v_hook_performance", "v_signal_ledger")),
+        "migration 0032 must create them (smoke §25 asserts them)",
+    )
+    check(
+        "insights: ABDUL can read the research views",
+        all(v in read("apps/mcp/twinos_mcp.py") for v in
+            ("v_best_times", "v_post_engagement", "v_hook_performance", "v_signal_ledger")),
+        "ANALYTICS_VIEWS must list them or the MCP tool refuses them",
+    )
+    check(
+        "trust: signal posts cannot be deleted, by schema",
+        "trg_signal_posts_no_delete" in mig,
+        "the #1 trust complaint is deleted losing trades; a trigger is the only hard guard",
+    )
+    check(
+        "webhook: a poisoned update is dropped, not retried forever",
+        "isPoisonedUpdate" in read("supabase/functions/tg-webhook/index.ts")
+        and "isPoisonedUpdate" in read("supabase/functions/_shared/backoff.ts"),
+        "3 recorded failures must end the loop with a tg.update_poisoned log",
+    )
+    clipper = read("workers/pc/studio/clipper.py")
+    moments = read("workers/pc/studio/moments.py")
+    check(
+        "clips: word captions and hook-text covers exist",
+        "ass_words" in clipper and "cover_command" in moments,
+        "burned-in word-level captions and drawtext covers are the shorts standard",
+    )
+    check(
+        "fanout: signatures come from the setting, appended once",
+        "withSignature" in read("supabase/functions/_shared/platforms.ts")
+        and "platform_signatures" in read("supabase/functions/_shared/fanout.ts"),
+        "Wave 5: rotation without double-appending",
+    )
+    check(
+        "growth: the quiet-channel alert watches the posting gap",
+        "channel-quiet" in read("supabase/functions/health/index.ts"),
+        "channels fade after a 36 h gap; the Desk must hear about it",
+    )
+    check(
+        "docs: the research ideas are written down with status",
+        (ROOT / "docs/UPGRADE-IDEAS.md").exists() and "## 5." in read("docs/LOVABLE-WAVE4-PROMPTS.md"),
+        "docs/UPGRADE-IDEAS.md + Lovable prompt 5 (insights view)",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes):
+    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes, research_upgrades):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()

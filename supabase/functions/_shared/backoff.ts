@@ -79,3 +79,13 @@ export function retryPlan(attempts: number, reason: string): { delayMs: number; 
   if (/^capped:/.test(reason)) return { delayMs: CAP_HOLD_MS, burnsAttempt: false };
   return { delayMs: backoffMs(attempts), burnsAttempt: true };
 }
+
+/* Telegram re-sends an update on every non-200, so one handler fault can    */
+/* replay for hours. After UPDATE_FAIL_LIMIT failures the update is poison:  */
+/* tg-webhook answers 200 and drops it instead of retrying the same fault.   */
+
+export const UPDATE_FAIL_LIMIT = 3;
+
+export function isPoisonedUpdate(failures: number, limit = UPDATE_FAIL_LIMIT): boolean {
+  return failures >= limit;
+}

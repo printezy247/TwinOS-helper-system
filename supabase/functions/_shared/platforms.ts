@@ -20,19 +20,22 @@ export interface PlatformSpec {
   kit: boolean;
   /** Most hashtags the platform accepts; null = no stated limit. */
   hashtagsMax: number | null;
+  /** Hashtag floor for discovery (2026 research: search visibility is how
+   *  channels grow). Under it the validator warns, never blocks. */
+  hashtagsMin: number | null;
   /** The platform cannot post without media of this kind. */
   needs: "photo-or-video" | "video" | null;
   video: VideoLimit | null;
 }
 
 export const SPECS: Record<Platform, PlatformSpec> = {
-  telegram: { kit: false, hashtagsMax: null, needs: null, video: null },
-  instagram: { kit: false, hashtagsMax: 30, needs: "photo-or-video", video: { maxS: 90, maxMB: 300 } },
-  facebook: { kit: false, hashtagsMax: null, needs: "video", video: { maxS: 90, maxMB: 1000 } },
-  threads: { kit: false, hashtagsMax: 1, needs: null, video: { maxS: 300, maxMB: 1000 } },
-  youtube: { kit: true, hashtagsMax: 15, needs: "video", video: { maxS: 180, maxMB: 1000 } },
-  tiktok: { kit: true, hashtagsMax: null, needs: "video", video: { maxS: 600, maxMB: 500 } },
-  x: { kit: true, hashtagsMax: null, needs: null, video: { maxS: 140, maxMB: 512 } },
+  telegram: { kit: false, hashtagsMax: null, hashtagsMin: null, needs: null, video: null },
+  instagram: { kit: false, hashtagsMax: 30, hashtagsMin: 3, needs: "photo-or-video", video: { maxS: 90, maxMB: 300 } },
+  facebook: { kit: false, hashtagsMax: null, hashtagsMin: 1, needs: "video", video: { maxS: 90, maxMB: 1000 } },
+  threads: { kit: false, hashtagsMax: 1, hashtagsMin: 1, needs: null, video: { maxS: 300, maxMB: 1000 } },
+  youtube: { kit: true, hashtagsMax: 15, hashtagsMin: 2, needs: "video", video: { maxS: 180, maxMB: 1000 } },
+  tiktok: { kit: true, hashtagsMax: null, hashtagsMin: 3, needs: "video", video: { maxS: 600, maxMB: 500 } },
+  x: { kit: true, hashtagsMax: null, hashtagsMin: 2, needs: null, video: { maxS: 140, maxMB: 512 } },
 };
 
 /** Fan-out targets: everything except Telegram, which is the master. */
@@ -109,6 +112,17 @@ export function adaptCaption(body: string, platform: Platform): { body: string; 
   return { body: text, notes };
 }
 
+/**
+ * Append the saved per-platform sign-off (`platform_signatures` setting,
+ * Wave 4 item 2) below the caption. Once per body: re-running never stacks
+ * copies, and an empty signature is a no-op.
+ */
+export function withSignature(body: string, signature: string | null | undefined): { body: string; added: boolean } {
+  const sig = (signature ?? "").trim();
+  if (!sig || body.includes(sig)) return { body, added: false };
+  return { body: `${body.trimEnd()}\n\n${sig}`, added: true };
+}
+
 export interface PlatformFinding { check: string; severity: "blocking" | "warn"; message: string }
 
 export function validatePlatform(p: {
@@ -125,6 +139,9 @@ export function validatePlatform(p: {
   const tags = (p.body.match(HASHTAG) ?? []).length;
   if (spec.hashtagsMax !== null && tags > spec.hashtagsMax) {
     out.push({ check: "hashtags", severity: "blocking", message: `${tags} hashtags, the platform accepts ${spec.hashtagsMax}` });
+  }
+  if (spec.hashtagsMin !== null && tags < spec.hashtagsMin) {
+    out.push({ check: "hashtags", severity: "warn", message: `only ${tags} hashtag(s); ${spec.hashtagsMin}+ help ${p.platform} search find the post` });
   }
 
   const m = p.media;

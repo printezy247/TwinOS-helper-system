@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { backoffMs, classify, MAX_ATTEMPTS, retryPlan } from "./backoff.ts";
+import { backoffMs, classify, isPoisonedUpdate, MAX_ATTEMPTS, retryPlan, UPDATE_FAIL_LIMIT } from "./backoff.ts";
 import { MetaError } from "./meta.ts";
 import { TgError } from "./tg.ts";
 
@@ -52,4 +52,11 @@ Deno.test("a Meta rate limit retries; a bad token or a bad parameter fails the j
 Deno.test("retryPlan: a daily-cap hold waits half an hour and does not use up an attempt", () => {
   assertEquals(retryPlan(2, "capped: instagram has reached 100 posts in 24 h"), { delayMs: 30 * 60_000, burnsAttempt: false });
   assertEquals(retryPlan(2, "network down"), { delayMs: backoffMs(2), burnsAttempt: true });
+});
+
+Deno.test("poison updates: an update that keeps failing is dropped, not replayed forever", () => {
+  assertEquals(isPoisonedUpdate(0), false);
+  assertEquals(isPoisonedUpdate(UPDATE_FAIL_LIMIT - 1), false);
+  assertEquals(isPoisonedUpdate(UPDATE_FAIL_LIMIT), true);
+  assertEquals(isPoisonedUpdate(UPDATE_FAIL_LIMIT + 5), true);
 });
