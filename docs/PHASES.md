@@ -91,8 +91,8 @@ Exit: every swap shows joins and 7-day retention.
 
 ## Phase 5 — Studio + research (Dec–Jan)
 Exit: a live becomes clips without CapCut's help for the cut list; Monday brief every week; ≥70% hours cut.
-- [ ] `studio/clipper.py` on the GPU: transcript, cut points, SRT, clean clips, cover text
-- [ ] Layout templates (chart full, chart + face, blurred fill) and the end card
+- [ ] `studio/clipper.py` on the GPU: transcript, cut points, SRT, clean clips, cover text — the pipeline and its pure parts (highlight picking, SRT, cover text) are now tested, and the queue contract is fixed (the MCP and the worker disagreed: every clip job would have failed with "source not found: tiktok"). The first real run needs Jack's PC: `pip install faster-whisper`, ffmpeg, a recording in `~/EzyMap/lives/`
+- [x] Layout templates (chart full, chart + face, blurred fill) and the end card (`studio/layouts.py`, tested as ffmpeg commands: 1080x1920, drawtext-safe text, a silent track so the card joins). A real render still needs ffmpeg on the PC
 - [ ] Research: personas, autocomplete expansion (ms/MY), Search Console, Bing, YouTube competition score, channel RSS
 - [ ] CSI weekly capture form; Monday brief against the 28-day calendar
 - [ ] Double-down alert (part 2 within 48 h)

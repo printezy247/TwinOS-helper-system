@@ -43,6 +43,7 @@ Edge Functions at /functions/v1/<name>. The names live in one place
 (ENDPOINTS) so they can be matched to the schema once it is written.
 """
 
+import datetime
 import json
 import os
 import re
@@ -140,8 +141,11 @@ TOOLS = [
                        "content gap, and which ICP it fits.",
      {"topic": "string", "popularity": "number", "trend": "string", "gap": "boolean", "icp": "string", "note": "string"}, ["topic"]),
     ("twinos_clip", "Queue a live recording for the PC worker: transcript, highlight picks, caption file, clean clips, CapCut-ready. "
-                    "source = tiktok | telegram, date = ISO date of the live (default yesterday).",
-     {"source": "string", "date": "string", "max_clips": "integer"}, []),
+                    "source = tiktok | telegram, date = ISO date of the live (default yesterday, Kuala Lumpur), or path = the file itself. "
+                    "layout = chart_full | chart_face | blurred_fill makes 1080x1920 clips; face_box = [x, y, width, height] of the camera "
+                    "view for chart_face; end_text = the risk line for a 3 second end card.",
+     {"source": "string", "date": "string", "max_clips": "integer", "layout": "string", "face_box": "array",
+      "end_text": "string", "path": "string"}, []),
     ("twinos_brief", "The latest Monday research brief: next week's 7 TikTok topics scored by demand x ICP fit x low compliance risk.",
      {}, []),
     ("twinos_inbox", "Open items in the unified inbox (IG/FB/YouTube comments, Threads replies) with suggested replies. Jack sends; ABDUL reads.",
@@ -274,6 +278,16 @@ def rest(table, query="", limit=None):
 
 # --------------------------------------------------------------------------- the tools
 
+CLIP_LAYOUTS = ("chart_full", "chart_face", "blurred_fill")
+
+
+def yesterday_kl(now=None):
+    """Yesterday's date in Kuala Lumpur (UTC+8, no daylight saving): the live Jack means by default."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    kl = now.astimezone(datetime.timezone(datetime.timedelta(hours=8)))
+    return (kl.date() - datetime.timedelta(days=1)).isoformat()
+
+
 def _clean(a, keys):
     return {k: a[k] for k in keys if a.get(k) not in (None, "", [], {})}
 
@@ -339,9 +353,18 @@ def tool_call(name, a, idem=None):
     if name == "twinos_csi_log":
         return fn(target, dict(_clean(a, ("topic", "popularity", "trend", "gap", "icp", "note")), actor=ACTOR), idem)
     if name == "twinos_clip":
-        body = _clean(a, ("source", "date", "max_clips"))
-        body.setdefault("source", "tiktok")
-        return fn(target, dict(body, kind="clip", actor=ACTOR), idem)
+        # jobs/enqueue stores body.payload and ignores every other field, so the options go inside it.
+        payload = _clean(a, ("source", "date", "max_clips", "layout", "face_box", "end_text", "path"))
+        payload.setdefault("source", "tiktok")
+        payload.setdefault("date", yesterday_kl())
+        if payload.get("layout") and payload["layout"] not in CLIP_LAYOUTS:
+            raise ValueError("layout must be one of " + ", ".join(CLIP_LAYOUTS))
+        box = payload.get("face_box")
+        if box is not None and not (isinstance(box, list) and len(box) == 4 and all(isinstance(v, int) and v >= 0 for v in box) and box[2] > 0 and box[3] > 0):
+            raise ValueError("face_box must be [x, y, width, height]: four whole numbers, width and height above zero")
+        if "end_text" in payload:
+            payload["end_text"] = str(payload["end_text"])[:200]
+        return fn(target, {"kind": "clip", "payload": payload, "actor": ACTOR}, idem)
 
     if name == "twinos_friday":
         q = ("week=eq.%s" % a["week"]) if a.get("week") else "order=week.desc"

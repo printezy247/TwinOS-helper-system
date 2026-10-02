@@ -45,12 +45,15 @@ POLL_S = 20
 IDLE_POLL_S = 60
 TIMEOUT_S = 30
 DROP_DIR = Path(os.environ.get("TWINOS_DROP_DIR", "~/EzyMap/out")).expanduser()
+LIVES_DIR = Path(os.environ.get("TWINOS_LIVES_DIR", "~/EzyMap/lives")).expanduser()
 DONE_DIR = DROP_DIR / ".ingested"
 BACKUP_DIR = Path(os.environ.get("TWINOS_BACKUP_DIR", "~/EzyMap/backups")).expanduser()
 TELECHURN_DIR = Path(os.environ.get("TWINOS_TELECHURN_DIR", "~/EzyMap/telechurn")).expanduser()
 MAX_ASSET_BYTES = 45 * 1024 * 1024
 VIDEO_EXT = {".mp4", ".mov", ".webm"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
+# Live recordings are often OBS .mkv; they live in LIVES_DIR, not the drop folder, so VIDEO_EXT stays as it is.
+LIVE_EXT = VIDEO_EXT | {".mkv", ".flv", ".ts"}
 KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "research_batch", "scorecard_image"]
 
 
@@ -229,16 +232,46 @@ def job_backup(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     return {"file": gz.name, "bytes": gz.stat().st_size if gz.exists() else 0}
 
 
+def find_recording(directory: Path, source: str, date: str) -> Path | None:
+    """The live recording for a day: a video in `directory` whose name has the date (2026-09-30 or 20260930),
+    preferring one that also names the platform, then the newest."""
+    if not directory.is_dir():
+        return None
+    compact = date.replace("-", "")
+    files = [p for p in directory.iterdir()
+             if p.is_file() and p.suffix.lower() in LIVE_EXT and (date in p.name or compact in p.name)]
+    if not files:
+        return None
+    named = [p for p in files if source.lower() in p.name.lower()]
+    return max(named or files, key=lambda p: p.stat().st_mtime)
+
+
 def job_clip(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     """Live recording → transcript → cut points → CapCut-ready clips (plan §9.G). Needs studio/ extras."""
     try:
         from studio import clipper  # noqa: WPS433 (optional dependency)
     except ImportError as e:
         raise RuntimeError(f"studio extras not installed (pip install -r requirements.txt): {e}") from e
-    src = Path(payload.get("source", "")).expanduser()
+    # The file itself (path), or an older payload that put the path in `source`, else the live for that day.
+    legacy = Path(str(payload.get("source", ""))).expanduser()
+    if payload.get("path"):
+        src = Path(str(payload["path"])).expanduser()
+    elif legacy.is_file():
+        src = legacy
+    else:
+        source, date = str(payload.get("source") or "tiktok"), str(payload.get("date") or "")
+        found = find_recording(LIVES_DIR, source, date) if date else None
+        if found is None:
+            raise RuntimeError(f"no {source} recording for {date or 'that day'} in {LIVES_DIR}")
+        src = found
     if not src.exists():
         raise RuntimeError(f"source not found: {src}")
-    return clipper.run(src, lang=payload.get("lang", "en"), max_clips=int(payload.get("max_clips", 5)))
+    box = payload.get("face_box")
+    return clipper.run(
+        src, lang=payload.get("lang", "en"), max_clips=int(payload.get("max_clips", 5)),
+        layout=payload.get("layout") or None, face_box=tuple(int(v) for v in box) if box else None,
+        end_text=payload.get("end_text") or None,
+    )
 
 
 def job_research_batch(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
