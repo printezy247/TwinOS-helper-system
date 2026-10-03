@@ -10,10 +10,11 @@
  * Expected cadence per source lives in `settings` as `health_stale_<source>`
  * (minutes), defaulting to STALE_DEFAULT_MIN.
  */
-import { serve, json, readJson, routeOf, reqString, oneOf, optString, bad } from "_shared/http.ts";
+import { serve, json, readJson, routeOf, reqString, oneOf, optString, bad, HttpError } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
-import { admin, requireSetting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
+import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
+import { dayAndWeekStart, todaySummary } from "_shared/today.ts";
 import { logAction } from "_shared/log.ts";
 import { tokenWarnings } from "_shared/meta.ts";
 import { escapeHtml, sendMessage } from "_shared/tg.ts";
@@ -81,6 +82,22 @@ serve(async (req) => {
   const caller = await authenticate(req);
   const { method, tail } = routeOf(req, "health");
   const db = admin();
+
+  // GET /health/today — ABDUL's read-only status line (any reports.read caller, the viewer key included).
+  if (method === "GET" && tail[0] === "today") {
+    requireRole(caller.role, "reports.read");
+    const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+    const { day, week } = dayAndWeekStart(tz);
+    const end = new Date(Date.parse(day) + 86_400_000).toISOString();
+    const [pub, saved, pending] = await Promise.all([
+      db.from("publish_jobs").select("platform, run_at, status, error_message").gte("run_at", day).lt("run_at", end).order("run_at").limit(200),
+      db.from("time_saved").select("minutes_saved").gte("occurred_at", week).limit(5000),
+      db.from("content_items").select("id", { count: "exact", head: true }).eq("status", "pending_approval"),
+    ]);
+    const err = pub.error ?? saved.error ?? pending.error;
+    if (err) throw new HttpError(503, "upstream_failed", err.message);
+    return json({ day, week, ...todaySummary(pub.data ?? [], (saved.data ?? []).map((r) => r.minutes_saved), pending.count ?? 0) });
+  }
 
   if (method === "GET") {
     requireRole(caller.role, "reports.read");
