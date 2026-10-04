@@ -100,9 +100,9 @@ if [ "$DRY" = yes ]; then
   say "   X-Telegram-Bot-Api-Secret-Token: <derived>"
   say "   body: $MSG_UPDATE"
 else
-  resp="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WH" \
+  resp="$(printf 'header = "x-telegram-bot-api-secret-token: %s"\n' "$SECRET" \
+    | curl -s -o /dev/null -w '%{http_code}' -K - -X POST "$WH" \
     -H 'content-type: application/json' \
-    -H "x-telegram-bot-api-secret-token: $SECRET" \
     -d "$MSG_UPDATE")"
   [ "$resp" = 200 ] || die "tg-webhook answered HTTP $resp for the message update"
   say "   tg-webhook: HTTP 200"
@@ -151,9 +151,9 @@ if [ "$DRY" = yes ]; then
   say "   POST $WH"
   say "   body: $CB_UPDATE"
 else
-  resp="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WH" \
+  resp="$(printf 'header = "x-telegram-bot-api-secret-token: %s"\n' "$SECRET" \
+    | curl -s -o /dev/null -w '%{http_code}' -K - -X POST "$WH" \
     -H 'content-type: application/json' \
-    -H "x-telegram-bot-api-secret-token: $SECRET" \
     -d "$CB_UPDATE")"
   [ "$resp" = 200 ] || die "tg-webhook answered HTTP $resp for the reject callback"
 

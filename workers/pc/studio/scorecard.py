@@ -10,6 +10,7 @@ dashboard look like the same product.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -114,7 +115,11 @@ def render(scoreboard: dict[str, Any] | None, week: str = "", out_dir: str | Pat
 
     target = Path(out_dir) if out_dir else Path("~/EzyMap/backups/scorecards").expanduser()
     target.mkdir(parents=True, exist_ok=True)
-    name = f"scorecard-{(week or sb.get('week_start') or 'week')}.png"
-    out = target / name
+    # `week` rides in the job payload: strip it to a safe filename component
+    # (no separators, no traversal) and never overwrite an earlier render.
+    safe_week = re.sub(r"[^A-Za-z0-9_-]+", "_", str(week or sb.get("week_start") or "week")).strip("_")[:80] or "week"
+    out = target / f"scorecard-{safe_week}.png"
+    if out.exists():
+        out = target / f"scorecard-{safe_week}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.png"
     img.save(out, "PNG")
     return {"path": str(out), "bytes": out.stat().st_size, "width": WIDTH, "height": HEIGHT}

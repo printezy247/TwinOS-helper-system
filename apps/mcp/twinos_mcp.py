@@ -269,9 +269,12 @@ def fn(name, body, idem=None):
 
 
 def rest(table, query="", limit=None):
-    q = query.strip().lstrip("?&")
-    if "select=" not in q:
-        q = ("select=*&" + q) if q else "select=*"
+    """GET /rest/v1/<table>. The projection is ours: a tool's filter narrows
+    rows, but a `select=` inside it must not replace the shape the tool is
+    documented to return (or smuggle in other params) — it is stripped."""
+    parts = [p for p in query.strip().lstrip("?&").split("&")
+             if p and not p.startswith("select=")]
+    q = "select=*" + (("&" + "&".join(parts)) if parts else "")
     if limit:
         q += "&limit=%d" % max(1, min(int(limit), 500))
     return request("GET", "/rest/v1/" + table, query=q)
@@ -368,7 +371,7 @@ def tool_call(name, a, idem=None):
         return fn(target, {"kind": "clip", "payload": payload, "actor": ACTOR}, idem)
 
     if name == "twinos_friday":
-        q = ("week=eq.%s" % a["week"]) if a.get("week") else "order=week.desc"
+        q = ("week=eq.%s" % urllib.parse.quote(str(a["week"]), safe="")) if a.get("week") else "order=week.desc"
         rows = _rows(rest(target, q, 1))
         return rows[0] if rows else {"text": "No scoreboard yet. Friday hasn't happened, or nothing was counted."}
     if name == "twinos_health":

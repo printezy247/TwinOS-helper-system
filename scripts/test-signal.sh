@@ -83,8 +83,8 @@ if [ "$DRY" = yes ]; then
   say "   POST $URL/functions/v1/tv-webhook?secret=<tv_secret>"
   say "   body: $ALERT"
 else
-  out="$(curl -s -X POST "$URL/functions/v1/tv-webhook?secret=$TV" \
-    -H 'content-type: application/json' -d "$ALERT")"
+  out="$(printf 'url = "%s/functions/v1/tv-webhook?secret=%s"\n' "$URL" "$TV" \
+    | curl -s -K - -X POST -H 'content-type: application/json' -d "$ALERT")"
   TV=""
   say "   $out"
   printf '%s' "$out" | grep -q '"ok":true' || die "tv-webhook did not accept the alert"
@@ -141,9 +141,9 @@ if [ "$DRY" = yes ]; then
   say "   POST $URL/functions/v1/tg-webhook"
   say "   body: $CB"
 else
-  resp="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/functions/v1/tg-webhook" \
-    -H 'content-type: application/json' \
-    -H "x-telegram-bot-api-secret-token: $SECRET" -d "$CB")"
+  resp="$(printf 'header = "x-telegram-bot-api-secret-token: %s"\n' "$SECRET" \
+    | curl -s -o /dev/null -w '%{http_code}' -K - -X POST "$URL/functions/v1/tg-webhook" \
+    -H 'content-type: application/json' -d "$CB")"
   [ "$resp" = 200 ] || die "tg-webhook answered HTTP $resp for the reject callback"
 
   say "4. assert rejected, one approvals row, zero publish jobs"

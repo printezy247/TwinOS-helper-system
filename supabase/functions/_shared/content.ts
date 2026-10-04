@@ -430,6 +430,18 @@ export async function enqueuePublish(
       .from("publish_jobs")
       .upsert(rows, { onConflict: "variant_id,kind", ignoreDuplicates: true });
     if (e2) throw new HttpError(503, "upstream_failed", e2.message);
+    // Approval may have queued these jobs before /schedule ran (or a job may
+    // have failed earlier): the ignoreDuplicates upsert above leaves the old
+    // run_at on the existing row, so the post would go out at the old time
+    // while the item says otherwise. Move waiting jobs to the new time and
+    // requeue failed ones. Done/claimed jobs are history — never touched.
+    for (const v of publishable) {
+      await db.from("publish_jobs").update({ run_at }).eq("variant_id", v.id).eq("kind", "post")
+        .in("status", ["queued"]);
+      await db.from("publish_jobs").update({
+        status: "queued", run_at, attempts: 0, last_error: null,
+      }).eq("variant_id", v.id).eq("kind", "post").in("status", ["failed"]);
+    }
   }
   const { data: item } = await db.from("content_items")
     .select("first_comment, first_comment_delay_min").eq("id", content_id).maybeSingle();

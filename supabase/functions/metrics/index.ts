@@ -39,7 +39,7 @@ serve(async (req) => {
   const db = admin();
 
   if (tail[0] === "snapshots") {
-    const chatId = Number(await requireSetting(SETTING_KEYS.channelId, "TWINOS_CHANNEL_CHAT_ID"));
+    const chatId = Number(await requireSetting(SETTING_KEYS.channelId, "TWINOS_CHANNEL_ID"));
     const since = new Date(Date.now() - 8 * 86_400_000).toISOString();
     const { data: posts } = await db.from("tg_posts").select("message_id, posted_at")
       .eq("chat_id", chatId).is("deleted_at", null).gte("posted_at", since);

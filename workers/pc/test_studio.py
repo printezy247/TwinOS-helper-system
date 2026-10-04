@@ -208,5 +208,19 @@ class CoverThumbnail(unittest.TestCase):
         self.assertEqual(vf.count("'"), 2, vf)  # only the two quotes around the text
 
 
+class AssTime(unittest.TestCase):
+    """The ASS clock: rounding .995 up must carry into the seconds."""
+
+    def test_rounding_carries_into_the_seconds(self):
+        self.assertEqual(clipper.ass_time(70.999), "0:01:11.00")
+
+    def test_whole_times_and_hours(self):
+        self.assertEqual(clipper.ass_time(0.0), "0:00:00.00")
+        self.assertEqual(clipper.ass_time(3661.5), "1:01:01.50")
+
+    def test_a_time_before_the_clip_start_clamps_to_zero(self):
+        self.assertEqual(clipper.ass_time(-3.2), "0:00:00.00")
+
+
 if __name__ == "__main__":
     unittest.main()

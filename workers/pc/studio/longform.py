@@ -81,14 +81,16 @@ def run_long(source: Path, lang: str = "en") -> dict[str, Any]:
     out = source.parent / "clips" / source.stem
     out.mkdir(parents=True, exist_ok=True)
     audio = out / "audio.wav"
-    subprocess.run([ff, "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", str(audio)], check=True, capture_output=True)
+    subprocess.run([ff, "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", str(audio)],
+                   check=True, capture_output=True, timeout=clipper.EXTRACT_TIMEOUT_S)
     segments = clipper.transcribe(audio, lang)
     window = pick_long_form(segments)
     if window is None:
         return {"out_dir": str(out), "long_form": None, "reason": "the live is shorter than 8 minutes"}
     cut = out / "long.mp4"
     subprocess.run([ff, "-y", "-ss", f"{window['start']:.2f}", "-to", f"{window['end']:.2f}", "-i", str(source),
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", str(cut)], check=True, capture_output=True)
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", str(cut)],
+                   check=True, capture_output=True, timeout=clipper.CUT_TIMEOUT_S)
     chs = chapters(segments, window["start"], window["end"])
     (out / "chapters.txt").write_text(format_chapters(chs) + "\n", encoding="utf-8")
     inside = [s for s in segments if s["start"] >= window["start"] and s["end"] <= window["end"]]

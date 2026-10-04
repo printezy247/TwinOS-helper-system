@@ -1,0 +1,90 @@
+TWINOS REVIEW-AND-FIX REPORT, Mon 5 Oct 2026
+
+A full code review of the repo (edge functions, migrations, PC worker, MCP
+server, ABDUL verbs, scripts) found 4 high-severity and ~15 lower-severity
+bugs. All of them are fixed in this pass; local CI is green and the smoke
+suite + schema checker on GitHub validate the migration. Two of the highs
+broke the repo's own rules that "do not bend".
+
+WHAT BROKE, AND WHAT CHANGED
+
+1. Demo signals were public (HIGH, breaks "demo or shadow never reaches a
+   public post"). data_source carries a column default 'live' and Postgres
+   fills defaults BEFORE the bridge trigger runs, so quality='demo' never
+   copied across and every function-ingested demo signal sat on the public
+   board with entry/SL/TP. Fixed three ways: signals.ts writes data_source,
+   0035 drops the default and repairs stored rows, the bridge copies quality
+   with no default in the way.
+
+2. Result replies could post twice (HIGH). The dedupe read
+   signal_posts.status_posted, which nothing ever wrote. The flow now claims
+   (signal_id, status_posted) with a null message_id before drafting: the new
+   unique index uq_signal_posts_result_once makes a second reply for the same
+   outcome impossible, publish fills the claim in instead of inserting a
+   second row, and a failed run releases its claim. v_stop_if and the stop-if
+   route only count POSTED results, so a stuck claim cannot silence the alarm.
+
+3. The Postgres password sat on pg_dump's command line for up to 30 minutes
+   (HIGH): world-readable in /proc/<pid>/cmdline. The worker now splits the
+   URL into PG* env vars (same-user-only) and chmods the dump 0600. A failed
+   gzip no longer reports "backup done" (it failed the job, and the leftover
+   .sql is cleaned up).
+
+4. The approve internal hop accepted any valid project JWT (HIGH):
+   PostgREST answers 200 with [] once RLS hides rows, so the old probe proved
+   nothing. isServiceKey now verifies the JWT itself (HS256 signature against
+   the project secret + role claim + expiry) and only falls back to a probe
+   that requires a row back from a table seed.sql always fills.
+
+Also fixed (edge): jobs/result finalizes atomically on status='claimed';
+/schedule moves (and revives) already-queued publish jobs instead of leaving
+them at the old time; claim-gate and Desk edits use ordered variant lookups;
+a platform_signatures typo can no longer sink every fan-out; idempotency is
+claim-first (the Stripe insert-claim pattern) so concurrent same-key requests
+cannot both execute; a board_rule approval can no longer carry a price/offer
+claim out the door (checked again on the exact body at publish); naive
+run_at is read in the channel timezone (ABDUL's "07:50" means Kuala Lumpur,
+not UTC); the publish tick keeps draining after losing a claim race; kicks
+and bans record as leaves, not joins; TradingView's weekly counter uses MYT
+Mondays; research's budget cannot be NaN'd away; metrics uses the right env
+fallback name; a Desk edit cancels the queued publish job it invalidates;
+double-tap approvals no longer double-row the audit log; CORS origin is
+pinnable via TWINOS_CORS_ORIGIN (default unchanged).
+
+Also fixed (schema): status='cancelled' is now the retraction path — it
+leaves the public board, v_results_board, results_stats and v_stop_if (the
+no-delete ledger promise stands; editing a wrong signal private again is
+allowed). api_keys mint/rotate/revoke now lands in action_log (last_used_at
+beats are heartbeats, not events). ctas, clip_candidates and flood_counters
+are readable by Jack's dashboard; the reporting views are granted to
+authenticated; over-broad DML grants are revoked (api_keys keeps UPDATE —
+that is how the dashboard revokes a key); the anon ledger gains created_at.
+Safety-critical cron is scheduled for real: publish every minute, stop-if
+every 10 min, health every 5, Friday numbers Fri 09:00 MYT, keepalive (they
+no-op until edge_base_url + the Vault secret exist). seed.sql re-runs no
+longer wipe Jack's runtime settings.
+
+Also fixed (worker/MCP/scripts): job payloads may only name files inside the
+EzyMap tree (a prompt-injected ABDUL clip run cannot chew ~/.ssh); the
+scorecard filename is sanitized and never overwrites; ffmpeg/ffprobe calls
+have timeouts so one corrupt recording cannot stall the worker forever; a
+200-with-HTML response is a retry, not a crash; drop-folder re-ingests keep
+both archives; images upload with their real MIME type; the "install studio
+extras" message names the command that actually works; the MCP rest() helper
+strips a caller's select= (the projection is ours); the Friday week filter is
+URL-quoted; four operator scripts moved secrets from curl command lines to
+stdin config, the desk-report.sh pattern.
+
+UPGRADES RIDE-ALONG (research-grounded)
+- Claim-first idempotency + atomic result claims are the canonical
+  Stripe/Postgres patterns (unique constraint decides, "in-flight" replays
+  as 425, response stored with the key).
+- The no-delete ledger keeps its promise and gained the one thing it was
+  missing: a way to retract a wrong signal without deleting history.
+- Safety-critical alarms from 0010's plan are live instead of commented.
+
+TESTS
+New regression tests: ASS timestamp rounding, media-path allowlist (incl.
+dot-dot escape), MIME types, pg_env URL splitting, runAtToInstant naive vs
+offset, weekStartMyt boundaries. deno check + lint + 241 tests, 47 root
+tests, 78 worker tests, 43 MCP tests, 83 consistency checks: all green.

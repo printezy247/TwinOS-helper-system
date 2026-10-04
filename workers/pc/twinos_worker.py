@@ -116,9 +116,12 @@ class Api:
                 if e.code < 500 and e.code != 429:
                     return e.code, payload
                 last = f"{e.code}: {detail}"
-            except (urllib.error.URLError, TimeoutError, OSError) as e:
+            except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+                # A 200 whose body is not JSON (a captive portal, a proxy page)
+                # is a retryable network failure, not a crash.
                 last = str(e)
-            time.sleep(2 ** attempt)
+            if attempt < 3:
+                time.sleep(2 ** attempt)
         return 0, {"error": "unreachable", "message": last}
 
     def claim(self, kinds: list[str]) -> dict[str, Any] | None:
@@ -153,7 +156,7 @@ def signed_upload(api: Api, path: Path) -> dict[str, Any]:
     size = path.stat().st_size
     if size > MAX_ASSET_BYTES:
         raise RuntimeError(f"{path.name} is {size} bytes; limit is 45 MB (plan §7)")
-    ctype = "video/mp4" if path.suffix.lower() in VIDEO_EXT else "image/png"
+    ctype = content_type_for(path)
     status, body = api.call("jobs/upload-url", {"filename": path.name, "content_type": ctype, "bytes": size})
     if status != 200:
         raise RuntimeError(f"upload-url refused: {status} {body}")
@@ -172,6 +175,32 @@ def signed_upload(api: Api, path: Path) -> dict[str, Any]:
     return {"asset_id": reg.get("asset_id"), "path": body["path"], "bytes": size}
 
 
+def content_type_for(path: Path) -> str:
+    s = path.suffix.lower()
+    if s in VIDEO_EXT:
+        return "video/mp4"
+    return {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(
+        s, "application/octet-stream")
+
+
+def check_media_path(p: Path, what: str = "job") -> Path:
+    """Job payloads may name media files, but only inside the EzyMap tree.
+
+    Jobs are enqueued by jack, abdul and cron — a buggy or prompt-injected
+    ABDUL run must not send the worker hashing, probing and transcribing
+    arbitrary files (or writing clips) anywhere on this PC.
+    """
+    resolved = p.resolve()
+    roots = [Path("~/EzyMap").expanduser(), LIVES_DIR, DROP_DIR, TELECHURN_DIR, BACKUP_DIR]
+    for root in roots:
+        try:
+            resolved.relative_to(root.resolve())
+            return resolved
+        except ValueError:
+            continue
+    raise RuntimeError(f"{what} path is outside the EzyMap tree: {p}")
+
+
 def job_drop_folder_watch(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     """~/EzyMap/out: every clean export becomes an asset (plan §9.F.44)."""
     DROP_DIR.mkdir(parents=True, exist_ok=True)
@@ -183,7 +212,11 @@ def job_drop_folder_watch(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
         if time.time() - p.stat().st_mtime < 30:  # still being written by CapCut
             continue
         info = signed_upload(api, p)
-        shutil.move(str(p), DONE_DIR / p.name)
+        dest = DONE_DIR / p.name
+        if dest.exists():
+            # A re-export that reuses the name must not destroy the archive.
+            dest = DONE_DIR / f"{p.stem}-{int(p.stat().st_mtime)}{p.suffix}"
+        shutil.move(str(p), dest)
         done.append(info)
     return {"ingested": done}
 
@@ -192,6 +225,8 @@ def job_telechurn_import(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     """CSV in ~/EzyMap/telechurn/<YYYY-MM-DD>.csv with columns link_name,joins,leaves,retained."""
     week = payload.get("week_start") or (date.today() - timedelta(days=date.today().weekday())).isoformat()
     path = Path(payload.get("path") or TELECHURN_DIR / f"{week}.csv").expanduser()
+    if payload.get("path"):
+        path = check_media_path(path, "telechurn")
     if not path.exists():
         raise RuntimeError(f"no Telechurn CSV at {path}")
     rows = []
@@ -215,22 +250,54 @@ def job_backup(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
     out = BACKUP_DIR / f"twinos-{stamp}.sql"
     db_url = keyring("db_url", required=False)
+    env = dict(os.environ)
     if shutil.which("pg_dump") and db_url:
-        cmd = ["pg_dump", "--no-owner", "--no-privileges", "--schema=public", "-f", str(out), db_url]
+        # The URL carries the password. Hand the parts to libpq via env — env
+        # is readable only by this user, while argv is world-readable in
+        # /proc/<pid>/cmdline for the whole dump (up to 30 min).
+        env, dbname = _pg_env_from_url(db_url)
+        cmd = ["pg_dump", "--no-owner", "--no-privileges", "--schema=public", "-f", str(out), dbname]
     elif shutil.which("supabase") and db_url:
+        # The CLI only accepts the URL as an argument; prefer pg_dump above.
         cmd = ["supabase", "db", "dump", "--db-url", db_url, "-f", str(out)]
     else:
         raise RuntimeError("need pg_dump or supabase CLI, plus keyring twinos/db_url")
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800, check=False)
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800, check=False, env=env)
     if r.returncode != 0:
         # Never echo the command: it carries the connection string.
         raise RuntimeError(f"dump failed: {r.stderr.strip()[:300]}")
-    subprocess.run(["gzip", "-f", str(out)], check=False)
+    out.chmod(0o600)
     gz = out.with_suffix(".sql.gz")
+    gz_run = subprocess.run(["gzip", "-f", str(out)], capture_output=True, timeout=600, check=False)
+    if gz_run.returncode != 0 or not gz.exists():
+        out.unlink(missing_ok=True)
+        raise RuntimeError("gzip failed; the dump is not a usable backup")
+    gz.chmod(0o600)
     # Keep 14 nightly dumps.
     for old in sorted(BACKUP_DIR.glob("twinos-*.sql.gz"))[:-14]:
         old.unlink(missing_ok=True)
-    return {"file": gz.name, "bytes": gz.stat().st_size if gz.exists() else 0}
+    return {"file": gz.name, "bytes": gz.stat().st_size}
+
+
+def _pg_env_from_url(db_url: str) -> tuple[dict[str, str], str]:
+    """Split a postgres:// URL into PG* env vars plus a bare dbname."""
+    import urllib.parse  # noqa: WPS433 - lazy like the other optional imports
+
+    u = urllib.parse.urlsplit(db_url.strip())
+    if u.scheme not in ("postgres", "postgresql") or not u.hostname:
+        raise RuntimeError("keyring twinos/db_url is not a postgres:// URL")
+    env = dict(os.environ)
+    env["PGHOST"] = u.hostname
+    if u.port:
+        env["PGPORT"] = str(u.port)
+    if u.username:
+        env["PGUSER"] = u.username
+    if u.password:
+        env["PGPASSWORD"] = u.password
+    dbname = (u.path or "/").lstrip("/")
+    if not dbname:
+        raise RuntimeError("keyring twinos/db_url has no database name")
+    return env, dbname
 
 
 def find_recording(directory: Path, source: str, date: str) -> Path | None:
@@ -252,13 +319,13 @@ def job_clip(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     try:
         from studio import clipper  # noqa: WPS433 (optional dependency)
     except ImportError as e:
-        raise RuntimeError(f"studio extras not installed (pip install -r requirements.txt): {e}") from e
+        raise RuntimeError('studio extras not installed: pip install "faster-whisper>=1.0" "Pillow>=10"') from e
     # The file itself (path), or an older payload that put the path in `source`, else the live for that day.
     legacy = Path(str(payload.get("source", ""))).expanduser()
     if payload.get("path"):
-        src = Path(str(payload["path"])).expanduser()
+        src = check_media_path(Path(str(payload["path"])).expanduser(), "clip")
     elif legacy.is_file():
-        src = legacy
+        src = check_media_path(legacy, "clip")
     else:
         source, date = str(payload.get("source") or "tiktok"), str(payload.get("date") or "")
         found = find_recording(LIVES_DIR, source, date) if date else None
@@ -403,9 +470,12 @@ def job_clip_candidates(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     try:
         from studio import moments  # noqa: WPS433 (optional dependency)
     except ImportError as e:
-        raise RuntimeError(f"studio extras not installed (pip install -r requirements.txt): {e}") from e
+        raise RuntimeError('studio extras not installed: pip install "faster-whisper>=1.0" "Pillow>=10"') from e
     raw = payload.get("path")
-    src = Path(str(raw)).expanduser() if raw else None
+    if raw:
+        src = check_media_path(Path(str(raw)).expanduser(), "clip_candidates")
+    else:
+        src = None
     if src is None or not src.exists():
         source, date = str(payload.get("source") or "tiktok"), str(payload.get("date") or "")
         found = find_recording(LIVES_DIR, source, date) if date else None

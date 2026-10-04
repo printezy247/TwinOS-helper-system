@@ -106,8 +106,9 @@ class ApiHeaderTests(unittest.TestCase):
 class TelechurnTests(unittest.TestCase):
     def test_csv_rows_posted(self):
         api = FakeApi()
-        with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / "2026-10-05.csv"
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"HOME": d}):
+            p = Path(d) / "EzyMap" / "telechurn" / "2026-10-05.csv"
+            p.parent.mkdir(parents=True)
             with p.open("w", newline="") as f:
                 wr = csv.writer(f)
                 wr.writerow(["link_name", "joins", "leaves", "retained"])
@@ -184,10 +185,13 @@ class LongformTests(unittest.TestCase):
     def test_longform_flag_cuts_the_best_window_with_chapters(self):
         from studio import longform
 
-        d = Path(tempfile.mkdtemp())
-        src = d / "live_2026-09-28.mp4"
+        home = Path(tempfile.mkdtemp())
+        lives = home / "EzyMap" / "lives"
+        lives.mkdir(parents=True)
+        src = lives / "live_2026-09-28.mp4"
         src.write_bytes(b"x")
-        with mock.patch.object(longform, "run_long", return_value={"long_form": "long.mp4", "chapters": 4}) as run:
+        with mock.patch.dict(os.environ, {"HOME": str(home)}), \
+                mock.patch.object(longform, "run_long", return_value={"long_form": "long.mp4", "chapters": 4}) as run:
             out = w.job_clip(FakeApi(), {"path": str(src), "longform": True, "lang": "en"})
         self.assertEqual(out, {"long_form": "long.mp4", "chapters": 4})
         run.assert_called_once_with(src, lang="en")
@@ -195,13 +199,70 @@ class LongformTests(unittest.TestCase):
     def test_without_the_flag_clips_still_go_through_clipper(self):
         from studio import clipper
 
-        d = Path(tempfile.mkdtemp())
-        src = d / "live_2026-09-28.mp4"
+        home = Path(tempfile.mkdtemp())
+        lives = home / "EzyMap" / "lives"
+        lives.mkdir(parents=True)
+        src = lives / "live_2026-09-28.mp4"
         src.write_bytes(b"x")
-        with mock.patch.object(clipper, "run", return_value={"clips": []}) as run:
+        with mock.patch.dict(os.environ, {"HOME": str(home)}), \
+                mock.patch.object(clipper, "run", return_value={"clips": []}) as run:
             out = w.job_clip(FakeApi(), {"path": str(src), "max_clips": 1})
         self.assertEqual(out, {"clips": []})
         run.assert_called_once()
+
+
+class CheckMediaPath(unittest.TestCase):
+    """Job payloads may name files only inside the EzyMap tree."""
+
+    def test_a_path_under_ezymap_passes(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"HOME": d}):
+            p = Path(d) / "EzyMap" / "lives" / "rec.mp4"
+            p.parent.mkdir(parents=True)
+            p.write_bytes(b"x")
+            self.assertEqual(w.check_media_path(p, "clip"), p.resolve())
+
+    def test_a_path_outside_is_refused(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"HOME": d}):
+            p = Path(d) / "secret.txt"
+            p.write_text("x")
+            with self.assertRaisesRegex(RuntimeError, "outside the EzyMap tree"):
+                w.check_media_path(p, "clip")
+
+    def test_a_dotdot_escape_is_refused_after_resolving(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"HOME": d}):
+            p = Path(d) / "EzyMap" / "lives" / ".." / ".." / "etc" / "passwd"
+            with self.assertRaisesRegex(RuntimeError, "outside the EzyMap tree"):
+                w.check_media_path(p, "clip_candidates")
+
+
+class ContentTypeFor(unittest.TestCase):
+    def test_images_get_their_own_type(self):
+        self.assertEqual(w.content_type_for(Path("a.jpg")), "image/jpeg")
+        self.assertEqual(w.content_type_for(Path("a.jpeg")), "image/jpeg")
+        self.assertEqual(w.content_type_for(Path("a.webp")), "image/webp")
+        self.assertEqual(w.content_type_for(Path("a.PNG")), "image/png")
+
+    def test_video_and_unknown(self):
+        self.assertEqual(w.content_type_for(Path("a.mp4")), "video/mp4")
+        self.assertEqual(w.content_type_for(Path("a.weird")), "application/octet-stream")
+
+
+class PgEnvFromUrl(unittest.TestCase):
+    def test_the_password_lands_in_the_env_never_in_a_command_argument(self):
+        env, dbname = w._pg_env_from_url("postgresql://postgres:secret@db.host:5432/postgres")
+        self.assertEqual(dbname, "postgres")
+        self.assertEqual(env["PGPASSWORD"], "secret")
+        self.assertEqual(env["PGHOST"], "db.host")
+        self.assertEqual(env["PGPORT"], "5432")
+        self.assertEqual(env["PGUSER"], "postgres")
+
+    def test_a_url_without_a_database_name_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            w._pg_env_from_url("postgresql://postgres:secret@db.host")
+
+    def test_a_non_postgres_url_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            w._pg_env_from_url("mysql://x/y")
 
 
 if __name__ == "__main__":

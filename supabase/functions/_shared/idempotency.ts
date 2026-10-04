@@ -38,21 +38,40 @@ export async function idemFrom(
   return { scope, key, requestHash };
 }
 
-/** Returns a replayed Response if the key was seen before, else null. */
+/**
+ * Claim the key and return a replayed Response if it was seen before, else
+ * null. The claim is the insert itself: two concurrent callers with the same
+ * key cannot both win the primary key, so only one ever runs the handler (the
+ * old check-then-act lookup let a race through). A claim row that never got
+ * its outcome (the function died mid-handler) replays as 425 so the caller
+ * retries with the same key.
+ */
 export async function replay(ctx: IdemContext | null): Promise<Response | null> {
   if (!ctx) return null;
-  const { data, error } = await admin()
+  const { error } = await admin().from("idempotency_keys").insert({
+    scope: ctx.scope,
+    key: ctx.key,
+    request_hash: ctx.requestHash,
+    status: 425,
+    response: { error: "processing", message: "the first request with this key is still running" },
+    created_at: new Date().toISOString(),
+  });
+  if (!error) return null; // we own the key; run the handler
+  if (error.code !== "23505") {
+    // Fail open: idempotency storage must never block the Desk.
+    console.warn("[idempotency] claim failed", error.message);
+    return null;
+  }
+  const { data, error: selErr } = await admin()
     .from("idempotency_keys")
     .select("request_hash, status, response")
     .eq("scope", ctx.scope)
     .eq("key", ctx.key)
     .maybeSingle();
-  if (error) {
-    // Fail open: idempotency storage must never block the Desk.
-    console.warn("[idempotency] lookup failed", error.message);
+  if (selErr || !data) {
+    console.warn("[idempotency] replay lookup failed", selErr?.message);
     return null;
   }
-  if (!data) return null;
   if (data.request_hash !== ctx.requestHash) {
     throw new HttpError(409, "conflict", "idempotency key reused with a different body");
   }
@@ -66,6 +85,8 @@ export async function remember(
   response: Record<string, unknown>,
 ): Promise<Response> {
   if (ctx) {
+    // Overwrite the 425 claim row with the real outcome (plain upsert, not
+    // ignoreDuplicates — the claim row already exists and must be replaced).
     const { error } = await admin().from("idempotency_keys").upsert(
       {
         scope: ctx.scope,
@@ -75,7 +96,7 @@ export async function remember(
         response,
         created_at: new Date().toISOString(),
       },
-      { onConflict: "scope,key", ignoreDuplicates: true },
+      { onConflict: "scope,key" },
     );
     if (error) console.warn("[idempotency] store failed", error.message);
   }

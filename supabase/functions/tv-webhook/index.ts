@@ -21,6 +21,7 @@ import { admin } from "_shared/supabase.ts";
 import { upsertSignal, validate } from "_shared/signals.ts";
 import { createDraft, pushToDesk } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
+import { weekStartMyt } from "_shared/time.ts";
 
 const ACTOR = "cron"; // alerts arrive unattended; the draft is approved by Jack
 export const COUNTER_TREND_LINE = "⚠️ COUNTER-TREND: against the daily bias. Half size or skip.";
@@ -68,8 +69,8 @@ serve(async (req) => {
     return json({ ok: true, signal_id: sig.id, content_id: existing.id, replayed: true });
   }
 
-  // Weekly free-signal counter (plan §9.D.29).
-  const weekStart = new Date(); weekStart.setUTCHours(0, 0, 0, 0); weekStart.setUTCDate(weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7));
+  // Weekly free-signal counter (plan §9.D.29): the channel's Monday, not UTC's.
+  const weekStart = weekStartMyt();
   const { count } = await admin().from("content_items").select("id", { count: "exact", head: true })
     .eq("post_type", "signal_card").gte("created_at", weekStart.toISOString());
   const n = (count ?? 0) + 1;

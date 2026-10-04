@@ -87,6 +87,11 @@ export async function upsertSignal(input: Partial<SignalInput> & { external_id: 
 
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { ...input, updated_at: now };
+  // Write both vocabularies explicitly. The bridge trigger copies quality →
+  // data_source, but the column default ('live') fills data_source BEFORE any
+  // BEFORE trigger runs, so the copy never fired on insert and every demo
+  // signal was stored as data_source='live' — publicly board-visible.
+  if (typeof input.quality === "string") patch.data_source = input.quality;
   if (!existing) {
     patch.status = input.status ?? "pending";
     patch.opened_at = input.opened_at ?? now;

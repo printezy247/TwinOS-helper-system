@@ -20,8 +20,20 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * `TWINOS_CORS_ORIGIN` pins the API to one web origin (the Lovable dashboard
+ * or the Mini App's domain) once Jack knows it; unset keeps the historical
+ * `*`. Auth is header-token based (no cookies), so `*` was never directly
+ * exploitable — this only tightens the blast radius of a leaked token.
+ */
+function corsOrigin(): string {
+  return Deno.env.get("TWINOS_CORS_ORIGIN")?.trim() || "*";
+}
+
 export const CORS_HEADERS: Record<string, string> = {
-  "access-control-allow-origin": "*",
+  get "access-control-allow-origin"() {
+    return corsOrigin();
+  },
   "access-control-allow-headers":
     "authorization, x-client-info, apikey, content-type, idempotency-key, x-twinos-actor, x-twinos-key, x-twinos-session",
   "access-control-allow-methods": "GET, POST, OPTIONS",

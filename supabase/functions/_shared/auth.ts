@@ -77,25 +77,69 @@ export function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+function base64UrlEncode(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * Verify an HS256 JWT's signature against the project secret and require the
+ * `role` claim to be `service_role` (and the token unexpired). This is the
+ * only self-contained way to tell the service role from any other signed JWT
+ * of the project: PostgREST answers 200 (with `[]`) for every valid JWT once
+ * RLS hides the rows, so a bare `res.ok` probe proves nothing.
+ */
+async function verifyServiceJwt(jwt: string, secret: string): Promise<boolean> {
+  const parts = jwt.split(".");
+  if (parts.length !== 3) return false;
+  const [h, p, s] = parts;
+  try {
+    const headerJson = atob(h.replace(/-/g, "+").replace(/_/g, "/"));
+    const header = JSON.parse(headerJson) as { alg?: string };
+    if (header.alg !== "HS256") return false;
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${h}.${p}`));
+    if (!safeEqual(base64UrlEncode(new Uint8Array(sig)), s)) return false;
+    const payload = decodeJwtPayload(jwt);
+    if (!payload || payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * True when `jwt` is this project's service-role key. The key Supabase injects
  * into the function is compared first (constant time). Projects that run both
  * the legacy and the new API-key systems can inject a differently formatted
  * value than the legacy JWT Jack stores in Vault for pg_cron, so a miss falls
- * back to asking the platform: PostgREST accepts a service-role token on a
- * table only the service role can read, and only when its signature is valid.
+ * back to verifying the token itself (HS256 signature + `role` claim against
+ * the project JWT secret). Without that secret, the last resort asks PostgREST
+ * for a row of a table seed.sql always fills — `[]` is exactly what every
+ * non-service JWT gets once RLS hides the rows, so a row must come back.
  */
 export async function isServiceKey(jwt: string): Promise<boolean> {
   const injected = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (injected && safeEqual(jwt, injected)) return true;
+  const jwtSecret = Deno.env.get("SUPABASE_JWT_SECRET") ?? "";
+  if (jwtSecret && await verifyServiceJwt(jwt, jwtSecret)) return true;
   const url = Deno.env.get("SUPABASE_URL") ?? "";
   if (!url || !jwt) return false;
   try {
-    const res = await fetch(`${url}/rest/v1/api_keys?select=id&limit=1`, {
+    const res = await fetch(`${url}/rest/v1/settings?select=key&limit=1`, {
       headers: { apikey: jwt, Authorization: `Bearer ${jwt}` },
     });
-    await res.body?.cancel();
-    return res.ok;
+    if (!res.ok) return false;
+    const rows = await res.json().catch(() => null);
+    return Array.isArray(rows) && rows.length >= 1;
   } catch {
     return false;
   }

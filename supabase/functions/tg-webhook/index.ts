@@ -716,14 +716,19 @@ async function onBatchCmd(cq: NonNullable<Update["callback_query"]>, name: strin
 function parseTime(text: string, tz: string): string | null {
   const m = /^(?:(today|tomorrow|esok)\s+)?(\d{1,2}):(\d{2})$/i.exec(text.trim());
   if (!m) return null;
+  // Two-pass wall-clock → UTC (same pattern as _shared/batch.ts): the zone's
+  // offset at *now* is not its offset at the *target* time across a DST edge,
+  // so recompute the offset at the target instant and let it settle.
+  const offsetAt = (t: Date) => t.getTime() - new Date(t.toLocaleString("en-US", { timeZone: tz })).getTime();
   const now = new Date();
-  const local = new Date(now.toLocaleString("en-US", { timeZone: tz }));
-  const offsetMs = now.getTime() - local.getTime();
+  const local = new Date(now.getTime() - offsetAt(now));
   const d = new Date(local);
   if (/tomorrow|esok/i.test(m[1] ?? "")) d.setDate(d.getDate() + 1);
   d.setHours(Number(m[2]), Number(m[3]), 0, 0);
   if (!m[1] && d.getTime() <= local.getTime()) d.setDate(d.getDate() + 1);
-  return new Date(d.getTime() + offsetMs).toISOString();
+  let utc = d.getTime() + offsetAt(d);
+  utc = d.getTime() + offsetAt(new Date(utc));
+  return new Date(utc).toISOString();
 }
 
 const HELP_TEXT = [
@@ -1165,7 +1170,10 @@ async function onDeskMessage(m: Message): Promise<void> {
 /** Apply an edit: raw replacement text, or a short instruction → rendered as a note for ABDUL's rewrite job. */
 async function applyEdit(content_id: string, post_type: PostType, lang: "en" | "ms", instruction: string, m: Message) {
   const db = admin();
-  const { data: v } = await db.from("content_variants").select("id, body, platform").eq("content_id", content_id).limit(1).maybeSingle();
+  // The master body is the first variant created, not "whichever row comes
+  // back": without an order an unpicked AI angle could be edited instead.
+  const { data: v } = await db.from("content_variants").select("id, body, platform").eq("content_id", content_id)
+    .order("created_at", { ascending: true }).limit(1).maybeSingle();
   if (!v) return;
   const short = instruction.length <= 40 && !/\n/.test(instruction);
   if (short) {
@@ -1182,6 +1190,9 @@ async function applyEdit(content_id: string, post_type: PostType, lang: "en" | "
   const result = complianceCheck({ post_type, platform: v.platform, lang, body: instruction });
   await db.from("content_variants").update({ body: instruction, compliance: result, claim_flags: result.claim_flags, needed_fields: [] }).eq("id", v.id);
   await db.from("compliance_checks").insert({ variant_id: v.id, ok: result.ok, needs_approval: result.needs_approval, findings: result.findings });
+  // Back to draft: hold any publish job that approval already queued, or it
+  // fires into a guaranteed "item status draft" failure and pages the Desk.
+  await db.from("publish_jobs").update({ status: "cancelled" }).eq("content_id", content_id).eq("status", "queued");
   await db.from("content_items").update({ desk_state: null, desk_state_at: null, status: "draft" }).eq("id", content_id);
   await logAction({ actor: "jack", action: "content.edit", target: content_id, payload: { via: "desk" } });
   await pushToDesk({ content_id, variant_id: v.id, body: instruction, status: "draft", compliance: result, needed: [] }, { heading: "Edited draft", actor: ACTOR });

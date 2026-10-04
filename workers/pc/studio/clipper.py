@@ -28,6 +28,9 @@ except ImportError:  # pragma: no cover - optional
 
 KEYWORDS = ("gold", "xau", "level", "zone", "entry", "stop", "tp", "lesson", "risk", "map", "emas", "harga")
 MIN_CLIP_S, MAX_CLIP_S = 30.0, 60.0
+# A hung ffmpeg must fail the job (the worker reports it), not stall the
+# single-threaded loop forever: extract / small render / cut / join.
+FFPROBE_TIMEOUT_S, EXTRACT_TIMEOUT_S, RENDER_TIMEOUT_S, CUT_TIMEOUT_S = 60, 600, 300, 1800
 
 
 def _ffmpeg() -> str:
@@ -65,11 +68,14 @@ def pick_highlights(segments: list[dict[str, Any]], max_clips: int) -> list[dict
 
 def ass_time(t: float) -> str:
     """ASS clock H:MM:SS.CC; a time before the clip start clamps to zero."""
-    t = max(t, 0.0)
-    h, r = divmod(t, 3600)
-    m, s = divmod(r, 60)
-    cs = int(round((s - int(s)) * 100))
-    return f"{int(h)}:{int(m):02}:{int(s):02}.{cs:02}"
+    # Centiseconds from the total, not from the fractional part: rounding
+    # .995 up must carry into the seconds (0:01:10.995 → 0:01:11.00), not
+    # emit an out-of-range ".100" field.
+    total_cs = int(round(max(t, 0.0) * 100))
+    h, rem = divmod(total_cs, 3600 * 100)
+    m, rem = divmod(rem, 60 * 100)
+    sec, cs = divmod(rem, 100)
+    return f"{h}:{m:02}:{sec:02}.{cs:02}"
 
 
 def ass_words(segments: list[dict[str, Any]], offset: float = 0.0) -> str:
@@ -132,12 +138,13 @@ def run(source: Path, lang: str = "en", max_clips: int = 5, layout: str | None =
     out.mkdir(parents=True, exist_ok=True)
     audio = out / "audio.wav"
     subprocess.run([ff, "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", str(audio)],
-                   check=True, capture_output=True)
+                   check=True, capture_output=True, timeout=EXTRACT_TIMEOUT_S)
     segments = transcribe(audio, lang)
     picks = pick_highlights(segments, max_clips)
     card = out / "end_card.mp4"
     if end_text and picks:
-        subprocess.run(layouts.end_card_command(ff, end_text, str(card)), check=True, capture_output=True)
+        subprocess.run(layouts.end_card_command(ff, end_text, str(card)), check=True, capture_output=True,
+                       timeout=RENDER_TIMEOUT_S)
     clips = []
     for n, p in enumerate(picks, 1):
         clip = out / f"clip_{n}.mp4"
@@ -146,10 +153,11 @@ def run(source: Path, lang: str = "en", max_clips: int = 5, layout: str | None =
         else:
             cut = [ff, "-y", "-ss", f"{p['start']:.2f}", "-to", f"{p['end']:.2f}", "-i", str(source),
                    "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", str(clip)]
-        subprocess.run(cut, check=True, capture_output=True)
+        subprocess.run(cut, check=True, capture_output=True, timeout=CUT_TIMEOUT_S)
         if end_text:
             joined = out / f"clip_{n}_card.mp4"
-            subprocess.run(layouts.append_card_command(ff, str(clip), str(card), str(joined)), check=True, capture_output=True)
+            subprocess.run(layouts.append_card_command(ff, str(clip), str(card), str(joined)), check=True,
+                           capture_output=True, timeout=CUT_TIMEOUT_S)
             if joined.exists():
                 joined.replace(clip)
         inside = [s for s in segments if s["start"] >= p["start"] and s["end"] <= p["end"]]

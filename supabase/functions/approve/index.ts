@@ -19,8 +19,9 @@ import { serve, readJson, reqString, oneOf, optString, bad } from "_shared/http.
 import { authenticate, bearer, isServiceKey, safeEqual } from "_shared/auth.ts";
 import { require as requireRole, type Role } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
-import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
+import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import { enqueuePublish, loadContent, setStatus } from "_shared/content.ts";
+import { runAtToInstant } from "_shared/batch.ts";
 import { deriveWebhookSecret, editMessageReplyMarkup } from "_shared/tg.ts";
 import { logAction } from "_shared/log.ts";
 import { HttpError } from "_shared/http.ts";
@@ -58,7 +59,10 @@ serve(async (req) => {
   const decision = oneOf(body, "decision", DECISIONS);
   const note = optString(body, "note", 500);
   const run_at = optString(body, "run_at", 64);
-  if (run_at && Number.isNaN(Date.parse(run_at))) throw bad("run_at must be an ISO timestamp");
+  // A naive run_at is wall-clock in the channel timezone, never server UTC.
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  const runAtInstant = run_at ? runAtToInstant(run_at, tz) : null;
+  if (run_at && !runAtInstant) throw bad("run_at must be an ISO timestamp");
 
   const idem = await idemFrom(req, body, `approve:${content_id}:${decision}`);
   const hit = await replay(idem);
@@ -85,6 +89,19 @@ serve(async (req) => {
   if (decision === "approve" && !variants.length) throw bad("nothing to publish: the item has no variant");
 
   const db = admin();
+  // Two taps in the same second (card + drafts panel) race past the status
+  // check and both insert an approvals row. Same decision within a minute is
+  // the same decision: keep the first row, still run the status flip below.
+  if (decision !== "reschedule") {
+    const { data: recent } = await db.from("approvals").select("id")
+      .eq("content_id", content_id).eq("decision", decision)
+      .gte("created_at", new Date(Date.now() - 60_000).toISOString())
+      .limit(1).maybeSingle();
+    if (recent) {
+      await logAction({ actor: caller.actor, action: `approval.${decision}.duplicate_ignored`, target: content_id });
+      return remember(idem, 200, { ok: true, content_id, decision, duplicate: true });
+    }
+  }
   const { error } = await db.from("approvals").insert({
     content_id,
     decision,
@@ -92,7 +109,7 @@ serve(async (req) => {
     by_subject: caller.subject,
     via: caller.via,
     note,
-    run_at: run_at ? new Date(run_at).toISOString() : null,
+    run_at: runAtInstant,
   });
   if (error) throw new HttpError(503, "upstream_failed", `approvals: ${error.message}`);
 
@@ -100,16 +117,16 @@ serve(async (req) => {
   if (decision === "approve") {
     await setStatus(content_id, "approved", caller.actor, { approved_at: new Date().toISOString() });
     // Default: publish now (the Desk flow is "OK → posts at 08:00"); run_at overrides.
-    const when = run_at ? new Date(run_at).toISOString() : item.scheduled_at ?? new Date().toISOString();
+    const when = runAtInstant ?? item.scheduled_at ?? new Date().toISOString();
     jobs = await enqueuePublish(content_id, when, caller.actor);
   } else if (decision === "reject") {
     await setStatus(content_id, "rejected", caller.actor, { reject_note: note });
   } else {
-    if (!run_at) throw bad("reschedule needs run_at");
+    if (!runAtInstant) throw bad("reschedule needs run_at");
     await setStatus(content_id, item.status === "scheduled" ? "scheduled" : "pending_approval", caller.actor, {
-      scheduled_at: new Date(run_at).toISOString(),
+      scheduled_at: runAtInstant,
     });
-    await db.from("publish_jobs").update({ run_at: new Date(run_at).toISOString() })
+    await db.from("publish_jobs").update({ run_at: runAtInstant })
       .eq("content_id", content_id).eq("status", "queued");
   }
 

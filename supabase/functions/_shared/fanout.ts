@@ -105,8 +105,15 @@ async function fanOutOne(
 ): Promise<FanResult> {
     const adapted = adaptCaption(masterBody as string, platform as Platform);
     // The saved per-platform sign-off rides below every adapted caption
-    // (platform_signatures setting; research 2026-10-02: kit hygiene).
-    const signatures = JSON.parse((await setting("platform_signatures")) ?? "{}") as Record<string, string>;
+    // (platform_signatures setting; research 2026-10-02: kit hygiene). The
+    // setting is free text in the dashboard: a malformed value must degrade
+    // to "no signatures", not sink every fan-out.
+    let signatures: Record<string, string> = {};
+    try {
+      signatures = JSON.parse((await setting("platform_signatures")) ?? "{}") as Record<string, string>;
+    } catch (err) {
+      console.warn("[fanout] platform_signatures is not valid JSON; signing skipped", err);
+    }
     const signed = withSignature(adapted.body, signatures[platform]);
     if (signed.added) adapted.body = signed.body;
     const findings = validatePlatform({ platform: platform as Platform, body: adapted.body, media: meta });

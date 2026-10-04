@@ -28,7 +28,7 @@ import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
 import { startOfDayInTz } from "_shared/time.ts";
 import {
-  cycleWeek, mondayOf, nextMonday, planBatch, slotToInstant, summaryLines, sweepPlan, topicTitle, type SweepItem,
+  cycleWeek, mondayOf, nextMonday, planBatch, runAtToInstant, slotToInstant, summaryLines, sweepPlan, topicTitle, type SweepItem,
 } from "_shared/batch.ts";
 import type { Lang, Platform, PostType } from "_shared/compliance.ts";
 
@@ -428,7 +428,8 @@ serve(async (req) => {
         throw bad(`cannot request approval from status ${item.status}`);
       }
       const { data: v } = await admin()
-        .from("content_variants").select("id, body, compliance, needed_fields").eq("content_id", id).limit(1).maybeSingle();
+        .from("content_variants").select("id, body, compliance, needed_fields").eq("content_id", id)
+        .order("created_at", { ascending: true }).limit(1).maybeSingle();
       if (!v) throw notFound("variant");
       const desk = await pushToDesk(
         { content_id: id, variant_id: v.id, body: v.body, status: "draft", compliance: v.compliance, needed: v.needed_fields ?? [] },
@@ -450,12 +451,15 @@ serve(async (req) => {
       }
       // Claim posts (price/result/offer/signal/map) may only be scheduled by Jack,
       // and only after approval. Everything else: approved → schedule by abdul/cron.
-      const { data: v } = await admin()
-        .from("content_variants").select("claim_flags, compliance").eq("content_id", id).limit(1).maybeSingle();
-      const hasClaim = (v?.claim_flags ?? []).length > 0;
+      // ANY variant carrying claims makes this a claim post — an unpicked AI
+      // angle must not downgrade the gate to the abdul-allowed verb.
+      const { data: variantRows } = await admin()
+        .from("content_variants").select("claim_flags, compliance").eq("content_id", id);
+      const hasClaim = (variantRows ?? []).some((r) => Array.isArray(r.claim_flags) && r.claim_flags.length > 0);
+      const blockedVariant = (variantRows ?? []).find((r) => r.compliance && r.compliance.ok === false);
       requireRole(caller.role, hasClaim ? "content.schedule_claim" : "content.schedule");
       if (item.status !== "approved") throw bad(`only approved items can be scheduled (status ${item.status})`);
-      if (v?.compliance && v.compliance.ok === false) throw bad("compliance findings block scheduling");
+      if (blockedVariant?.compliance && blockedVariant.compliance.ok === false) throw bad("compliance findings block scheduling");
       // Saved only after every gate. Comment text never passes Jack's approval
       // tap, so only a caller who may schedule claim posts (Jack) may set it;
       // publish still runs checkComment on it before it goes out.
@@ -469,8 +473,13 @@ serve(async (req) => {
       const idem = await idemFrom(req, body, `content.schedule:${id}`);
       const hit = await replay(idem);
       if (hit) return hit;
-      const jobs = await enqueuePublish(id, new Date(run_at).toISOString(), caller.actor);
-      return remember(idem, 200, { ok: true, content_id: id, jobs, run_at });
+      // A naive run_at is wall-clock in the channel timezone (ABDUL's "07:50"
+      // means Kuala Lumpur), not the server's UTC.
+      const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+      const instant = runAtToInstant(run_at, tz);
+      if (!instant) throw bad("run_at must be an ISO timestamp");
+      const jobs = await enqueuePublish(id, instant, caller.actor);
+      return remember(idem, 200, { ok: true, content_id: id, jobs, run_at: instant });
     }
   }
 

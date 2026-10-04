@@ -16,7 +16,7 @@
  * clip, research_batch, rewrite, result_reply (handled by cron, not the PC),
  * scorecard_image, llm_variants (local model only, off by default).
  */
-import { serve, json, readJson, routeOf, reqString, bad, notFound, optString } from "_shared/http.ts";
+import { serve, json, readJson, routeOf, reqString, bad, notFound, conflict, optString } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
@@ -87,10 +87,14 @@ serve(async (req) => {
       if (!job) throw notFound("job");
       if (job.status !== "claimed") throw bad(`job is ${job.status}, not claimed`);
       const final = ok ? "done" : job.attempts >= MAX_ATTEMPTS ? "failed" : "queued";
-      await db.from("jobs").update({
+      // The guard on the UPDATE (not just the read above) is what makes this
+      // atomic: a retry that races the first result call cannot apply twice or
+      // flip a finished job back.
+      const { data: finalized } = await db.from("jobs").update({
         status: final, result, last_error: error, done_at: ok ? new Date().toISOString() : null,
         run_at: final === "queued" ? new Date(Date.now() + 5 * 60_000 * job.attempts).toISOString() : undefined,
-      }).eq("id", job_id);
+      }).eq("id", job_id).eq("status", "claimed").select("id").maybeSingle();
+      if (!finalized) throw conflict("job was already finalized by another caller");
       if (final === "failed") {
         await db.from("alerts").insert({ kind: "job_failed", severity: "medium", message: `${job.kind} job failed: ${error ?? "no detail"}`, payload: { job_id } });
       }

@@ -90,7 +90,8 @@ if TOKEN="$(secret-tool lookup service twinos key ops_bot_token 2>/dev/null)" &&
   DESK_ID="$(supabase db query --linked --output-format json "select value::text as v from settings where key='desk_group_chat_id'" 2>/dev/null | sed -n '/^[[{]/,$p' | jq -r '(.rows? // .) | .[0].v // .[0] // empty' 2>/dev/null || true)"
   if [ -n "${DESK_ID:-}" ]; then
     COMMANDS='[{"command":"menu","description":"Button panel"},{"command":"status","description":"Anything broken?"},{"command":"friday","description":"Friday numbers so far"},{"command":"batch","description":"The Wednesday batch"},{"command":"hours","description":"Log baseline hours"},{"command":"help","description":"What the Desk understands"}]'
-    if curl -s -X POST "https://api.telegram.org/bot$TOKEN/setMyCommands" -H 'content-type: application/json' -d "{\"commands\":$COMMANDS,\"scope\":{\"type\":\"chat\",\"chat_id\":$DESK_ID}}" | grep -q '"ok":true'; then
+    if printf 'url = "https://api.telegram.org/bot%s/setMyCommands"\n' "$TOKEN" \
+       | curl -s -K - -H 'content-type: application/json' -d "{\"commands\":$COMMANDS,\"scope\":{\"type\":\"chat\",\"chat_id\":$DESK_ID}}" | grep -q '"ok":true'; then
       echo "ok   setMyCommands scoped to the Desk chat"
     else
       echo "WARN setMyCommands failed (the bot still works; rerun this step by hand)"

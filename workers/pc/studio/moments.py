@@ -134,7 +134,7 @@ def probe_duration(source: Path) -> float:
     out = subprocess.run(
         [ffprobe, "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", str(source)],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, timeout=60,
     )
     return float(out.stdout.strip())
 
@@ -147,14 +147,12 @@ def find_moments(source: Path, lang: str = "en", max_moments: int = 5) -> list[d
     if not exe:
         raise RuntimeError("ffmpeg not on PATH")
     duration = probe_duration(source)
-    exe = shutil.which("ffmpeg")
-    if not exe:
-        raise RuntimeError("ffmpeg not on PATH")
-    proc = subprocess.run(scene_command(source, exe), capture_output=True, text=True)
+    # A long or corrupt recording must fail the job, not hang the worker loop.
+    proc = subprocess.run(scene_command(source, exe), capture_output=True, text=True, timeout=1800)
     scenes = parse_scenes(proc.stderr, duration)
     with tempfile.TemporaryDirectory() as d:
         audio = Path(d) / "audio.wav"
         subprocess.run([exe, "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", str(audio)],
-                       check=True, capture_output=True)
+                       check=True, capture_output=True, timeout=clipper.EXTRACT_TIMEOUT_S)
         segments = clipper.transcribe(audio, lang)
     return score_moments(segments, scenes, max_moments)

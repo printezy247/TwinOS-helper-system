@@ -93,7 +93,9 @@ serve(async (req) => {
     const seen = new Set<string>();
     let seeds = 0;
     let found = 0;
-    const budget = Math.min(Math.max(Number(body.limit ?? 40), 1), 80);
+    const limitRaw = Number(body.limit ?? 40);
+    // A NaN budget would compare false against everything and remove the cap.
+    const budget = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 40, 1), 80);
 
     for (const persona of personas ?? []) {
       const bag = (persona.seed_questions ?? {}) as Record<string, unknown>;

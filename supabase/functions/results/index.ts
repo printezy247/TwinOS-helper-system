@@ -88,7 +88,7 @@ async function replyUnderCard(
     return { status: 409, body: { ok: false, error: "conflict", message: "signal card not posted yet; cannot reply under it" } };
   }
   const { data: already } = await db.from("signal_posts").select("message_id").eq("signal_id", sig.id).eq("kind", "result").eq("status_posted", status).limit(1).maybeSingle();
-  if (already) return { status: 200, body: { ok: true, duplicate: true, message_id: already.message_id } };
+  if (already?.message_id) return { status: 200, body: { ok: true, duplicate: true, message_id: already.message_id } };
 
   const stats = await strictStats(28);
   const outcomeWord = { tp: "TP hit", tp1: "TP1 hit", tp2: "TP2 hit", be: "Break-even", sl: "Stop-loss hit" }[status];
@@ -110,14 +110,36 @@ async function replyUnderCard(
     return { status: 409, body: { ok: false, error: "conflict", message: "result reply failed checks", findings: draft.compliance.findings, content_id: draft.content_id } };
   }
   await db.from("content_items").update({ reply_to_message_id: card.message_id, target_chat_id: card.chat_id, result_status: status }).eq("id", draft.content_id);
+  if (opts.dryRun) return { status: 200, body: { ok: true, dry_run: true, content_id: draft.content_id, body: draft.body } };
+
+  // Atomic claim on (signal_id, status_posted): the unique index from 0035
+  // makes a second reply for the same outcome impossible, even when two cron
+  // ticks drain duplicate jobs or a manual POST races the queue. The row
+  // starts with a null message_id; publish fills it in after the send.
+  const claim = await db.from("signal_posts")
+    .insert({ signal_id: sig.id, kind: "result", status_posted: status, content_id: draft.content_id })
+    .select("id")
+    .single();
+  if (claim.error) {
+    const { data: existing } = await db.from("signal_posts").select("message_id")
+      .eq("signal_id", sig.id).eq("kind", "result").eq("status_posted", status).limit(1).maybeSingle();
+    return { status: 200, body: { ok: true, duplicate: true, message_id: existing?.message_id ?? null } };
+  }
+
   // Board-sourced result: auto-approved by rule (no price/offer claim, numbers from the board).
   // The DB guard refuses this insert if the variant carries a price/offer claim.
-  await db.from("approvals").insert({ content_id: draft.content_id, decision: "approve", by_actor: caller.actor, by_subject: caller.subject, via: "board_rule", note: `result ${status}` });
-  await setStatus(draft.content_id, "approved", caller.actor);
-  if (opts.dryRun) return { status: 200, body: { ok: true, dry_run: true, content_id: draft.content_id, body: draft.body } };
-  const jobs = await enqueuePublish(draft.content_id, new Date().toISOString(), caller.actor);
-  await logTimeSaved(caller.actor, "results.reply", draft.content_id);
-  return { status: 201, body: { ok: true, content_id: draft.content_id, jobs, reply_to: card.message_id, stats } };
+  try {
+    await db.from("approvals").insert({ content_id: draft.content_id, decision: "approve", by_actor: caller.actor, by_subject: caller.subject, via: "board_rule", note: `result ${status}` });
+    await setStatus(draft.content_id, "approved", caller.actor);
+    const jobs = await enqueuePublish(draft.content_id, new Date().toISOString(), caller.actor);
+    await logTimeSaved(caller.actor, "results.reply", draft.content_id);
+    return { status: 201, body: { ok: true, content_id: draft.content_id, jobs, reply_to: card.message_id, stats } };
+  } catch (err) {
+    // Release the claim so a retry can try again (the send never happened).
+    await db.from("signal_posts").delete()
+      .eq("signal_id", sig.id).eq("kind", "result").eq("status_posted", status).is("message_id", null);
+    throw err;
+  }
 }
 
 /* ---------- the cron drain ---------- */
@@ -205,10 +227,12 @@ serve(async (req) => {
     // Signals closed (or past expiry) without a result reply → alert now (§1 Q4 stop-if).
     const hours = Number((await settingTyped(SETTING_KEYS.signalExpiryHours)) ?? 48);
     const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
-    const { data: posted } = await db.from("signal_posts").select("signal_id, kind");
+    const { data: posted } = await db.from("signal_posts").select("signal_id, kind, message_id");
     // 0011 widened the card kind to 'card' | 'signal'; count both, like v_stop_if.
     const withCard = new Set((posted ?? []).filter((p) => p.kind === "signal" || p.kind === "card").map((p) => p.signal_id));
-    const withResult = new Set((posted ?? []).filter((p) => p.kind === "result").map((p) => p.signal_id));
+    // Only posted results count: an unclaimed/pending claim row (message_id
+    // null until publish fills it) must not silence the stop-if alert.
+    const withResult = new Set((posted ?? []).filter((p) => p.kind === "result" && p.message_id !== null).map((p) => p.signal_id));
     const { data: closed } = await db.from("signals").select("id, external_id, status, closed_at, opened_at")
       .or(`closed_at.not.is.null,opened_at.lt.${cutoff}`);
     const missing = (closed ?? []).filter((s) => withCard.has(s.id) && !withResult.has(s.id));

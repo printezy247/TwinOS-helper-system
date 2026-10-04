@@ -90,9 +90,9 @@ post() {
     return
   fi
   local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WH" \
+  code="$(printf 'header = "x-telegram-bot-api-secret-token: %s"\n' "$SECRET" \
+    | curl -s -o /dev/null -w '%{http_code}' -K - -X POST "$WH" \
     -H 'content-type: application/json' \
-    -H "x-telegram-bot-api-secret-token: $SECRET" \
     -d "$2")"
   [ "$code" = 200 ] || die "tg-webhook answered HTTP $code for $1"
   say "   $1: HTTP 200"

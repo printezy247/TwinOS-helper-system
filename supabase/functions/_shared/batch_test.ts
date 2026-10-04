@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
 import {
-  type BatchSlot, cycleWeek, mondayOf, nextMonday, planBatch, readyToApprove, slotToInstant, summaryLines,
-  sweepPlan, topicTitle,
+  type BatchSlot, cycleWeek, mondayOf, nextMonday, planBatch, readyToApprove, runAtToInstant, slotToInstant,
+  summaryLines, sweepPlan, topicTitle,
   isEditable, isOpenBatchItem,
 } from "./batch.ts";
 
@@ -165,4 +165,19 @@ Deno.test("isEditable: only a draft or a post waiting for Jack can be rewritten 
 Deno.test("isOpenBatchItem: a batch is open while any of its posts has not gone out or been dropped", () => {
   for (const st of ["draft", "pending_approval", "approved", "scheduled"]) assertEquals(isOpenBatchItem(st), true, st);
   for (const st of ["publishing", "published", "failed", "rejected"]) assertEquals(isOpenBatchItem(st), false, st);
+});
+
+Deno.test("runAtToInstant: a naive wall clock is read in the channel timezone", () => {
+  // ABDUL's "schedule 2026-10-06 07:50" means 07:50 Kuala Lumpur, not UTC.
+  assertEquals(runAtToInstant("2026-10-06T07:50", TZ), "2026-10-05T23:50:00.000Z");
+  assertEquals(runAtToInstant("2026-10-06 07:50:00", TZ), "2026-10-05T23:50:00.000Z");
+});
+
+Deno.test("runAtToInstant: an explicit offset is taken as written", () => {
+  assertEquals(runAtToInstant("2026-10-06T07:50:00+08:00", TZ), "2026-10-05T23:50:00.000Z");
+  assertEquals(runAtToInstant("2026-10-06T07:50:00Z", TZ), "2026-10-06T07:50:00.000Z");
+});
+
+Deno.test("runAtToInstant: garbage is null, not NaN", () => {
+  assertEquals(runAtToInstant("not a time", TZ), null);
 });

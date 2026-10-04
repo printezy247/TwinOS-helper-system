@@ -81,6 +81,26 @@ function offsetMs(tz: string, at: number): number {
   return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")) - at;
 }
 
+/**
+ * The UTC instant for a run_at string. One with an explicit zone ("Z" or
+ * "+08:00") is taken as written; a NAIVE timestamp is wall-clock in the
+ * channel timezone, never in the server's (UTC) — ABDUL's "schedule 07:50"
+ * means 07:50 in Kuala Lumpur, not 15:50. Returns null when unparsable.
+ */
+export function runAtToInstant(raw: string, tz: string): string | null {
+  const s = raw.trim();
+  if (/[Zz]$/.test(s) || /[+-]\d{2}:?\d{2}$/.test(s)) {
+    const t = new Date(s).getTime();
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s);
+  if (!m) return null;
+  const wall = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0), Number(m[6] ?? 0));
+  let at = wall - offsetMs(tz, wall);
+  at = wall - offsetMs(tz, at); // second pass settles a daylight-saving edge
+  return new Date(at).toISOString();
+}
+
 /** The UTC instant of `time` on the `dow` day of the week starting `monday`, read in `tz`. */
 export function slotToInstant(monday: string, dow: number, time: string, tz: string): string {
   const [y, m, d] = parseIso(addDays(monday, dow - 1));

@@ -173,10 +173,10 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
   const db = admin();
   const [{ data: item }, { data: variant }] = await Promise.all([
     db.from("content_items")
-      .select("id, post_type, status, signal_id, reply_to_message_id, pin, target_chat_id")
+      .select("id, post_type, status, signal_id, reply_to_message_id, pin, target_chat_id, result_status")
       .eq("id", job.content_id).maybeSingle(),
     db.from("content_variants")
-      .select("id, body, platform, lang, media, buttons, compliance, needed_fields")
+      .select("id, body, platform, lang, media, buttons, compliance, claim_flags, needed_fields")
       .eq("id", job.variant_id).maybeSingle(),
   ]);
   if (!item || !variant) return { ok: false, kind: "permanent", reason: "item or variant missing" };
@@ -222,6 +222,22 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
     return { ok: false, kind: "permanent", reason: "compliance block at publish: " + final.findings.map((f) => f.message).join("; ") };
   }
 
+  // Board-sourced result replies must stay claim-free (the DB guard enforces
+  // it when the board_rule approval is written). Re-check on the body going
+  // out, so a variant edited into carrying price/offer claims in the window
+  // between approval and publish can never ride a board_rule approval out.
+  if (item.post_type === "result_reply") {
+    const claims = (variant.claim_flags ?? []) as string[];
+    if (claims.includes("price") || claims.includes("offer")) {
+      const { data: approval } = await db.from("approvals")
+        .select("via, by_actor").eq("content_id", item.id).eq("decision", "approve")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (approval && approval.via === "board_rule" && approval.by_actor !== "jack") {
+        return { ok: false, kind: "permanent", reason: "result reply carries a price/offer claim the board rule cannot approve" };
+      }
+    }
+  }
+
   await setStatus(item.id, "publishing", actor);
   let posted: { chat_id: number; message_id: number } | null = null;
   let externalId: string | null = null;
@@ -250,10 +266,20 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
         variant_id: variant.id, post_type: item.post_type, posted_at: new Date().toISOString(),
       });
       if (item.signal_id) {
-        await db.from("signal_posts").insert({
-          signal_id: item.signal_id, chat_id: posted.chat_id, message_id: posted.message_id,
-          content_id: item.id, kind: item.post_type === "result_reply" ? "result" : "signal",
-        });
+        if (item.post_type === "result_reply") {
+          // results.replyUnderCard pre-claimed (signal_id, status_posted) with a
+          // null message_id; fill the claim in — never insert a second row, or
+          // the dedupe guard breaks and the same result posts twice.
+          await db.from("signal_posts").update({
+            chat_id: posted.chat_id, message_id: posted.message_id, posted_at: new Date().toISOString(),
+          }).eq("content_id", item.id).eq("kind", "result");
+        } else {
+          await db.from("signal_posts").insert({
+            signal_id: item.signal_id, chat_id: posted.chat_id, message_id: posted.message_id,
+            content_id: item.id, kind: item.post_type === "result_reply" ? "result" : "signal",
+            status_posted: item.result_status ?? null,
+          });
+        }
       }
     }
     await setStatus(item.id, "published", actor, {
@@ -278,9 +304,20 @@ serve(async (req) => {
   const db = admin();
   const results: Array<Record<string, unknown>> = [];
   let last = 0;
+  let claimRaces = 0;
   for (let i = 0; i < limit; i += 1) {
     const job = await claimOne();
-    if (!job) break;
+    if (!job) {
+      // claimOne returns null both for "queue empty" and for "picked a job but
+      // lost the atomic claim to a concurrent tick". Only stop when nothing is
+      // actually due; a lost race keeps going (capped, in case another tick
+      // keeps winning every row).
+      const { count } = await db.from("publish_jobs").select("id", { count: "exact", head: true })
+        .eq("status", "queued").lte("run_at", new Date().toISOString());
+      if ((count ?? 0) === 0 || (claimRaces += 1) >= 3) break;
+      continue;
+    }
+    claimRaces = 0;
     const wait = PACE_MS - (Date.now() - last);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     last = Date.now();
