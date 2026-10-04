@@ -5,23 +5,34 @@ enforced here in CI, where there is no keyring: it only ever rejects, it never
 sends "/batch ok", and it never logs baseline hours (that would skew the
 baseline Jack records by hand).
 """
-import os
 import re
-import shutil
-import subprocess
-import tempfile
 import unittest
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-SCRIPT = REPO / "scripts" / "desk-tour.sh"
+from _helpers import COREUTILS, QUERY_TOOLS, SCRIPTS, run_script, run_with_tools, syntax_error
+
+SCRIPT = SCRIPTS / "desk-tour.sh"
+SELFTEST = SCRIPTS / "desk-selftest.sh"
+
+# The CLI can exit 0 with an error object or a bare banner, and Jack's live run
+# hit both. The scripts must stop with the CLI's own words.
+ERROR_CLI = (
+    "#!/bin/sh\necho 'Initialising login role...'\n"
+    "echo '{\"_tag\":\"Error\",\"error\":{\"message\":\"Access token not provided\"}}'\nexit 0\n"
+)
+# Outside an agent the CLI prints a box table, and with --output-format json a
+# bare [...] (no "rows" key).
+BARE_ARRAY_CLI = (
+    "#!/bin/sh\n"
+    "echo 'Initialising login role...'\n"
+    "case \"$*\" in *'--output-format json'*) ;; *) echo '┌───┐'; exit 0;; esac\n"
+    "echo '['\n"
+    "echo '  {\"v\": \"6282941580\"}'\n"
+    "echo ']'\n"
+)
 
 
-def dry_run(env=None):
-    return subprocess.run(
-        ["bash", str(SCRIPT), "--dry-run"],
-        capture_output=True, text=True, timeout=60, env=env,
-    )
+def tour(env=None):
+    return run_script(SCRIPT, "--dry-run", env=env)
 
 
 class DeskTourTest(unittest.TestCase):
@@ -34,8 +45,7 @@ class DeskTourTest(unittest.TestCase):
         self.assertTrue(self.src.startswith("#!/usr/bin/env bash"))
 
     def test_bash_syntax(self):
-        r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True)
-        self.assertEqual(r.returncode, 0, r.stderr.decode())
+        syntax_error(SCRIPT)
 
     def test_it_rejects_and_never_approves(self):
         self.assertIn('"data":"no:', self.src)
@@ -56,7 +66,7 @@ class DeskTourTest(unittest.TestCase):
         self.assertIn("publish_jobs", self.src)
 
     def test_dry_run_tours_every_new_command(self):
-        r = dry_run()
+        r = tour()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         for cmd in ("/status", "/friday", "/hours today", "/batch", "/menu", "/clips", "/fanout #"):
             self.assertIn(cmd, r.stdout, cmd)
@@ -66,72 +76,32 @@ class DeskTourTest(unittest.TestCase):
         self.assertIn("DRY RUN", r.stdout)
 
     def test_dry_run_needs_no_tools_beyond_coreutils(self):
-        with tempfile.TemporaryDirectory() as d:
-            for tool in ("bash", "cat", "date", "cut", "dirname"):
-                src = shutil.which(tool)
-                self.assertIsNotNone(src, f"{tool} missing on this machine")
-                os.symlink(src, os.path.join(d, tool))
-            r = dry_run(env={"PATH": d})
+        r = run_with_tools(SCRIPT, "--dry-run", tools=COREUTILS)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("DRY RUN", r.stdout)
 
     def test_a_cli_answer_without_rows_is_reported_as_a_cli_problem(self):
-        # The CLI can exit 0 with an error object (or a bare banner). That must
-        # stop the tour with the CLI's own words, not "setting is unset".
-        for script in (SCRIPT, REPO / "scripts" / "desk-selftest.sh"):
-            with tempfile.TemporaryDirectory() as d:
-                fake = {
-                    "supabase": "#!/bin/sh\necho 'Initialising login role...'\n"
-                                "echo '{\"_tag\":\"Error\",\"error\":{\"message\":\"Access token not provided\"}}'\nexit 0\n",
-                    "secret-tool": "#!/bin/sh\necho fake-value\n",
-                    "curl": "#!/bin/sh\necho 200\n",
-                }
-                for name, body in fake.items():
-                    p = Path(d) / name
-                    p.write_text(body)
-                    p.chmod(0o755)
-                for tool in ("bash", "cat", "date", "cut", "dirname", "sed", "jq", "grep",
-                             "sha256sum", "printf", "head", "tr", "sleep", "wc"):
-                    src = shutil.which(tool)
-                    if src:
-                        os.symlink(src, os.path.join(d, tool))
-                r = subprocess.run(["bash", str(script)], capture_output=True, text=True,
-                                   timeout=60, env={"PATH": d})
+        fakes = {
+            "supabase": ERROR_CLI,
+            "secret-tool": "#!/bin/sh\necho fake-value\n",
+            "curl": "#!/bin/sh\necho 200\n",
+        }
+        for script in (SCRIPT, SELFTEST):
+            r = run_with_tools(script, tools=QUERY_TOOLS + ("printf", "sleep"), fakes=fakes)
             out = r.stdout + r.stderr
             self.assertNotEqual(r.returncode, 0, out)
             self.assertNotIn("is unset", out, script.name)
             self.assertIn("Access token not provided", out, script.name)
 
     def test_settings_are_read_the_way_a_person_s_terminal_answers(self):
-        # Outside an agent the CLI prints a box table, and with
-        # --output-format json a bare [...] (no "rows" key). Jack's run hit both.
-        fake_cli = (
-            "#!/bin/sh\n"
-            "echo 'Initialising login role...'\n"
-            "case \"$*\" in *'--output-format json'*) ;; *) echo '┌───┐'; exit 0;; esac\n"
-            "echo '['\n"
-            "echo '  {\"v\": \"6282941580\"}'\n"
-            "echo ']'\n"
-        )
-        for script in (SCRIPT, REPO / "scripts" / "desk-selftest.sh"):
-            with tempfile.TemporaryDirectory() as d:
-                fake = {
-                    "supabase": fake_cli,
-                    "secret-tool": "#!/bin/sh\necho fake-value\n",
-                    "curl": "#!/bin/sh\necho 200\n",
-                    "sleep": "#!/bin/sh\nexit 0\n",
-                }
-                for name, body in fake.items():
-                    p = Path(d) / name
-                    p.write_text(body)
-                    p.chmod(0o755)
-                for tool in ("bash", "cat", "date", "cut", "dirname", "sed", "jq", "grep",
-                             "sha256sum", "head", "tr", "wc"):
-                    src = shutil.which(tool)
-                    if src:
-                        os.symlink(src, os.path.join(d, tool))
-                r = subprocess.run(["bash", str(script)], capture_output=True, text=True,
-                                   timeout=60, env={"PATH": d})
+        fakes = {
+            "supabase": BARE_ARRAY_CLI,
+            "secret-tool": "#!/bin/sh\necho fake-value\n",
+            "curl": "#!/bin/sh\necho 200\n",
+            "sleep": "#!/bin/sh\nexit 0\n",
+        }
+        for script in (SCRIPT, SELFTEST):
+            r = run_with_tools(script, tools=QUERY_TOOLS + ("sleep",), fakes=fakes)
             out = r.stdout + r.stderr
             self.assertNotIn("is unset", out, script.name)
             self.assertNotIn("gave no rows", out, script.name)
@@ -141,7 +111,7 @@ class DeskTourTest(unittest.TestCase):
     def test_every_script_asks_the_cli_for_json(self):
         # In a real terminal the CLI prints a box-drawn table by default; it
         # only prints JSON when nobody is watching. Jack's live run hit this.
-        for script in sorted((REPO / "scripts").glob("*.sh")):
+        for script in sorted(SCRIPTS.glob("*.sh")):
             for line in script.read_text().splitlines():
                 if "supabase db query" in line and not line.lstrip().startswith("#"):
                     self.assertIn("--output-format json", line, f"{script.name}: {line.strip()}")

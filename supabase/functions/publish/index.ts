@@ -21,7 +21,7 @@ import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { setStatus } from "_shared/content.ts";
-import { check as complianceCheck, checkComment } from "_shared/compliance.ts";
+import { check as complianceCheck, checkComment, TELEGRAM_CAPTION_LIMIT } from "_shared/compliance.ts";
 import {
   classify, isUnknownOutcome, MAX_ATTEMPTS, retryPlan, type Kind, unknownOutcomePatch,
 } from "_shared/backoff.ts";
@@ -103,16 +103,16 @@ async function sendTelegram(item: Item, v: Variant): Promise<{ chat_id: number; 
       media.slice(0, 10).map((m, i) => ({
         type: m.kind,
         media: m.file_id ?? m.url ?? "",
-        caption: i === 0 ? v.body.slice(0, 1024) : undefined,
+        caption: i === 0 ? v.body.slice(0, TELEGRAM_CAPTION_LIMIT) : undefined,
         parse_mode: "HTML" as const,
       })),
       opts,
     );
     msg = group[0];
   } else if (media.length === 1 && media[0].kind === "photo") {
-    msg = await tg.sendPhoto(chatId, media[0].file_id ?? media[0].url ?? "", v.body.slice(0, 1024), opts);
+    msg = await tg.sendPhoto(chatId, media[0].file_id ?? media[0].url ?? "", v.body.slice(0, TELEGRAM_CAPTION_LIMIT), opts);
   } else if (media.length === 1 && media[0].kind === "video") {
-    msg = await tg.sendVideo(chatId, media[0].file_id ?? media[0].url ?? "", v.body.slice(0, 1024), opts);
+    msg = await tg.sendVideo(chatId, media[0].file_id ?? media[0].url ?? "", v.body.slice(0, TELEGRAM_CAPTION_LIMIT), opts);
   } else {
     msg = await tg.sendMessage(chatId, v.body, opts);
   }

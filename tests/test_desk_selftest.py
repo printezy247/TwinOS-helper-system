@@ -4,12 +4,11 @@ It runs against the real Desk group, so its one hard rule is enforced here in
 CI, where the keyring does not exist: the only callback verb it can ever send
 is "no" (reject). If a future edit adds an approve tap, these tests fail.
 """
-import subprocess
 import unittest
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-SCRIPT = REPO / "scripts" / "desk-selftest.sh"
+from _helpers import COREUTILS, SCRIPTS, run_script, run_with_tools, syntax_error
+
+SCRIPT = SCRIPTS / "desk-selftest.sh"
 
 
 class DeskSelftestTest(unittest.TestCase):
@@ -22,8 +21,7 @@ class DeskSelftestTest(unittest.TestCase):
         self.assertTrue(self.src.startswith("#!/usr/bin/env bash"))
 
     def test_bash_syntax(self):
-        r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True)
-        self.assertEqual(r.returncode, 0, r.stderr.decode())
+        syntax_error(SCRIPT)
 
     def test_it_rejects(self):
         self.assertIn('"data":"no:', self.src)
@@ -34,10 +32,7 @@ class DeskSelftestTest(unittest.TestCase):
         self.assertNotIn('"data": "ok:', self.src)
 
     def test_dry_run_needs_no_keyring(self):
-        r = subprocess.run(
-            ["bash", str(SCRIPT), "--dry-run"],
-            capture_output=True, text=True, timeout=60,
-        )
+        r = run_script(SCRIPT, "--dry-run")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn('"data":"no:', r.stdout)
         self.assertNotIn('"data":"ok:', r.stdout)
@@ -46,20 +41,7 @@ class DeskSelftestTest(unittest.TestCase):
     def test_dry_run_needs_no_tools_beyond_coreutils(self):
         # CI has no supabase CLI and no secret-tool: run the dry-run with a
         # PATH that contains only the tools it is allowed to need.
-        import os
-        import shutil
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as d:
-            for tool in ("bash", "cat", "date", "cut", "dirname"):
-                src = shutil.which(tool)
-                self.assertIsNotNone(src, f"{tool} missing on this machine")
-                os.symlink(src, os.path.join(d, tool))
-            r = subprocess.run(
-                ["bash", str(SCRIPT), "--dry-run"],
-                capture_output=True, text=True, timeout=60,
-                env={"PATH": d},
-            )
+        r = run_with_tools(SCRIPT, "--dry-run", tools=COREUTILS)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("DRY RUN", r.stdout)
 

@@ -16,38 +16,9 @@
 # for a real board signal. Needs: supabase CLI logged in + linked, secret-tool
 # with `url`, `tv_secret` and `ops_bot_token` (docs/SETUP.md).
 set -euo pipefail
+. "$(dirname "$0")/_lib.sh"
 cd "$(dirname "$0")/.."
 export PATH="$PATH${HOME:+:$HOME/.npm-global/bin}"
-
-say() { printf '%s\n' "$*"; }
-die() { printf '\nSTOPPED: %s\n' "$*" >&2; exit 1; }
-
-DRY=no
-[ "${1:-}" = "--dry-run" ] && DRY=yes
-
-ring() { secret-tool lookup service twinos key "$1" 2>/dev/null || true; }
-
-query() {
-  local out
-  if ! out="$(supabase db query --linked --output-format json "$1" 2>&1)"; then
-    die "db query failed (is the Supabase CLI logged in and linked? try: supabase projects list)"
-  fi
-  # The CLI can exit 0 without rows (an error object, a bare banner). Say what
-  # it said, instead of letting an empty answer look like a missing setting.
-  if ! printf '%s' "$out" | sed -n '/^[[{]/,$p' | jq -e 'type == "array" or has("rows")' >/dev/null 2>&1; then
-    local why
-    why="$(printf '%s' "$out" | sed -n '/^[[{]/,$p' | jq -r '.error.message // .message // empty' 2>/dev/null || true)"
-    [ -n "$why" ] || why="$(printf '%s' "$out" | grep -v '^Initialising' | head -1)"
-    die "the Supabase CLI gave no rows: ${why:-empty answer} (try: supabase projects list)"
-  fi
-  printf '%s' "$out"
-}
-# The CLI answers {"rows":[...]} under an agent and a bare [...] for a person
-# with --output-format json; both become {"rows":[...]} before $1 reads them.
-jqrows() { sed -n '/^[[{]/,$p' | jq -r "(.rows? // .) as \$r | {rows: \$r} | $1" 2>/dev/null || true; }
-setting() {
-  query "select value::text as v from settings where key='$1'" | jqrows '.rows[0].v // empty'
-}
 
 EXT="test-$(date +%s)"
 ALERT=$(cat <<JSON

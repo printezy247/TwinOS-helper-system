@@ -476,14 +476,6 @@ export function check(v: VariantInput): CheckResult {
   };
 }
 
-/** Human summary for the Desk group message. */
-export function summarise(result: CheckResult): string {
-  if (!result.findings.length) return "Checks: all clear";
-  return result.findings
-    .map((x) => `${x.severity === "blocking" ? "✗" : x.severity === "needs_approval" ? "!" : "·"} ${x.check}: ${x.message}`)
-    .join("\n");
-}
-
 /**
  * A delayed first comment is a reply under a post that already carries the
  * risk line, so the risk-line rules do not apply to it. Every other check

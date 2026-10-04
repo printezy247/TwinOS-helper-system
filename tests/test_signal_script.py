@@ -5,15 +5,11 @@ It also has to keep checking the four things the signal card is supposed to
 carry (direction emoji, COUNTER-TREND line, risk line, footer); if a future
 edit drops one of those assertions, this test fails.
 """
-import os
-import shutil
-import subprocess
-import tempfile
 import unittest
-from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-SCRIPT = REPO / "scripts" / "test-signal.sh"
+from _helpers import SCRIPTS, run_with_tools, syntax_error
+
+SCRIPT = SCRIPTS / "test-signal.sh"
 
 
 class TradingViewSignalTest(unittest.TestCase):
@@ -26,8 +22,7 @@ class TradingViewSignalTest(unittest.TestCase):
         self.assertTrue(self.src.startswith("#!/usr/bin/env bash"))
 
     def test_bash_syntax(self):
-        r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True)
-        self.assertEqual(r.returncode, 0, r.stderr.decode())
+        syntax_error(SCRIPT)
 
     def test_it_rejects_and_never_approves(self):
         self.assertIn('"data":"no:', self.src)
@@ -39,15 +34,7 @@ class TradingViewSignalTest(unittest.TestCase):
             self.assertIn(needle, self.src, f"the card check for {needle!r} is missing")
 
     def test_dry_run_needs_no_tools_beyond_coreutils(self):
-        with tempfile.TemporaryDirectory() as d:
-            for tool in ("bash", "cat", "date", "cut", "dirname"):
-                src = shutil.which(tool)
-                self.assertIsNotNone(src, f"{tool} missing on this machine")
-                os.symlink(src, os.path.join(d, tool))
-            r = subprocess.run(
-                ["bash", str(SCRIPT), "--dry-run"],
-                capture_output=True, text=True, timeout=60, env={"PATH": d},
-            )
+        r = run_with_tools(SCRIPT, "--dry-run")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("DRY RUN", r.stdout)
         self.assertIn('"data":"no:', r.stdout)

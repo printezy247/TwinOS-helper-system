@@ -8,17 +8,17 @@ and --dry-run sends nothing.
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-SCRIPT = REPO / "scripts" / "desk-report.sh"
+from _helpers import COREUTILS, SCRIPTS, run_script, syntax_error
+
+SCRIPT = SCRIPTS / "desk-report.sh"
 
 
 def run(args, env=None):
-    return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, timeout=60, env=env)
+    return run_script(SCRIPT, *args, env=env)
 
 
 class DeskReportTest(unittest.TestCase):
@@ -29,8 +29,7 @@ class DeskReportTest(unittest.TestCase):
     def test_script_exists_and_is_shell(self):
         self.assertTrue(SCRIPT.exists())
         self.assertTrue(self.src.startswith("#!/usr/bin/env bash"))
-        r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True)
-        self.assertEqual(r.returncode, 0, r.stderr.decode())
+        syntax_error(SCRIPT)
 
     def test_it_only_ever_targets_the_desk(self):
         self.assertIn("desk_group_chat_id", self.src)
@@ -51,7 +50,7 @@ class DeskReportTest(unittest.TestCase):
             report.write_text("".join(f"line {i:04d} " + "x" * 60 + "\n" for i in range(150)))
             tools = Path(d) / "bin"
             tools.mkdir()
-            for tool in ("bash", "cat", "date", "cut", "dirname", "wc"):
+            for tool in COREUTILS + ("wc",):
                 src = shutil.which(tool)
                 self.assertIsNotNone(src, tool)
                 os.symlink(src, tools / tool)

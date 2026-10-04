@@ -8,7 +8,7 @@
  *   (+ rejected)
  */
 import { admin, requireSetting, SETTING_KEYS } from "./supabase.ts";
-import { check, type CheckResult, type Lang, type Platform, type PostType } from "./compliance.ts";
+import { check, TELEGRAM_CAPTION_LIMIT, type CheckResult, type Lang, type Platform, type PostType } from "./compliance.ts";
 import { HttpError, notFound } from "./http.ts";
 import { approvalKeyboard, escapeHtml, sendMessage, sendPhoto } from "./tg.ts";
 import { logAction, logTimeSaved } from "./log.ts";
@@ -322,7 +322,7 @@ export async function pushToDesk(
   const text = `${header}\n\n${escapeHtml(draft.body)}\n\n<i>${checks}</i>`;
   const buttons = approvalKeyboard(draft.content_id);
   const msg = opts.photo
-    ? await sendPhoto(deskId, opts.photo, text.slice(0, 1024), { parse_mode: "HTML", buttons })
+    ? await sendPhoto(deskId, opts.photo, text.slice(0, TELEGRAM_CAPTION_LIMIT), { parse_mode: "HTML", buttons })
     : await sendMessage(deskId, text.slice(0, 4096), {
       parse_mode: "HTML",
       buttons,

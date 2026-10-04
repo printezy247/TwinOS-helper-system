@@ -13,26 +13,16 @@
 # `jobs/enqueue` is jack/abdul/cron only, so the test job is enqueued through
 # the Supabase CLI (like the seed and the cron), not with the worker's key.
 set -euo pipefail
+. "$(dirname "$0")/_lib.sh"
 cd "$(dirname "$0")/.."
 export PATH="$PATH${HOME:+:$HOME/.npm-global/bin}"
 
-say() { printf '%s\n' "$*"; }
-die() { printf '\nSTOPPED: %s\n' "$*" >&2; exit 1; }
-ring() { secret-tool lookup service twinos key "$1" 2>/dev/null || true; }
-
-query() {
-  local out
-  if ! out="$(supabase db query --linked --output-format json "$1" 2>&1)"; then
-    die "db query failed (is the Supabase CLI logged in and linked? try: supabase projects list)"
-  fi
-  printf '%s' "$out"
-}
 grab() { grep -oE "$1" | head -1 || true; }
 
 MODE="${1:-install}"
 case "$MODE" in
   install|--check|--uninstall) ;;
-  *) sed -n '2,16p' "$0"; exit 2 ;;
+  *) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;
 esac
 
 UNIT_SRC="workers/pc/twinos-worker.service"

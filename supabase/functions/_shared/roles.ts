@@ -97,6 +97,3 @@ export function require(role: Role, action: Action): void {
     throw new HttpError(403, "forbidden", `${role} may not ${action}`, { action, role });
   }
 }
-
-/** Roles that get an API key (never a password). Jack and the dashboard log in. */
-export const KEY_ROLES: readonly Role[] = ["abdul", "pc_worker", "ezyai"];

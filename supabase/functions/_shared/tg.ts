@@ -169,22 +169,6 @@ export function sendMediaGroup(chat_id: number | string, media: MediaItem[], opt
   return call<TgMessage[]>("sendMediaGroup", { chat_id, media, ...rest });
 }
 
-export function sendPoll(
-  chat_id: number | string,
-  question: string,
-  options: string[],
-  opts: SendOpts & { is_anonymous?: boolean; allows_multiple_answers?: boolean } = {},
-) {
-  return call<TgMessage>("sendPoll", {
-    chat_id,
-    question,
-    options: options.map((text) => ({ text })),
-    is_anonymous: opts.is_anonymous ?? true,
-    allows_multiple_answers: opts.allows_multiple_answers ?? false,
-    ...common(opts),
-  });
-}
-
 /** Telegram refuses an edit that changes nothing; the screen is already right. */
 function notModified(err: unknown): boolean {
   return /message is not modified/i.test(err instanceof Error ? err.message : String(err));
@@ -208,21 +192,6 @@ export async function editMessageText(
     if (notModified(err)) return true;
     throw err;
   }
-}
-
-export function editMessageCaption(
-  chat_id: number | string,
-  message_id: number,
-  caption: string,
-  opts: SendOpts = {},
-) {
-  return call<TgMessage | true>("editMessageCaption", {
-    chat_id,
-    message_id,
-    caption,
-    parse_mode: opts.parse_mode,
-    reply_markup: opts.buttons ? { inline_keyboard: opts.buttons } : undefined,
-  });
 }
 
 export async function editMessageReplyMarkup(
@@ -254,10 +223,6 @@ export function pinChatMessage(
   return call<true>("pinChatMessage", { chat_id, message_id, disable_notification });
 }
 
-export function unpinChatMessage(chat_id: number | string, message_id: number) {
-  return call<true>("unpinChatMessage", { chat_id, message_id });
-}
-
 /**
  * The toast on Jack's screen. Telegram refuses it once the query is ~15 s old
  * (or the id is synthetic, as in scripts/desk-tour.sh); that must never stop
@@ -277,10 +242,6 @@ export async function answerCallbackQuery(
   }
 }
 
-export function getChatMemberCount(chat_id: number | string) {
-  return call<number>("getChatMemberCount", { chat_id });
-}
-
 export function createChatInviteLink(
   chat_id: number | string,
   name: string,
@@ -293,16 +254,6 @@ export function createChatInviteLink(
   });
 }
 
-export function setWebhook(url: string, secret_token: string, allowed_updates: string[]) {
-  return call<true>("setWebhook", {
-    url,
-    secret_token,
-    allowed_updates,
-    drop_pending_updates: false,
-  });
-}
-
-/** Moderation helpers (Phase 4 uses them; shipped now so the client is complete). */
 export function restrictChatMember(
   chat_id: number | string,
   user_id: number,

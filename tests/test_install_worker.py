@@ -7,9 +7,10 @@ into the unit, and the installer trying to enqueue a job with the worker's key
 would lie).
 """
 import re
-import subprocess
 import unittest
 from pathlib import Path
+
+from _helpers import syntax_error
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "install-worker.sh"
@@ -20,6 +21,8 @@ class InstallWorkerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.src = SCRIPT.read_text()
+        # say/die/ring/query live in the shared lib the script sources.
+        cls.lib = (REPO / "scripts" / "_lib.sh").read_text()
         cls.unit = UNIT.read_text()
 
     def test_script_exists_and_is_shell(self):
@@ -27,8 +30,7 @@ class InstallWorkerTest(unittest.TestCase):
         self.assertTrue(self.src.startswith("#!/usr/bin/env bash"))
 
     def test_bash_syntax(self):
-        r = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True)
-        self.assertEqual(r.returncode, 0, r.stderr.decode())
+        syntax_error(SCRIPT)
 
     def test_unit_carries_no_secret(self):
         self.assertNotIn("twk_", self.unit)
@@ -51,7 +53,7 @@ class InstallWorkerTest(unittest.TestCase):
     def test_test_job_is_enqueued_through_the_cli(self):
         # pc_worker may not call jobs/enqueue; the installer must use the CLI.
         self.assertIn("insert into public.jobs", self.src)
-        self.assertIn("supabase db query", self.src)
+        self.assertIn("supabase db query", self.lib)
 
     def test_it_verifies_the_loop_and_the_backup(self):
         self.assertIn("--self-test", self.src)
