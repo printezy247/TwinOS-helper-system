@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { benchmarkStats, parseCount, parsePage, snapshotsDue } from "./tme.ts";
+import { benchmarkStats, parseCount, parsePage, snapshotsDue, tmeHandle } from "./tme.ts";
 
 /** HTML in the shape t.me/s/<channel> serves (synthetic text, real structure). */
 function page(subs: string | null, posts: Array<{ id: number; views: string | null; at: string }>): string {
@@ -88,4 +88,15 @@ Deno.test("snapshotsDue: several posts, each judged on its own clock", () => {
   ];
   const got = snapshotsDue(posts, [], new Date("2026-10-20T02:30:00Z"));
   assertEquals(got.map((g) => `${g.message_id}:${g.label}`), ["1:1h", "2:1h"]);
+});
+
+Deno.test("tmeHandle: whatever Jack pasted becomes the bare handle the page needs", () => {
+  assertEquals(tmeHandle("@golddesk"), "golddesk");
+  assertEquals(tmeHandle("golddesk"), "golddesk");
+  assertEquals(tmeHandle("https://t.me/golddesk"), "golddesk");
+  assertEquals(tmeHandle("https://t.me/s/golddesk"), "golddesk");
+  assertEquals(tmeHandle("t.me/s/golddesk/412"), "golddesk");
+  assertEquals(tmeHandle("  https://t.me/s/golddesk  "), "golddesk");
+  assertEquals(tmeHandle("not a handle!"), null, "a URL with a path segment is not guessed at");
+  assertEquals(tmeHandle(""), null);
 });

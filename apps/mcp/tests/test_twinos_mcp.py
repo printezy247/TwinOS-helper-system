@@ -95,9 +95,10 @@ class TestToolList(Base):
         names = [t["name"] for t in tm.mcp_tools()]
         for n in ("twinos_draft", "twinos_batch", "twinos_request_approval", "twinos_schedule", "twinos_result_reply", "twinos_link",
                   "twinos_manual_metrics", "twinos_friday", "twinos_health", "twinos_csi_log", "twinos_clip", "twinos_brief",
-                  "twinos_inbox", "twinos_analytics", "twinos_research", "twinos_feeds"):
+                  "twinos_inbox", "twinos_analytics", "twinos_research", "twinos_feeds",
+                  "twinos_search", "twinos_ideas", "twinos_channels"):
             self.assertIn(n, names)
-        self.assertEqual(len(names), 16)
+        self.assertEqual(len(names), 19)
         for n in names:
             self.assertFalse(n == "twinos_approve" or (("approv" in n) and n != "twinos_request_approval"), n)
         for t in tm.mcp_tools():
@@ -123,7 +124,7 @@ class TestToolList(Base):
         msgs = [json.loads(l) for l in out.getvalue().strip().split("\n")]
         self.assertEqual([m["id"] for m in msgs], [1, 2, 3, 4, 5, 6])
         self.assertEqual(msgs[0]["result"]["serverInfo"]["name"], "twinos")
-        self.assertEqual(len(msgs[1]["result"]["tools"]), 16)
+        self.assertEqual(len(msgs[1]["result"]["tools"]), 19)
         self.assertEqual(msgs[2]["result"]["content"][0]["text"], "Nothing broken. Carry on.")
         self.assertTrue(msgs[3]["result"].get("isError"))
         self.assertIn("Jack", msgs[3]["result"]["content"][0]["text"])
@@ -571,3 +572,61 @@ class TestAbdulVerbs(Base):
         self.assertTrue(out.startswith("couldn't ask TwinOS how it is:"))
         self.assertNotIn(FAKE_KEY, out)
         self.assertNotIn("\n", out)
+
+
+class TestResearchReads(Base):
+    """search / ideas / channels — the three reads that turn other people's
+    publishing into something Jack can pick from. Nothing here writes a draft."""
+
+    def test_search_reads_feed_items_and_cannot_be_broken_by_its_own_term(self):
+        tm.tool_call("twinos_search", {"q": "gold, or (x) break", "since": "2026-10-01", "limit": 5})
+        r = self.last()
+        self.assertEqual(r["path"].split("?")[0], "/rest/v1/feed_items")
+        self.assertIn("or=(title.ilike.", r["path"])
+        self.assertIn("published_at=gte.2026-10-01", r["path"])
+        self.assertIn("limit=5", r["path"])
+        # punctuation would end the PostgREST filter clause, so it never reaches the URL
+        self.assertNotIn("%28", r["path"], "( was stripped from the term")
+        self.assertNotIn("%29", r["path"], ") was stripped from the term")
+
+    def test_search_needs_something_to_search_for(self):
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_search", {})
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_search", {"q": "   "})
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_search", {"q": "???"})
+        self.assertEqual(self.reqs, [])
+
+    def test_ideas_posts_the_window_to_the_research_route_and_keeps_the_ranking(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/research/ideas"] = {
+            "ok": True, "days": 7,
+            "ideas": [{"id": "a", "title": "Gold broke 4000", "pillar": "Gold", "matched": ["gold"], "score": 2}],
+        }
+        try:
+            out = tm.tool_call("twinos_ideas", {"days": 7, "limit": 5})
+            r = self.last()
+            self.assertEqual(r["path"], "/functions/v1/research/ideas")
+            self.assertEqual(r["method"], "POST")
+            self.assertEqual(r["body"], {"days": 7, "limit": 5, "actor": tm.ACTOR})
+            self.assertEqual(out["ideas"][0]["matched"], ["gold"])
+        finally:
+            FakeTwinOS.state["bodies"].pop("/functions/v1/research/ideas", None)
+
+    def test_channels_asks_for_a_live_count_by_default_and_can_be_read_without_one(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/research/channels"] = {
+            "ok": True, "refreshed": 1,
+            "channels": [{"name": "Gold desk", "handle": "golddesk", "live_members": 4200, "refresh_error": None}],
+        }
+        try:
+            out = tm.tool_call("twinos_channels", {})
+            r = self.last()
+            self.assertEqual(r["path"], "/functions/v1/research/channels")
+            self.assertIs(r["body"]["refresh"], True, "a live count is what the tool is for")
+            self.assertEqual(out["refreshed"], 1)
+
+            tm.tool_call("twinos_channels", {"refresh": False})
+            r = self.last()
+            self.assertIs(r["body"]["refresh"], False, "and the manual notes alone are a read, not a refresh")
+        finally:
+            FakeTwinOS.state["bodies"].pop("/functions/v1/research/channels", None)
