@@ -1,5 +1,5 @@
-import { assertEquals } from "std/assert/mod.ts";
-import { decodeEntities, parseDate, parseFeed } from "./feed.ts";
+import { assertEquals, assert } from "std/assert/mod.ts";
+import { decodeEntities, parseDate, parseFeed, parseJsonFeed } from "./feed.ts";
 
 const RSS = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel><title>Gold desk</title>
@@ -83,4 +83,60 @@ Deno.test("parseDate: RFC 822 and ISO 8601 are instants, anything else is null",
 Deno.test("decodeEntities: numeric and hex references, CDATA unwrapped once", () => {
   assertEquals(decodeEntities("&#8217;&#x2019;"), "’’");
   assertEquals(decodeEntities("<![CDATA[a &amp; b]]>"), "a & b");
+});
+
+const BLUESKY = JSON.stringify({
+  posts: [
+    { uri: "at://did:plc:abc123/app.bsky.feed.post/3kxyz", author: { handle: "jack.bsky.social" },
+      record: { text: "Gold broke 4000 while everyone slept. Chart attached.", createdAt: "2026-10-05T08:15:00.000Z" } },
+    { uri: "at://did:plc:abc123/app.bsky.feed.post/3kxy0", author: { handle: "other.bsky.social" },
+      record: { text: "", createdAt: "2026-10-05T07:00:00.000Z" } },
+  ],
+});
+
+const MASTODON = JSON.stringify([
+  { id: "111222333", created_at: "2026-10-05T09:00:00.000Z",
+    content: "<p>Rate cut odds moved to 82% &amp; gold liked it</p>",
+    url: "https://mastodon.social/@macro/111222333" },
+  { id: "111222334", created_at: "2026-10-05T08:00:00.000Z", content: "<p></p>", url: "https://mastodon.social/@macro/111222334" },
+]);
+
+Deno.test("parseJsonFeed: a Bluesky search keeps the uri as its id and links back to the post", () => {
+  const items = parseJsonFeed(BLUESKY, "bluesky");
+  assertEquals(items.length, 1, "a post with no text is a stub, dropped like a titleless feed entry");
+  assertEquals(items[0], {
+    externalId: "at://did:plc:abc123/app.bsky.feed.post/3kxyz",
+    title: "Gold broke 4000 while everyone slept. Chart attached.",
+    summary: "Gold broke 4000 while everyone slept. Chart attached.",
+    link: "https://bsky.app/profile/jack.bsky.social/post/3kxyz",
+    publishedAt: "2026-10-05T08:15:00.000Z",
+  });
+});
+
+Deno.test("parseJsonFeed: a Mastodon tag timeline drops the HTML and keeps the status url", () => {
+  const items = parseJsonFeed(MASTODON, "mastodon");
+  assertEquals(items.length, 1);
+  assertEquals(items[0], {
+    externalId: "111222333",
+    title: "Rate cut odds moved to 82% & gold liked it",
+    summary: "Rate cut odds moved to 82% & gold liked it",
+    link: "https://mastodon.social/@macro/111222333",
+    publishedAt: "2026-10-05T09:00:00.000Z",
+  });
+});
+
+Deno.test("parseJsonFeed: a payload of the wrong shape is an empty list, never a throw", () => {
+  assertEquals(parseJsonFeed(null, "bluesky"), []);
+  assertEquals(parseJsonFeed("not json", "bluesky"), []);
+  assertEquals(parseJsonFeed("{}", "bluesky"), []);
+  assertEquals(parseJsonFeed(JSON.stringify({ posts: "yes" }), "bluesky"), []);
+  assertEquals(parseJsonFeed(JSON.stringify({ error: "Rate limit exceeded" }), "mastodon"), []);
+});
+
+Deno.test("parseJsonFeed: a long post gets a headline short enough for the column", () => {
+  const long = JSON.stringify({ posts: [{ uri: "at://d/app.bsky.feed.post/r", author: { handle: "a.bsky.social" },
+    record: { text: "x".repeat(200), createdAt: "2026-10-05T08:00:00.000Z" } }] });
+  const [item] = parseJsonFeed(long, "bluesky");
+  assert(item.title.length <= 80, "title must fit feed_items.title");
+  assertEquals(item.summary, "x".repeat(200), "the whole post is still kept as the summary");
 });

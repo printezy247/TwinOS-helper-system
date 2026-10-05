@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
-import { bestHours, channelStale, CHANNEL_STALE_MS, engagementRate, hookWinner } from "./insights.ts";
+import { bestHours, channelStale, CHANNEL_STALE_MS, engagementRate, feedStale, FEED_STALE_MS, hookWinner } from "./insights.ts";
 
 Deno.test("bestHours: the hours with the most views come first, ties by hour", () => {
   assertEquals(bestHours([
@@ -40,4 +40,12 @@ Deno.test("channelStale: quiet past the gap pages, inside it stays quiet, never 
   assertEquals(channelStale(null, now, CHANNEL_STALE_MS), true);
   assertEquals(channelStale("not-a-date", now, CHANNEL_STALE_MS), true);
   assert(channelStale(new Date(now - 37 * 3600_000).toISOString(), now) === true);
+});
+
+Deno.test("feedStale: a 6-hourly feed that has not reported in 12 hours is stale", () => {
+  const now = Date.parse("2026-10-05T12:00:00Z");
+  assertEquals(feedStale(new Date(now - 11 * 3600_000).toISOString(), now, FEED_STALE_MS), false);
+  assertEquals(feedStale(new Date(now - 13 * 3600_000).toISOString(), now, FEED_STALE_MS), true);
+  assertEquals(feedStale(null, now, FEED_STALE_MS), true, "never fetched is stale, not healthy");
+  assertEquals(feedStale("yesterday", now, FEED_STALE_MS), true);
 });

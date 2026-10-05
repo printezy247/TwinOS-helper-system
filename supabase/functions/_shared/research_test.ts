@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertThrows } from "std/assert/mod.ts";
 import {
-  buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, topicRisk,
+  buildBrief, coreTerms, csiRow, demandScore, parseSuggest, pickIdeas, queryVariants, topicRisk,
 } from "./research.ts";
 
 Deno.test("parseSuggest: the suggestion list out of Google's autocomplete answer", () => {
@@ -88,4 +88,36 @@ Deno.test("csiRow: a missing topic, a made-up trend or a non-number is refused",
   assertThrows(() => csiRow({ topic: "  " }), Error, "topic");
   assertThrows(() => csiRow({ topic: "x", trend: "sideways" }), Error, "trend");
   assertThrows(() => csiRow({ topic: "x", popularity: "lots" }), Error, "number");
+});
+
+Deno.test("pickIdeas: the post matching more of a persona's seed terms wins and says why", () => {
+  const personas = [
+    { id: 1, pillar: "Risk", terms: ["stop loss", "overtrading"] },
+    { id: 2, pillar: "Gold", terms: ["xauusd", "nfp"] },
+  ];
+  const ideas = pickIdeas([
+    { id: "a", title: "Overtrading is why accounts die", summary: "Cut size", publishedAt: "2026-10-04T00:00:00Z" },
+    { id: "b", title: "XAUUSD and NFP week ahead", summary: null, publishedAt: "2026-10-03T00:00:00Z" },
+    { id: "c", title: "Nobody matches this one", summary: "Nothing", publishedAt: "2026-10-05T00:00:00Z" },
+  ], personas, { now: Date.parse("2026-10-05T00:00:00Z") });
+  assertEquals(ideas.length, 2, "an item that matches no persona is not an idea");
+  assertEquals(ideas[0].id, "b", "two matched terms beat one");
+  assertEquals(ideas[0].pillar, "Gold");
+  assertEquals(ideas[0].score, 2);
+  assertEquals(ideas[1].id, "a");
+  assertEquals(ideas[1].pillar, "Risk");
+  assertEquals(ideas[1].score, 1);
+});
+
+Deno.test("pickIdeas: only the window, the limit and a sane answer for nothing found", () => {
+  const now = Date.parse("2026-10-05T00:00:00Z");
+  const personas = [{ id: 1, pillar: "Gold", terms: ["gold"] }];
+  const got = pickIdeas([
+    { id: "old", title: "gold then", summary: null, publishedAt: "2026-09-01T00:00:00Z" },
+    { id: "new", title: "gold now", summary: null, publishedAt: "2026-10-04T00:00:00Z" },
+    { id: "undated", title: "gold undated", summary: null, publishedAt: null },
+  ], personas, { now, days: 14, limit: 1 });
+  assertEquals(got.map((i) => i.id), ["new"], "the stale month-old item is outside the window");
+  assertEquals(pickIdeas([{ id: "x", title: "nothing", summary: null, publishedAt: null }], personas, { now }), []);
+  assertEquals(pickIdeas([], personas, { now }), []);
 });

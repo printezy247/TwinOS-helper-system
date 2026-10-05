@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "std/assert/mod.ts";
-import { buildCommentJobs, pickLines, render, requiredLineFacts, shortIdRange } from "./content.ts";
+import { buildCommentJobs, parsePoll, pickLines, render, requiredLineFacts, shortIdRange } from "./content.ts";
 
 Deno.test("a Desk short id becomes a uuid range (Postgres has no LIKE on uuid)", () => {
   assertEquals(shortIdRange("C0203593"), {
@@ -61,4 +61,38 @@ Deno.test("first-comment jobs: telegram only, delayed, carrying the comment", ()
   assertEquals((rows[0].result as { first_comment: string }).first_comment, "Results get posted here.");
   assertEquals(buildCommentJobs("cid", [{ id: "v-tg", platform: "telegram" }], "2026-10-04T08:00:00.000Z", null, 30, "jack"), []);
   assertEquals(buildCommentJobs("cid", [{ id: "v-ig", platform: "instagram" }], "2026-10-04T08:00:00.000Z", "Hi.", 30, "jack"), []);
+});
+
+const POLL_BODY = `Quick one before the week starts.
+
+What's your biggest problem right now?
+- Entering too early
+- Moving my stop
+- Overtrading
+- Not sure what to trade
+
+(Answers pick next week's lessons.)`;
+
+Deno.test("parsePoll: the template's question and bullets become a real poll, the rest stays prose", () => {
+  const p = parsePoll(POLL_BODY);
+  assertEquals(p?.question, "What's your biggest problem right now?");
+  assertEquals(p?.options, ["Entering too early", "Moving my stop", "Overtrading", "Not sure what to trade"]);
+  assertEquals(p?.preamble, "Quick one before the week starts.");
+  assertEquals(p?.postamble, "(Answers pick next week's lessons.)");
+});
+
+Deno.test("parsePoll: a body with no question or fewer than two options is not a poll", () => {
+  assertEquals(parsePoll("Just a normal post about gold."), null);
+  assertEquals(parsePoll("What do you think?\n- one option only"), null);
+  assertEquals(parsePoll("What do you think?\nNo options here"), null);
+  assertEquals(parsePoll(""), null);
+});
+
+Deno.test("parsePoll: Telegram's own limits are enforced at the edge", () => {
+  const many = parsePoll("Q?\n" + Array.from({ length: 14 }, (_, i) => `- option ${i}`).join("\n"));
+  assertEquals(many?.options.length, 10, "Telegram refuses an eleventh option");
+  const long = parsePoll("Q?\n- " + "a".repeat(400) + "\n- short");
+  assertEquals(long?.options[0].length, 100, "an option Telegram would reject is shortened");
+  const bigQ = parsePoll("q".repeat(400) + "?\n- a\n- b");
+  assertEquals(bigQ?.question.length, 300, "the question is capped at Telegram's 300 with the ? kept");
 });
