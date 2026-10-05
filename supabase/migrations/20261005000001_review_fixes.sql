@@ -1,4 +1,4 @@
--- 0035_review_fixes.sql — October 2026 code-review fixes (fix round 1).
+-- 20261005000001_review_fixes.sql — October 2026 code-review fixes (fix round 1).
 --
 -- 1. Demo/shadow signals leaked onto the public board: data_source carries a
 --    column default ('live'), and PostgreSQL fills defaults BEFORE a BEFORE

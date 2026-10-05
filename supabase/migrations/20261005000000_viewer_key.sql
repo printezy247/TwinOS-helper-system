@@ -1,4 +1,4 @@
--- 0034_viewer_key.sql — a read-only scoped key for ABDUL's TwinOS status line.
+-- 20261005000000_viewer_key.sql — a read-only scoped key for ABDUL's TwinOS status line.
 --
 -- roles.ts already has a `viewer` role that may only do reports.read (the GET
 -- routes of health, jobs, friday and content). The api_keys check and

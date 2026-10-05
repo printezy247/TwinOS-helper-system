@@ -112,7 +112,7 @@ async function replyUnderCard(
   await db.from("content_items").update({ reply_to_message_id: card.message_id, target_chat_id: card.chat_id, result_status: status }).eq("id", draft.content_id);
   if (opts.dryRun) return { status: 200, body: { ok: true, dry_run: true, content_id: draft.content_id, body: draft.body } };
 
-  // Atomic claim on (signal_id, status_posted): the unique index from 0035
+  // Atomic claim on (signal_id, status_posted): the unique index from 20261005000001_review_fixes
   // makes a second reply for the same outcome impossible, even when two cron
   // ticks drain duplicate jobs or a manual POST races the queue. The row
   // starts with a null message_id; publish fills it in after the send.
