@@ -105,6 +105,7 @@ ENDPOINTS = {
     "twinos_search":           ("rest", "feed_items"),
     "twinos_ideas":            ("fn", "research/ideas"),
     "twinos_channels":         ("fn", "research/channels"),
+    "twinos_polls":            ("rest", "poll_results"),
 }
 # Views ANALYTICS_VIEWS may read, with the ones that are not views marked, so a
 # bad name is refused locally instead of becoming a confusing PostgREST error.
@@ -165,6 +166,9 @@ TOOLS = [
                         "disclosures) plus a live Telegram member count from the Bot API for the channels the bot is actually in. "
                         "refresh = false skips the refresh and just reads the rows.",
      {"refresh": "boolean"}, []),
+    ("twinos_polls", "What members actually answered: the latest tally for every Telegram poll, newest first, each with "
+                     "its question, the votes per option and how many voted. limit caps rows (default 20).",
+     {"limit": "integer"}, []),
     ("twinos_clip", "Queue a live recording for the PC worker: transcript, highlight picks, caption file, clean clips, CapCut-ready. "
                     "source = tiktok | telegram, date = ISO date of the live (default yesterday, Kuala Lumpur), or path = the file itself. "
                     "layout = chart_full | chart_face | blurred_fill makes 1080x1920 clips; face_box = [x, y, width, height] of the camera "
@@ -477,6 +481,9 @@ def tool_call(name, a, idem=None):
             except (TypeError, ValueError):
                 raise ValueError("%s must be a whole number" % key)
         return fn(target, body, idem)
+    if name == "twinos_polls":
+        # The tally is live, so the row on top is the one that counts.
+        return _rows(rest(target, "order=captured_at.desc", a.get("limit") or 20))
     if name == "twinos_channels":
         # refresh=false must survive the trip: false and absent mean different
         # things here, one reads the rows and the other goes and asks Telegram.

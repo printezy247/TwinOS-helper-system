@@ -86,7 +86,7 @@ async function claimOne(): Promise<Job | null> {
   return claimed ? { ...(due as Job), attempts: due.attempts + 1 } : null;
 }
 
-async function sendTelegram(item: Item, v: Variant): Promise<{ chat_id: number; message_id: number }> {
+async function sendTelegram(item: Item, v: Variant): Promise<{ chat_id: number; message_id: number; poll_id?: string }> {
   const chatId = item.target_chat_id ?? Number(await requireSetting(SETTING_KEYS.channelId, "TWINOS_CHANNEL_ID"));
   const buttons = tg.buildKeyboard(v.buttons ?? [], 2);
   const opts: tg.SendOpts = {
@@ -130,7 +130,9 @@ async function sendTelegram(item: Item, v: Variant): Promise<{ chat_id: number; 
   if (item.pin) {
     try { await tg.pinChatMessage(chatId, msg.message_id); } catch (e) { console.warn("[publish] pin failed", e); }
   }
-  return { chat_id: msg.chat.id, message_id: msg.message_id };
+  // The poll's id is what `update.poll` will arrive with later, and the only
+  // link from a tally back to the post that asked it.
+  return { chat_id: msg.chat.id, message_id: msg.message_id, poll_id: msg.poll?.id };
 }
 
 /* ---------- Instagram, Facebook Reels, Threads (_shared/meta.ts) ---------- */
@@ -250,7 +252,7 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
   }
 
   await setStatus(item.id, "publishing", actor);
-  let posted: { chat_id: number; message_id: number } | null = null;
+  let posted: { chat_id: number; message_id: number; poll_id?: string } | null = null;
   let externalId: string | null = null;
   try {
     switch (job.platform) {
@@ -275,6 +277,7 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
       await db.from("tg_posts").insert({
         chat_id: posted.chat_id, message_id: posted.message_id, content_id: item.id,
         variant_id: variant.id, post_type: item.post_type, posted_at: new Date().toISOString(),
+        poll_id: posted.poll_id ?? null,
       });
       if (item.signal_id) {
         if (item.post_type === "result_reply") {

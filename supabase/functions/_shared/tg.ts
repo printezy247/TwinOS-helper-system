@@ -45,6 +45,8 @@ export interface TgMessage {
   date: number;
   text?: string;
   caption?: string;
+  /** Only on a message that is a poll: the id `update.poll` arrives with later. */
+  poll?: { id: string };
 }
 
 const RETRY_LIMIT = 3;
@@ -514,4 +516,57 @@ export function buildKeyboard(
   }
   if (row.length) rows.push(row);
   return rows;
+}
+
+export interface PollSnapshot {
+  pollId: string;
+  question: string;
+  options: Array<{ text: string; votes: number }>;
+  totalVoters: number;
+  closed: boolean;
+}
+
+const count = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+};
+
+/**
+ * The tally out of `update.poll`, or null when it cannot be trusted.
+ *
+ * Telegram sends poll results as their own update with no chat and no message
+ * id — only the poll's own id — so this snapshot can only ever be joined back
+ * to a post through the id recorded when the poll was sent. An id is
+ * therefore the one thing that makes a row worth writing, and everything
+ * numeric is read as a whole number or not at all: a tally is a count of
+ * people, and a negative or fractional one is a malformed payload, not data.
+ *
+ * `question` is a plain string on older Bot API versions and an object with
+ * `text` on newer ones; both are read.
+ */
+export function pollSnapshot(poll: unknown): PollSnapshot | null {
+  if (!poll || typeof poll !== "object") return null;
+  const p = poll as Record<string, unknown>;
+  const pollId = typeof p.id === "string" && p.id ? p.id : null;
+  if (!pollId) return null;
+
+  const raw = p.question;
+  const question = typeof raw === "string" ? raw
+    : raw && typeof raw === "object" && typeof (raw as { text?: unknown }).text === "string"
+      ? (raw as { text: string }).text
+      : "";
+
+  const options = Array.isArray(p.options)
+    ? p.options
+      .filter((o): o is Record<string, unknown> => !!o && typeof o === "object")
+      .map((o) => ({ text: String(o.text ?? ""), votes: count(o.voter_count) }))
+    : [];
+
+  return {
+    pollId,
+    question,
+    options,
+    totalVoters: count(p.total_voter_count),
+    closed: p.is_closed === true,
+  };
 }

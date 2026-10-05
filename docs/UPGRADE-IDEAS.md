@@ -126,7 +126,11 @@ and nothing posts.
     until the Monday brief comes back empty. *Built:* `feedStale` +
     a Desk alert in `health/check`, at two missed cycles rather than one.
 
-**Not built, deliberately.** Reading poll *results* back: Telegram only pushes
-them to the bot as `update.poll`, and that means touching the approval
-webhook, which is the one part of the system that must not change for a
-feature. TikTok and X research: no official read that fits the method rules.
+28. **Poll results read back** — the tally, joined to the post that asked it.
+    *Built:* `poll_results` + `tg_posts.poll_id` (migration `20261006080000`),
+    `onPoll` in `tg-webhook`, `pollSnapshot` in `_shared/tg.ts`, `twinos_polls`
+    in ABDUL. The branch handles `update.poll` and nothing else, so the
+    approval path is untouched, and `allowed_updates` already listed `poll`.
+
+**Not built, deliberately.** TikTok and X research: no official read that fits
+the method rules.

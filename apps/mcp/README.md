@@ -62,6 +62,7 @@ verbs for Phase 2: `../abdul/PATCH-NOTES.md`.
 | `twinos_search` | One phrase through the collected feed items (title/summary), newest first | `GET /rest/v1/feed_items` |
 | `twinos_ideas` | Post ideas from what other people published, ranked against your personas | `POST /functions/v1/research/ideas` |
 | `twinos_channels` | Reference channels: recorded notes + a live member count where the bot can see | `POST /functions/v1/research/channels` |
+| `twinos_polls` | Latest tally per Telegram poll: question, votes per option, how many voted | `GET /rest/v1/poll_results` |
 | `twinos_clip` | Queue a live for the PC worker: transcript, picks, captions, clips | `POST /functions/v1/jobs/enqueue` (`kind: clip`) |
 | `twinos_brief` | Latest Monday research brief | `GET /rest/v1/briefs` |
 | `twinos_inbox` | Open unified-inbox items with suggested replies | `GET /rest/v1/inbox_items` |

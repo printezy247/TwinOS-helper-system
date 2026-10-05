@@ -70,6 +70,8 @@ interface Update {
   my_chat_member?: ChatMemberUpdated;
   chat_join_request?: { chat: Chat; from: User; user_chat_id?: number; date: number; invite_link?: { invite_link: string; name?: string } };
   message_reaction_count?: { chat: Chat; message_id: number; date: number; reactions: Array<{ type: { type: string; emoji?: string }; total_count: number }> };
+  /** A tally on its own: no chat, no message id, only the poll's id. */
+  poll?: Record<string, unknown>;
 }
 
 /* ------------------------------ helpers ------------------------------ */
@@ -1416,6 +1418,33 @@ async function onReactions(r: NonNullable<Update["message_reaction_count"]>) {
   });
 }
 
+/**
+ * A poll tally (UPGRADE-IDEAS #26). The poll update carries no chat and no
+ * message id, so the row is joined back to the post through the id captured
+ * when the poll was sent; a tally for a poll this install never sent is still
+ * stored, but says so by leaving the post columns null rather than guessing.
+ * The tally is live, so each update overwrites the last one.
+ */
+async function onPoll(p: NonNullable<Update["poll"]>) {
+  const snap = tg.pollSnapshot(p);
+  if (!snap) return;
+  const db = admin();
+  const { data: post } = await db.from("tg_posts")
+    .select("chat_id, message_id, variant_id").eq("poll_id", snap.pollId).maybeSingle();
+  const { error } = await db.from("poll_results").upsert({
+    poll_id: snap.pollId,
+    chat_id: post?.chat_id ?? null,
+    message_id: post?.message_id ?? null,
+    variant_id: post?.variant_id ?? null,
+    question: snap.question,
+    options: snap.options,
+    total_voters: snap.totalVoters,
+    is_closed: snap.closed,
+    captured_at: new Date().toISOString(),
+  }, { onConflict: "poll_id" });
+  if (error) throw new Error(`poll_results: ${error.message}`);
+}
+
 /* ------------------------------ entry ------------------------------ */
 serve(async (req) => {
   if (req.method !== "POST") return json({ ok: true, fn: "tg-webhook" });
@@ -1451,6 +1480,7 @@ serve(async (req) => {
     else if (update.my_chat_member) await onMember(update.my_chat_member, "my_chat_member");
     else if (update.chat_join_request) await onJoinRequest(update.chat_join_request);
     else if (update.message_reaction_count) await onReactions(update.message_reaction_count);
+    else if (update.poll) await onPoll(update.poll);
     else if (update.message) {
       const m = update.message;
       if (deskId && m.chat.id === deskId) await onDeskMessage(m);
