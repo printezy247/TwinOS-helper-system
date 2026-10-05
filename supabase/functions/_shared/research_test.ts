@@ -155,3 +155,23 @@ Deno.test("pickIdeas: words every post uses do not score, so a topical post beat
   assertEquals(got.find((i) => i.id === "generic"), undefined,
     "a post matching only words every post carries is not an idea, however many of them it carries");
 });
+
+Deno.test("pickIdeas: a ticker is not a subject, a number is not a topic, and crypto is not a candidate", () => {
+  const now = Date.parse("2026-10-05T00:00:00Z");
+  const personas = [{ id: 1, pillar: "Macro", terms: ["gold", "usd", "yields", "500"] }];
+  const got = pickIdeas([
+    // "Golden" is not gold and "BTCUSD" is not usd: both are substring accidents
+    { id: "btc", title: "BTCUSD | Golden Cross Supports the Trend", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    // no crypto word here, so this one can only be excluded by the boundary itself
+    { id: "golden", title: "Golden Cross Strategy Update for the week", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    // would match `gold` on its own merits, and is still out of scope
+    { id: "coin", title: "Bitcoin and USDC rally as gold loses its shine", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    { id: "au", title: "Gold holds as yields fall; USD firm, 500 pips", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+  ], personas, { now });
+
+  const ids = got.map((i) => i.id);
+  assert(!ids.includes("btc"), "an out-of-scope ticker never becomes a candidate");
+  assert(!ids.includes("golden"), "a word boundary separates golden from gold, with no out-of-scope word in sight");
+  assert(!ids.includes("coin"), "an asset Jack does not cover is not a candidate at all");
+  assertEquals(got.find((i) => i.id === "au")?.matched, ["gold", "usd", "yields"], "the digits in a price are not a topic");
+});
