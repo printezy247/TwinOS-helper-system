@@ -1,17 +1,18 @@
 import { assertEquals, assertRejects } from "std/assert/mod.ts";
-import { answerCallbackQuery, call, editMessageReplyMarkup, editMessageText, TgError } from "./tg.ts";
+import { answerCallbackQuery, call, editMessageReplyMarkup, editMessageText, sendPoll, TgError } from "./tg.ts";
 
 // A token-shaped value would trip the CI secret grep; the client never
 // validates its shape, so anything non-empty works.
 Deno.env.set("TWINOS_OPS_BOT_TOKEN", "test-token-not-a-secret");
 
 /** Count fetches and answer with the given script of responses, in order. */
-function stubFetch(script: Array<{ status: number; body: unknown }>): { calls: number } {
-  const state = { calls: 0 };
+function stubFetch(script: Array<{ status: number; body: unknown }>): { calls: number; bodies: string[] } {
+  const state = { calls: 0, bodies: [] as string[] };
   const original = globalThis.fetch;
-  globalThis.fetch = ((_url: string | URL | Request) => {
+  globalThis.fetch = ((_url: string | URL | Request, init?: RequestInit) => {
     const step = script[Math.min(state.calls, script.length - 1)];
     state.calls += 1;
+    if (typeof init?.body === "string") state.bodies.push(init.body);
     return Promise.resolve(
       new Response(JSON.stringify(step.body), {
         status: step.status,
@@ -95,6 +96,25 @@ Deno.test("editMessageText: 'message is not modified' is success, not an error (
   try {
     assertEquals(await editMessageText(1, 2, "same"), true);
     assertEquals(await editMessageReplyMarkup(1, 2, null), true);
+  } finally {
+    restore(state);
+  }
+});
+
+Deno.test("sendPoll: the question, the options and an anonymous electorate, as Telegram wants them", async () => {
+  const state = stubFetch([ok({ message_id: 42, poll: { id: "poll-1" } })]);
+  try {
+    const msg = await sendPoll(-100123, "What hurts most?", ["Entering early", "Moving stops"], {});
+    assertEquals(msg.message_id, 42);
+    const sent = JSON.parse(state.bodies[0]);
+    assertEquals(sent.chat_id, -100123);
+    assertEquals(sent.question, "What hurts most?");
+    assertEquals(sent.options, [{ text: "Entering early" }, { text: "Moving stops" }],
+      "Telegram wants InputPollOption objects, not bare strings");
+    assertEquals(sent.is_anonymous, undefined,
+      "left alone: voters stay private while the tally stays public in the channel");
+    assertEquals(sent.question.length <= 300 && sent.options.length >= 2 && sent.options.length <= 10, true,
+      "the shape Telegram accepts");
   } finally {
     restore(state);
   }
