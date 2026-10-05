@@ -22,7 +22,9 @@ export type PostType =
   | "news_alert"
   | "member_result"
   | "holiday"
-  | "start_here";
+  | "start_here"
+  | "faq"
+  | "live_recap";
 
 export type Platform = "telegram" | "instagram" | "facebook" | "threads" | "youtube" | "tiktok" | "x";
 export type Lang = "en" | "ms";

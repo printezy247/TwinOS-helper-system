@@ -35,6 +35,7 @@ import type { Lang, Platform, PostType } from "_shared/compliance.ts";
 const POST_TYPES: readonly PostType[] = [
   "gold_map", "macro_card", "signal_card", "result_reply", "lesson", "channel_audit", "scorecard",
   "outlook", "offer", "poll", "evening_wrap", "news_alert", "member_result", "holiday", "start_here",
+  "faq", "live_recap",
 ];
 const PLATFORMS: readonly Platform[] = ["telegram", "instagram", "facebook", "threads", "youtube", "tiktok", "x"];
 const LANGS: readonly Lang[] = ["en", "ms"];

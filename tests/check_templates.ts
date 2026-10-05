@@ -31,6 +31,8 @@ const SAMPLE: Record<PostType, Record<string, unknown>> = {
   member_result: { tier: "Premium", quote: "Stopped chasing entries, waited for the zone. 3 trades this week, 2 wins, 1 loss." },
   holiday: { text: "Markets are thin today for the Deepavali holiday. No map, no signals. Back tomorrow at 8am." },
   start_here: { free_list: "- Gold map every day at 8am\n- 1-2 signals with every result posted\n- Lessons, weekly scorecard, Sunday outlook" },
+  faq: { question: "Why move the stop to entry?", answer: "Because once the market has paid you once, the trade should not be able to lose. We do it at TP1, never before." },
+  live_recap: { date: "Sat 4 Oct", topics: "Two hours on the chart: the 4012 zone held, and the second attempt at 4046 failed.", takeaway: "wait for the close, not the wick" },
 };
 const LONG_FORM: PostType[] = ["lesson", "start_here", "channel_audit"];
 
@@ -59,6 +61,6 @@ for (const t of dump.templates.sort((a, b) => a.key.localeCompare(b.key))) {
   if (problems.length) { failures += problems.length; console.log(`FAIL ${t.key}\n  - ${problems.join("\n  - ")}`); }
   else console.log(`ok   ${t.key}`);
 }
-if (dump.templates.length !== 15) { console.log(`FAIL expected 15 templates, found ${dump.templates.length}`); failures++; }
-console.log(failures ? `\n${failures} problem(s)` : "\nall 15 templates render and pass the compliance engine");
+if (dump.templates.length !== 17) { console.log(`FAIL expected 17 templates, found ${dump.templates.length}`); failures++; }
+console.log(failures ? `\n${failures} problem(s)` : "\nall 17 templates render and pass the compliance engine");
 Deno.exit(failures ? 1 : 0);

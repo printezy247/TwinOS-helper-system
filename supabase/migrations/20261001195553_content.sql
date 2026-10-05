@@ -10,7 +10,7 @@ begin
     create type public.post_type as enum (
       'gold_map', 'macro_card', 'signal', 'result', 'lesson', 'audit', 'scorecard',
       'outlook', 'offer', 'poll', 'evening_wrap', 'news_alert', 'member_result',
-      'holiday_milestone', 'start_here'
+      'holiday_milestone', 'start_here', 'faq', 'live_recap'
     );
   end if;
   if not exists (select 1 from pg_type where typname = 'content_status') then

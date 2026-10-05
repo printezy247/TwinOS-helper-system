@@ -10,7 +10,7 @@ Exit: schema reviewed; baseline logged.
 - [x] Schema written and reviewed (`supabase/migrations`, 0001–0017)
 - [x] Schema verified against a real Postgres: migrations + seed + `tests/smoke.sql` load and pass, and CI repeats it on every push
 - [x] Schema reconciled with the Edge Functions (`0011_contract.sql`) — the two halves had drifted and nothing had ever run them together
-- [x] Seed: settings, brand_facts, products, personas, 15 templates, style_guide, hooks, calendar_slots, live_runsheets, mod_rules, benchmarks (`supabase/seed.sql`)
+- [x] Seed: settings, brand_facts, products, personas, 17 templates, style_guide, hooks, calendar_slots, live_runsheets, mod_rules, benchmarks (`supabase/seed.sql`)
 - [x] MCP `ENDPOINTS` matched to the deployed function routes; 40 tests pass
 - [x] Settings keys aligned: the functions read the same names the seed and views write
 - [x] `docs/SETUP.md` verified — all 7 SQL blocks execute, all counts checked against a live database

@@ -365,6 +365,16 @@ Include the IB disclosure line for variant A. One call to action. Under 500 char
    '["LIST", "BUTTONS"]',
    '[{"label": "EXAMPLE", "lang": "en", "body": "*Welcome to EzyMap*\n\nWhat you get here, free:\n- Gold map every day at 8am\n- 1-2 signals with every result posted\n- Lessons, weekly scorecard, Sunday outlook\n\nOur pledge: every loss stays up, win rate counted strictly, and we tell you openly that we earn a broker commission if you use our link. You never need it for the free content.\n\nEducation only, not financial advice.\n\n[Today''s map] [Lessons] [Tools & signals]"}]',
    '{pledge_pinned,education,disclosure}', 900, null, 'Pledge and disclosure lines locked word for word (brand_facts). Jack approves any change.', true, 'Three buttons: Today''s map, Learn (lesson index), Get tools and signals (bot).')
+  ('faq', 16, 'FAQ / repeat question', 'Whenever the same question is asked twice (v_repeat_questions).',
+   $t$Write a post answering the question members keep asking: {QUESTION}. Answer it the way the channel's lessons do — short, practical, and with no number the channel has not already used.$t$,
+   '["QUESTION", "ANSWER"]',
+   '[{"label": "EXAMPLE", "lang": "en", "body": "*Why move the stop to entry?*\n\nBecause once the market has paid you once, the trade should not be able to lose. The zone that proved the idea is still there; if price comes back through it, the idea was wrong.\n\nWe do it at TP1, never before."}]',
+   '{}', 700, null, 'Answered from the channel''s own lessons. A claim (price, level, result) sends it to Jack as usual.', false, 'Feeds from v_repeat_questions: the third time a question is asked is the signal to write it up.'),
+  ('live_recap', 17, 'Live recap', 'After each live; the best 60 seconds becomes a TikTok short.',
+   $t$Write a recap of Jack's live on {DATE}. Covered: {TOPICS}. The one takeaway he wants kept: {TAKEAWAY}. Say where the replay and the cut are. Under 550 characters.$t$,
+   '["DATE", "TOPICS", "TAKEAWAY"]',
+   '[{"label": "EXAMPLE", "lang": "en", "body": "*Live recap | Sat 4 Oct*\n\nTwo hours on the chart: the 4,012 zone held, and the second attempt at 4,046 failed.\n\nKeep this one: wait for the close, not the wick.\n\nReplay in the channel, the cut is on TikTok."}]',
+   '{}', 600, null, 'Recap of what was already said live; a level or a result that was not said live makes it a normal post and it goes to Jack.', false, 'Pairs with live_runsheets; the clip itself comes out of /clips.')
 on conflict (key) do update set
   kit_number = excluded.kit_number, name = excluded.name, schedule = excluded.schedule, prompt_text = excluded.prompt_text,
   fields = excluded.fields, examples = excluded.examples, required_lines = excluded.required_lines, char_limit = excluded.char_limit,
@@ -466,6 +476,19 @@ update public.templates set fields_list = '{free_list}', body = $b$*Welcome to E
 
 What you get here, free:
 {{free_list}}$b$ where key = 'start_here';
+
+update public.templates set fields_list = '{question,answer}', body = $b$*{{question}}*
+
+{{answer}}
+
+Asked more than once, so it gets its own post.$b$ where key = 'faq';
+update public.templates set fields_list = '{date,topics,takeaway}', body = $b$*Live recap | {{date}}*
+
+{{topics}}
+
+Keep this one: {{takeaway}}
+
+Replay in the channel, the cut is on TikTok.$b$ where key = 'live_recap';
 
 insert into public.style_guide (kind, key, lang, body, extra, source, sort_order) values
   ('master_prompt', 'master', 'en',

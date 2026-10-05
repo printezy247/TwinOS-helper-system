@@ -58,7 +58,7 @@ The full matrix is `supabase/functions/_shared/roles.ts`.
                   "findings": [{ "check": "claims", "severity": "needs_approval", "message": "…" }] },
   "desk": { "chat_id": -1001234, "message_id": 882 } }
 ```
-`post_type` ∈ gold_map · macro_card · signal_card · result_reply · lesson · channel_audit · scorecard · outlook · offer · poll · evening_wrap · news_alert · member_result · holiday · start_here.
+`post_type` ∈ gold_map · macro_card · signal_card · result_reply · lesson · channel_audit · scorecard · outlook · offer · poll · evening_wrap · news_alert · member_result · holiday · start_here · faq · live_recap.
 Missing template fields become `[NEEDED:field]` and block publishing.
 
 ### POST /content/{id}/request-approval → `{ "ok": true, "desk": {…} }`

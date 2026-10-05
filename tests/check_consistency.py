@@ -194,8 +194,8 @@ def post_types() -> None:
         f"seed has {sorted(templates - effective)}",
     )
     check(
-        "post_type: the 15 Posting Kit templates are all present",
-        len(rows) == 15,
+        "post_type: the 17 Posting Kit templates are all present",
+        len(rows) == 17,
         f"found {len(rows)}: {sorted(templates)}",
     )
     check(
