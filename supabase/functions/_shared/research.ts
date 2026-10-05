@@ -207,9 +207,16 @@ const wordRx = (term: string): RegExp => new RegExp(`\\b${term.replace(/[.*+?^${
  * so `sol` cannot fire on "solution".
  */
 const OUT_OF_SCOPE = [
+  // crypto
   "crypto", "bitcoin", "ethereum", "solana", "dogecoin", "ripple", "cardano", "litecoin", "altcoin",
   "blockchain", "binance", "coinbase", "tether", "defi", "nft", "coin", "coins", "token", "tokens",
   "usdc", "usdt", "btc", "eth", "xrp", "doge", "bnb", "ltc", "avax",
+  // equities: the asset class, the index names, and the tickers and companies
+  // that carry a post which says nothing else
+  "stock", "stocks", "share", "shares", "equity", "equities", "etf", "etfs", "dividend", "dividends",
+  "nasdaq", "nyse", "sp500", "s&p", "spx", "ndx", "dowjones", "dax", "ftse", "nikkei", "hangseng", "hsi", "cac40", "asx",
+  "msft", "aapl", "meta", "goog", "googl", "nvda", "amzn", "tsla", "amd", "intc", "nflx", "spy", "qqq",
+  "microsoft", "apple", "tesla", "nvidia", "amazon", "alphabet", "google", "netflix", "disney", "boeing", "jpmorgan",
 ];
 const OUT_OF_SCOPE_RX = OUT_OF_SCOPE.map(wordRx);
 
@@ -272,7 +279,9 @@ export function pickIdeas(
  * writing, and that is a list, not a ratio.
  *
  * Deliberately not on it: gold, usd, nfp, fed, yields, forex, signal, firm,
- * zone, macro, risk, news. Those are Jack's subjects.
+ * zone, macro, risk, news. Those are Jack's subjects. `index` is absent for
+ * the same reason — the dollar index (DXY) is one of them, and a word that
+ * would take it out is a word that is too broad.
  */
 const GENERIC = new Set((
   "all one not out just only more most than then when while also even still next new now way ways " +
