@@ -5,6 +5,8 @@
  *                           (Malaysia, English / Malay / Manglish) → queries + a scored topic_clusters row per seed
  *   POST /research/brief    (cron, Monday 07:00 MYT) next week's 28-day calendar slots with the best fitting
  *                           scored topic for each → briefs, and a short note in the Desk
+ *   POST /research/feeds  { feed_id? } poll every active RSS/Atom feed (cron, 6-hourly) → new items into
+ *                           feed_items; one dead feed records why and the run continues
  *   POST /research/article  { topic | cluster_id, lang? } a search-article brief (BM first) from the autocomplete suggestions
  *   POST /research/csi      { topic, category?, metric?, value?, trend?, note? } one TikTok Creator Search
  *                           Insights reading Jack typed in → csi_captures
@@ -24,6 +26,7 @@ import { similarity } from "_shared/moderation.ts";
 import { articleBrief } from "_shared/articles.ts";
 import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, topicRisk } from "_shared/research.ts";
 import { nextHook } from "_shared/hooks.ts";
+import { parseFeed } from "_shared/feed.ts";
 
 const LANGS = ["en", "ms", "manglish"] as const;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -58,6 +61,82 @@ serve(async (req) => {
     if (error) throw bad(`csi_captures: ${error.message}`);
     await logAction({ actor: caller.actor, action: "research.csi", payload: { topic: row.topic } });
     return json({ ok: true }, 201);
+  }
+
+  if (tail[0] === "feeds") {
+    requireRole(caller.role, "research.run");
+    const only = typeof body.feed_id === "string" ? body.feed_id : null;
+    const { data: feeds } = await db.from("feeds")
+      .select("id, name, url, lang, items_seen").eq("active", true).order("name");
+    const list = only ? (feeds ?? []).filter((f) => f.id === only) : (feeds ?? []);
+    if (only && !list.length) throw bad("no active feed with that id");
+
+    const now = new Date().toISOString();
+    let items = 0;
+    const failed: Array<{ name: string; why: string }> = [];
+    for (const feed of list) {
+      // One dead feed must not stop the run: it records why and the rest continue.
+      let xml = "";
+      let added = 0;
+      let status: "ok" | "http_error" | "parse_error" | "timeout" = "ok";
+      let why: string | null = null;
+      try {
+        const res = await fetch(feed.url, {
+          headers: { "user-agent": "TwinOS/1.0 (+research feed)" },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!res.ok) {
+          status = "http_error";
+          why = `HTTP ${res.status}`;
+        } else {
+          xml = await res.text();
+        }
+      } catch (err) {
+        const timedOut = err instanceof Error && /timeout/i.test(err.name + err.message);
+        status = timedOut ? "timeout" : "http_error";
+        why = (err instanceof Error ? err.message : String(err)).slice(0, 200);
+      }
+
+      if (xml) {
+        // Newest first in both shapes; 50 is a day's worth of macro news, and a
+        // first run against a ten-year archive should not write ten thousand rows.
+        const parsed = parseFeed(xml).slice(0, 50);
+        if (!parsed.length && !/<(item|entry)\b/i.test(xml)) {
+          status = "parse_error";
+          why = "not an RSS or Atom feed";
+        } else if (parsed.length) {
+          const ids = parsed.map((p) => p.externalId);
+          const { data: seenRows } = await db.from("feed_items").select("external_id")
+            .eq("feed_id", feed.id).in("external_id", ids);
+          const have = new Set((seenRows ?? []).map((r) => String(r.external_id)));
+          const fresh = parsed.filter((p) => !have.has(p.externalId));
+          if (fresh.length) {
+            const { error } = await db.from("feed_items").insert(fresh.map((p) => ({
+              feed_id: feed.id, external_id: p.externalId, title: p.title.slice(0, 300),
+              summary: p.summary?.slice(0, 2000) ?? null, link: p.link, published_at: p.publishedAt,
+            })));
+            // A unique violation means another writer stored the same story
+            // first; the row exists either way, so the run is not a failure.
+            if (error && !/duplicate key/i.test(error.message ?? "")) {
+              status = "parse_error";
+              why = `feed_items: ${error.message}`.slice(0, 200);
+            } else {
+              added = fresh.length;
+              items += added;
+            }
+          }
+        }
+      }
+
+      await db.from("feeds").update({
+        last_fetched_at: now, last_status: status, last_error: why,
+        items_seen: Number(feed.items_seen ?? 0) + added,
+      }).eq("id", feed.id);
+      if (status !== "ok") failed.push({ name: feed.name, why: why ?? status });
+    }
+
+    await logAction({ actor: caller.actor, action: "research.feeds", payload: { feeds: list.length, items, failed: failed.length } });
+    return json({ ok: true, feeds: list.length, items, failed });
   }
 
   if (tail[0] === "article") {
