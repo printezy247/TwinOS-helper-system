@@ -231,14 +231,19 @@ class TwinOSError(Exception):
         self.status = status
 
 
-def request(method, path, body=None, query=None, idem=None, _opener=None):
-    """One call to the TwinOS backend. Retries 5xx/429 and dropped connections with backoff. Returns parsed JSON (or text)."""
+def request(method, path, body=None, query=None, idem=None, _opener=None, bearer=None):
+    """One call to the TwinOS backend. Retries 5xx/429 and dropped connections with backoff. Returns parsed JSON (or text).
+
+    `bearer` replaces the default `Authorization` value. REST reads pass an
+    authenticated session here: PostgREST cannot see X-TwinOS-Key, so without a
+    logged-in token it runs as `anon`, which holds no grants and gets 42501.
+    """
     if FORBIDDEN_PATH.search(path):
         raise TwinOSError("ABDUL has no approve path. That button is on Jack's phone.", 403)
     url, key = base_url(), api_key()
     gate = anon_key() or key
     full = url + path + (("?" + query) if query else "")
-    headers = {"apikey": gate, "Authorization": "Bearer " + gate, "X-TwinOS-Key": key, "Accept": "application/json",
+    headers = {"apikey": gate, "Authorization": "Bearer " + (bearer or gate), "X-TwinOS-Key": key, "Accept": "application/json",
                "X-TwinOS-Actor": ACTOR, "User-Agent": "twinos-mcp/%s (abdul)" % VERSION}
     data = None
     if method != "GET":
@@ -277,6 +282,47 @@ def fn(name, body, idem=None):
     return request("POST", "/functions/v1/" + name, body, idem=idem)
 
 
+# One session token for the process: the password grant costs a round trip and
+# the token lives an hour, so it is worth keeping until it nearly expires.
+_SESSION = {"jwt": None, "exp": 0.0}
+
+
+def login_creds():
+    """(email, password) for the ABDUL Supabase Auth login, or (None, None).
+
+    `TWINOS_LOGIN=off` skips it outright — the tests run against a fake server
+    and must not spend a round trip on a login they will never use.
+    """
+    if os.environ.get("TWINOS_LOGIN", "on").strip().lower() in ("off", "0", "false"):
+        return None, None
+    email = (os.environ.get("TWINOS_LOGIN_EMAIL") or secret("abdul_login_email")).strip()
+    password = (os.environ.get("TWINOS_LOGIN_PASSWORD") or secret("abdul_login_password")).strip()
+    return (email, password) if email and password else (None, None)
+
+
+def user_token():
+    """A bearer token carrying `app_metadata.twinos_role`, cached until it ages.
+
+    None when no login is configured (writes still work: they go through Edge
+    Functions that read X-TwinOS-Key). A login that is configured and fails
+    raises instead, because a read that then 42501s says nothing about why.
+    """
+    if _SESSION["jwt"] and time.time() < _SESSION["exp"] - 60:
+        return _SESSION["jwt"]
+    email, password = login_creds()
+    if not email:
+        return None
+    try:
+        doc = request("POST", "/auth/v1/token?grant_type=password", {"email": email, "password": password})
+    except TwinOSError as e:
+        raise TwinOSError("TwinOS login failed: %s" % e, e.status)
+    jwt, ttl = (doc or {}).get("access_token"), (doc or {}).get("expires_in") or 3600
+    if not jwt:
+        raise TwinOSError("TwinOS login returned no access_token", 401)
+    _SESSION["jwt"], _SESSION["exp"] = jwt, time.time() + float(ttl)
+    return jwt
+
+
 def rest(table, query="", limit=None):
     """GET /rest/v1/<table>. The projection is ours: a tool's filter narrows
     rows, but a `select=` inside it must not replace the shape the tool is
@@ -286,7 +332,7 @@ def rest(table, query="", limit=None):
     q = "select=*" + (("&" + "&".join(parts)) if parts else "")
     if limit:
         q += "&limit=%d" % max(1, min(int(limit), 500))
-    return request("GET", "/rest/v1/" + table, query=q)
+    return request("GET", "/rest/v1/" + table, query=q, bearer=user_token())
 
 
 # --------------------------------------------------------------------------- the tools
@@ -402,7 +448,7 @@ def tool_call(name, a, idem=None):
         return fn(target, {"kind": "clip", "payload": payload, "actor": ACTOR}, idem)
 
     if name == "twinos_friday":
-        q = ("week=eq.%s" % urllib.parse.quote(str(a["week"]), safe="")) if a.get("week") else "order=week.desc"
+        q = ("week_start=eq.%s" % urllib.parse.quote(str(a["week"]), safe="")) if a.get("week") else "order=week_start.desc"
         rows = _rows(rest(target, q, 1))
         return rows[0] if rows else {"text": "No scoreboard yet. Friday hasn't happened, or nothing was counted."}
     if name == "twinos_health":

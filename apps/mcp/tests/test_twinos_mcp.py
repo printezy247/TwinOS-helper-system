@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import threading
+import time
 import unittest
 import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -66,11 +67,14 @@ class Base(unittest.TestCase):
         os.environ["TWINOS_URL"] = "http://127.0.0.1:%d" % cls.srv.server_address[1]
         os.environ["TWINOS_KEY"] = FAKE_KEY
         os.environ["TWINOS_ANON"] = FAKE_ANON
+        # The fakes have no /auth/v1/token; live reads use a real login.
+        os.environ["TWINOS_LOGIN"] = "off"
         cls._backoff = tm.BACKOFF
         tm.BACKOFF = (0.01, 0.01, 0.01)
 
     @classmethod
     def tearDownClass(cls):
+        os.environ.pop("TWINOS_LOGIN", None)
         tm.BACKOFF = cls._backoff
         cls.srv.shutdown()
         cls.srv.server_close()
@@ -237,12 +241,12 @@ class TestRequestShapes(Base):
         self.assertEqual(r["method"], "GET")
         self.assertTrue(r["path"].startswith("/rest/v1/v_friday_scoreboard?"))
         self.assertIn("select=*", r["path"])
-        self.assertIn("order=week.desc", r["path"])
+        self.assertIn("order=week_start.desc", r["path"])
         self.assertIn("limit=1", r["path"])
         self.assertEqual(res["members"], 1200)
         self.assertNotIn("idempotency-key", r["headers"])
         tm.tool_call("twinos_friday", {"week": "2026-09-21"})
-        self.assertIn("week=eq.2026-09-21", self.last()["path"])
+        self.assertIn("week_start=eq.2026-09-21", self.last()["path"])
 
     def test_health_summarises(self):
         FakeTwinOS.state["bodies"]["/functions/v1/health"] = {
@@ -288,6 +292,50 @@ class TestRequestShapes(Base):
         self.assertIn("week=eq.2026-10-05", self.last()["path"])
         with self.assertRaises(ValueError):
             tm.tool_call("twinos_analytics", {"view": "approvals"})
+
+
+class TestLoginToken(Base):
+    """REST reads need an authenticated session: PostgREST never sees X-TwinOS-Key."""
+
+    def tearDown(self):
+        tm._SESSION.update(jwt=None, exp=0.0)
+        for k in ("TWINOS_LOGIN_EMAIL", "TWINOS_LOGIN_PASSWORD"):
+            os.environ.pop(k, None)
+        # restore the suite default: popping it would let the machine's
+        # keyring creds turn every later read into a real login attempt.
+        os.environ["TWINOS_LOGIN"] = "off"
+
+    def test_login_can_be_switched_off_and_then_costs_no_request(self):
+        os.environ["TWINOS_LOGIN"] = "off"
+        self.assertEqual(tm.login_creds(), (None, None))
+        self.assertIsNone(tm.user_token())
+        self.assertEqual(self.reqs, [])
+
+    def test_a_read_carries_the_session_token_and_keeps_the_anon_apikey(self):
+        tm._SESSION.update(jwt="TOK", exp=time.time() + 3600)
+        tm.tool_call("twinos_brief", {})
+        r = self.last()
+        self.assertEqual(r["path"].split("?")[0], "/rest/v1/briefs")
+        self.assertEqual(r["headers"]["authorization"], "Bearer TOK")
+        # the gateway only admits JWTs, so the public key still rides on apikey
+        self.assertEqual(r["headers"]["apikey"], FAKE_ANON)
+
+    def test_a_configured_login_that_fails_says_so(self):
+        # setUpClass turns the login off for every suite; this one needs it on.
+        os.environ["TWINOS_LOGIN"] = "on"
+        os.environ["TWINOS_LOGIN_EMAIL"] = "abdul@example.test"
+        os.environ["TWINOS_LOGIN_PASSWORD"] = "wrong"
+        with self.assertRaises(tm.TwinOSError) as cm:
+            tm.user_token()
+        self.assertIn("login", str(cm.exception))
+
+    def test_the_friday_scoreboard_reads_week_start_not_week(self):
+        # v_friday_scoreboard has week_start; `week` never existed on it.
+        FakeTwinOS.state["bodies"]["/rest/v1/v_friday_scoreboard"] = [{"week_start": "2026-10-05", "channel_members": 1200}]
+        tm.tool_call("twinos_friday", {})
+        self.assertIn("order=week_start.desc", self.last()["path"])
+        tm.tool_call("twinos_friday", {"week": "2026-09-21"})
+        self.assertIn("week_start=eq.2026-09-21", self.last()["path"])
 
 
 class TestResilience(Base):

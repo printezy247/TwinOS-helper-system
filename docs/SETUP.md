@@ -147,8 +147,31 @@ Only the 12-character prefix is ever printed. Re-running it changes nothing.
 
 Callers send the anon key as `Authorization: Bearer …` and their own key as
 `X-TwinOS-Key: …` (the platform gateway only admits JWTs; see `docs/API.md`).
-The signal bot's key goes to its host as `TWINOS_SIGNAL_KEY`, with the anon key
-next to it.
+The signal bot's key goes to its host as `TWINOS_SIGNAL_KEY`, with the anon key next to it.
+
+**The bridge's own login (PostgREST reads).** `X-TwinOS-Key` reaches Edge Functions but not PostgREST, so a read with only the anon key runs as `anon` and is denied
+(`42501`). The MCP bridge therefore also logs in as a Supabase Auth user carrying the claim the readers accept:
+
+```sql
+-- run in the SQL Editor; pick a password and store it, never paste it in chat
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated',
+  'abdul@printezy.money', crypt('<password>', gen_salt('bf')), now(),
+  '{"provider":"email","providers":["email"],"twinos_role":"abdul"}', '{}', now(), now()
+where not exists (select 1 from auth.users where email = 'abdul@printezy.money');
+```
+
+(`auth.identities.email` is generated — insert that row without naming it.) Then keep the credentials in the keyring,
+not in a file:
+
+```bash
+printf '%s' 'abdul@printezy.money' | secret-tool store --label 'TwinOS ABDUL login' service twinos key abdul_login_email
+printf '%s' '<password>'            | secret-tool store --label 'TwinOS ABDUL login' service twinos key abdul_login_password
+```
+
+Live since 5 Oct 2026. RLS gates it: `twinos_role()` reads `app_metadata.twinos_role`, and `readers_select` allows
+`abdul`, `dashboard` and `cron` — no other table privileges are needed, `authenticated` already holds them.
 
 ### 0.5 Ops bot (@EzyOps_bot) — see `bots/ops/README.md`
 1. BotFather `/newbot` → token → `secret-tool store --label "EzyOps bot token" service twinos key ops_bot_token`.

@@ -21,6 +21,18 @@ secret-tool store --label='TwinOS url'    service twinos key url      # https://
 `TWINOS_URL` / `TWINOS_KEY` / `TWINOS_ANON` in the environment override the keyring (tests, one-offs). Non-localhost URLs must be
 `https://`.
 
+### Why reads carry a login and writes do not
+
+Writes go through Edge Functions, which read the `X-TwinOS-Key` header. PostgREST cannot: all it sees is the
+`Authorization` JWT, so a read sent with the anon key alone runs as role `anon`, which holds no table grants, and comes
+back `42501 permission denied for table …`. The bridge therefore logs in once as a Supabase Auth user whose
+`app_metadata.twinos_role` is `abdul` (which the `readers_select` policies accept) and reuses that token for an hour.
+
+Credentials come from the keyring (`abdul_login_email`, `abdul_login_password`), or `TWINOS_LOGIN_EMAIL` /
+`TWINOS_LOGIN_PASSWORD`. `TWINOS_LOGIN=off` skips the login entirely — the tests use that, since their fake server has
+no `/auth/v1/token`. With no credentials configured, writes still work and reads fail with the `anon` error; a login
+that *is* configured and fails raises `TwinOS login …` instead, so the two are never confused.
+
 ## Register
 
 ```bash
