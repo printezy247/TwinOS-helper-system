@@ -9,7 +9,7 @@ export interface PublishRow {
   platform: string;
   run_at: string;
   status: string;
-  error_message?: string | null;
+  last_error?: string | null;
 }
 
 /** Midnight today and midnight this week's Monday in `tz`, as ISO instants. */
@@ -24,7 +24,7 @@ export function todaySummary(rows: PublishRow[], minutesSaved: Array<number | st
   for (const r of rows) publish[r.status] = (publish[r.status] ?? 0) + 1;
   const failed = rows
     .filter((r) => r.status === "failed")
-    .map((r) => ({ platform: r.platform, run_at: r.run_at, error: (r.error_message ?? "").slice(0, 120) }));
+    .map((r) => ({ platform: r.platform, run_at: r.run_at, error: (r.last_error ?? "").slice(0, 120) }));
   const next = rows
     .filter((r) => r.status === "queued" || r.status === "running")
     .sort((a, b) => a.run_at.localeCompare(b.run_at))

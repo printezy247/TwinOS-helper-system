@@ -90,7 +90,7 @@ serve(async (req) => {
     const { day, week } = dayAndWeekStart(tz);
     const end = new Date(Date.parse(day) + 86_400_000).toISOString();
     const [pub, saved, pending] = await Promise.all([
-      db.from("publish_jobs").select("platform, run_at, status, error_message").gte("run_at", day).lt("run_at", end).order("run_at").limit(200),
+      db.from("publish_jobs").select("platform, run_at, status, last_error").gte("run_at", day).lt("run_at", end).order("run_at").limit(200),
       db.from("time_saved").select("minutes_saved").gte("occurred_at", week).limit(5000),
       db.from("content_items").select("id", { count: "exact", head: true }).eq("status", "pending_approval"),
     ]);

@@ -20,7 +20,7 @@ Deno.test("todaySummary: counts, failures, next up, saved minutes", () => {
     { platform: "telegram", run_at: "2026-10-03T05:00:00Z", status: "done" },
     { platform: "threads", run_at: "2026-10-03T09:00:00Z", status: "queued" },
     { platform: "instagram", run_at: "2026-10-03T07:00:00Z", status: "queued" },
-    { platform: "facebook", run_at: "2026-10-03T04:00:00Z", status: "failed", error_message: "token expired" },
+    { platform: "facebook", run_at: "2026-10-03T04:00:00Z", status: "failed", last_error: "token expired" },
   ], [30, "12.5", null], 2);
   assertEquals(s.publish, { done: 1, queued: 2, failed: 1 });
   assertEquals(s.failed, [{ platform: "facebook", run_at: "2026-10-03T04:00:00Z", error: "token expired" }]);

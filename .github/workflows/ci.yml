@@ -124,7 +124,7 @@ jobs:
           if git ls-files -z | xargs -0 grep -nIE \
                -e '[0-9]{8,10}:AA[0-9A-Za-z_-]{30,}' \
                -e 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{40,}' \
-               -e 'twk_(abdul|pc_worker|ezyai)_[0-9a-f]{40}' ; then
+               -e 'twk_(abdul|pc_worker|ezyai|viewer)_[0-9a-f]{40}' ; then
             echo "secret-shaped string in a tracked file"; exit 1
           fi
           echo "clean"
