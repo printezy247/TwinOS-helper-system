@@ -154,13 +154,30 @@ export function sendVideo(
   });
 }
 
+/**
+ * A native poll. The tally is public in the channel and is the only read on
+ * what members actually want next week's lesson to be; a message with four
+ * replies is not.
+ *
+ * `is_anonymous` is deliberately left unset: Telegram's own default keeps the
+ * voters private and the results public, which is the right trade in a
+ * signals channel.
+ */
+export function sendPoll(chat_id: number | string, question: string, options: string[], opts: SendOpts = {}) {
+  return call<TgMessage>("sendPoll", {
+    chat_id,
+    question: question.slice(0, 300),
+    options: options.slice(0, 10).map((text) => ({ text: text.slice(0, 100) })),
+    ...common(opts),
+  });
+}
+
 export interface MediaItem {
   type: "photo" | "video";
   media: string;
   caption?: string;
   parse_mode?: ParseMode;
 }
-
 export function sendMediaGroup(chat_id: number | string, media: MediaItem[], opts: SendOpts = {}) {
   if (media.length < 2 || media.length > 10) {
     throw new HttpError(400, "bad_request", "album needs 2–10 items");
