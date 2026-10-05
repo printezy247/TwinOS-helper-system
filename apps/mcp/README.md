@@ -45,6 +45,8 @@ verbs for Phase 2: `../abdul/PATCH-NOTES.md`.
 | `twinos_friday` | The Friday scoreboard | `GET /rest/v1/v_friday_scoreboard` |
 | `twinos_health` | "Anything broken?" in one line | `GET /functions/v1/health` |
 | `twinos_csi_log` | Log a Creator Search Insights topic (Phase 5) | `POST /functions/v1/research/csi` |
+| `twinos_research` | Run research now: `expand` (demand crawl) or `feeds` (poll the feeds) | `POST /functions/v1/research/{expand,feeds}` |
+| `twinos_feeds` | What is new in the research feeds, newest first, named by source | `GET /rest/v1/feed_items` |
 | `twinos_clip` | Queue a live for the PC worker: transcript, picks, captions, clips | `POST /functions/v1/jobs/enqueue` (`kind: clip`) |
 | `twinos_brief` | Latest Monday research brief | `GET /rest/v1/briefs` |
 | `twinos_inbox` | Open unified-inbox items with suggested replies | `GET /rest/v1/inbox_items` |

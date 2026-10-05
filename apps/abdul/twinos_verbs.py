@@ -48,6 +48,8 @@ TWINOS_VERBS = [
     {"verb": "twinos_friday", "arg": "latest | YYYY-MM-DD", "what": "the EzyMap Friday numbers", "on": ["hub"]},
     {"verb": "twinos_health", "arg": "check", "what": "anything broken in TwinOS, one line", "on": ["hub"]},
     {"verb": "twinos_csi", "arg": "TOPIC | POPULARITY | up|flat|down | ICP", "what": "log a TikTok Creator Search Insights topic", "on": ["hub"]},
+    {"verb": "twinos_research", "arg": "expand | feeds", "what": "run the research now: expand = demand crawl, feeds = poll the feeds", "on": ["hub"]},
+    {"verb": "twinos_feeds", "arg": "latest | YYYY-MM-DD", "what": "what is new in the research feeds (macro news, YouTube channels)", "on": ["hub"]},
 ]
 TWINOS_VERB_NAMES = [v["verb"] for v in TWINOS_VERBS]
 
@@ -63,7 +65,10 @@ TWINOS_HELP = (
     "twinos_result: posts the result reply under a signal (\"post the result for signal 3\"); the wording and the numbers come from the board, "
     "never from you. twinos_link: makes a named invite link in the form src-campaign-yymm (\"make a link for the swap with MacroNews\" -> "
     "twinos_link: swap-macronews-2611 | swap | macronews | MacroNews). twinos_friday: the Friday numbers; twinos_health: anything broken; "
-    "twinos_csi: logs a Creator Search Insights topic %s read off TikTok. You never approve a map, a signal, an offer, a member result or a "
+    "twinos_csi: logs a Creator Search Insights topic %s read off TikTok. "
+    "twinos_research: runs the research now instead of waiting for the weekly cron (expand = the demand crawl, feeds = poll every feed once); "
+    "twinos_feeds: what is new in the research feeds, newest first, named by source. "
+    "You never approve a map, a signal, an offer, a member result or a "
     "price, and there is no verb for it: when %s says approve, tell him the button is on his phone."
 )
 
@@ -257,8 +262,51 @@ def do_csi(arg, conf):
     return "logged CSI topic: %s" % topic
 
 
+def do_research(arg, conf):
+    """Run the research now: expand (demand crawl) or feeds (poll every feed)."""
+    what = (arg or "expand").strip().lower().split()[0] if (arg or "").strip() else "expand"
+    if what not in ("expand", "feeds"):
+        return "twinos_research: say expand (demand crawl) or feeds (poll the feeds)"
+    res, err = _tool("twinos_research", {"what": what})
+    if err:
+        return "research failed: " + err
+    if not isinstance(res, dict):
+        return "research: " + str(res)[:200]
+    if what == "feeds":
+        line = "polled %s feed(s), %s new item(s)" % (res.get("feeds", 0), res.get("items", 0))
+        failed = res.get("failed") or []
+        if failed:
+            line += "; failed: " + "; ".join("%s: %s" % (f.get("name"), f.get("why")) for f in failed[:3])
+        return line
+    return "demand crawl: %s seed(s), %s new quer%s" % (
+        res.get("seeds", 0), res.get("queries", 0), "y" if res.get("queries") == 1 else "ies")
+
+
+def do_feeds(arg, conf):
+    """Newest feed items, one line each, tagged with the feed they came from."""
+    arg = (arg or "latest").strip()
+    opts = {"limit": 20}
+    if arg.lower() not in ("latest", "", "new", "news"):
+        opts["since"] = arg.split()[0]
+    res, err = _tool("twinos_feeds", opts)
+    if err:
+        return "couldn't read the feeds: " + err
+    rows = res if isinstance(res, list) else []
+    if not rows:
+        return "nothing new in the feeds."
+    out = []
+    for r in rows[:12]:
+        title = str(r.get("title") or "").strip()
+        feed = str(r.get("feed") or "?")
+        at = str(r.get("published_at") or "")[:10]
+        link = str(r.get("link") or "").strip()
+        out.append("- [%s] %s%s%s" % (feed, title, (" " + at) if at else "", (" " + link) if link else ""))
+    return "%d newest feed item(s):\n%s" % (len(rows), "\n".join(out))
+
+
 HANDLERS = {"twinos_draft": do_draft, "twinos_schedule": do_schedule, "twinos_result": do_result, "twinos_link": do_link,
-            "twinos_friday": do_friday, "twinos_health": do_health, "twinos_csi": do_csi}
+            "twinos_friday": do_friday, "twinos_health": do_health, "twinos_csi": do_csi,
+            "twinos_research": do_research, "twinos_feeds": do_feeds}
 
 
 def twinos_action(op, arg, conf):

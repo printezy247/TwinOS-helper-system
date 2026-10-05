@@ -91,9 +91,9 @@ class TestToolList(Base):
         names = [t["name"] for t in tm.mcp_tools()]
         for n in ("twinos_draft", "twinos_batch", "twinos_request_approval", "twinos_schedule", "twinos_result_reply", "twinos_link",
                   "twinos_manual_metrics", "twinos_friday", "twinos_health", "twinos_csi_log", "twinos_clip", "twinos_brief",
-                  "twinos_inbox", "twinos_analytics"):
+                  "twinos_inbox", "twinos_analytics", "twinos_research", "twinos_feeds"):
             self.assertIn(n, names)
-        self.assertEqual(len(names), 14)
+        self.assertEqual(len(names), 16)
         for n in names:
             self.assertFalse(n == "twinos_approve" or (("approv" in n) and n != "twinos_request_approval"), n)
         for t in tm.mcp_tools():
@@ -119,7 +119,7 @@ class TestToolList(Base):
         msgs = [json.loads(l) for l in out.getvalue().strip().split("\n")]
         self.assertEqual([m["id"] for m in msgs], [1, 2, 3, 4, 5, 6])
         self.assertEqual(msgs[0]["result"]["serverInfo"]["name"], "twinos")
-        self.assertEqual(len(msgs[1]["result"]["tools"]), 14)
+        self.assertEqual(len(msgs[1]["result"]["tools"]), 16)
         self.assertEqual(msgs[2]["result"]["content"][0]["text"], "Nothing broken. Carry on.")
         self.assertTrue(msgs[3]["result"].get("isError"))
         self.assertIn("Jack", msgs[3]["result"]["content"][0]["text"])
@@ -253,6 +253,29 @@ class TestRequestShapes(Base):
         self.assertTrue(res["text"].startswith("stale: scheduler"))
         self.assertIn("2 open alert(s)", res["text"])
         self.assertIn("3 failed job(s)", res["text"])
+
+    def test_research_picks_the_route_from_the_arg(self):
+        tm.tool_call("twinos_research", {"what": "feeds"})
+        self.assertEqual(self.last()["path"], "/functions/v1/research/feeds")
+        tm.tool_call("twinos_research", {})
+        self.assertEqual(self.last()["path"], "/functions/v1/research/expand")
+        # brief messages the Desk and is the cron's job, so it is not offered here.
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_research", {"what": "brief"})
+
+    def test_feeds_names_each_item_by_its_feed(self):
+        FakeTwinOS.state["bodies"]["/rest/v1/feeds"] = [{"id": "f1", "name": "Macro feed"}]
+        FakeTwinOS.state["bodies"]["/rest/v1/feed_items"] = [
+            {"feed_id": "f1", "title": "Fed holds", "published_at": "2026-10-05T08:00:00Z", "link": "https://example.com/fed"},
+            {"feed_id": "f9", "title": "Unknown source", "published_at": None, "link": None},
+        ]
+        rows = tm.tool_call("twinos_feeds", {"since": "2026-10-05", "limit": 5})
+        self.assertEqual([r["feed"] for r in rows], ["Macro feed", "?"])
+        item = next(r for r in self.reqs if "/rest/v1/feed_items" in r["path"])
+        self.assertIn("published_at=gte.2026-10-05", item["path"])
+        self.assertIn("limit=5", item["path"])
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_feeds", {"since": "yesterday"})
 
     def test_brief_inbox_analytics(self):
         tm.tool_call("twinos_brief", {})
@@ -422,7 +445,7 @@ import twinos_verbs as tv  # noqa: E402
 
 class TestAbdulVerbs(Base):
     def test_schema_entries_match_abdul_format_and_have_no_approve(self):
-        self.assertEqual(len(tv.TWINOS_VERBS), 7)
+        self.assertEqual(len(tv.TWINOS_VERBS), 9)
         for v in tv.TWINOS_VERBS:
             self.assertEqual(set(v), {"verb", "arg", "what", "on"})
             self.assertEqual(v["on"], ["hub"])

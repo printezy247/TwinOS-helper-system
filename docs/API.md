@@ -31,7 +31,9 @@ POSTs that create or change something accept `Idempotency-Key: <id>`
 | `POST /metrics/manual` | `POST /friday/manual` | jack, abdul |
 | `POST /imports/telechurn` | `POST /jobs/telechurn` | jack, pc_worker |
 | `GET /friday`, `GET /health`, `GET /jobs` | same | all logged-in / keyed |
-| `POST /research/csi`, `GET /research/brief` | Phase 5 | jack, abdul |
+| `POST /research/csi` | same | jack, abdul |
+| `POST /research/{expand,feeds}` | same | jack, abdul, cron |
+| `POST /research/{brief,article}` | same | jack, abdul, pc_worker |
 | (worker) | `POST /jobs/claim`, `POST /jobs/result` | pc_worker |
 | (beats) | `POST /health` | ezyai, ops_bot, pc_worker, cron, abdul, jack |
 

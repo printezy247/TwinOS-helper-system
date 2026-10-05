@@ -39,8 +39,13 @@ waiting; **needs Jack** = a decision or a value only he has.
 8. **Signature rotation** — platform signatures from one setting, appended
    once. *Built:* `withSignature` in `_shared/platforms.ts`, read from the
    `platform_signatures` setting in `fanout.ts`.
-9. **RSS macro digest** — turn a macro feed into the 08:15 card. *Needs Jack:*
-   the feed URL. Only non-self-contained item in this list.
+9. **RSS macro digest** — turn a macro feed into the 08:15 card. *Built:*
+   the feed reader (`POST /research/feeds`, `feeds` + `feed_items`, RSS 2.0 and
+   Atom, 6-hourly cron, `twinos_feeds` / `twinos_research` in ABDUL). Feeds are
+   read into the Desk, never auto-posted; the card itself is still Jack's.
+   *(rss-feed-telegram-bot, RSSHub.)*
+   *Was the only item in this list waiting on a value from Jack — a published
+   feed needs no account, so the reader was the part that could be built.*
 
 ## Growth
 

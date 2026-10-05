@@ -29,6 +29,8 @@ They are the `TWINOS_VERBS` list in `twinos_verbs.py`, so the preferred wiring i
 | `twinos_friday` | `twinos_friday: latest` | `GET /rest/v1/v_friday_scoreboard` | Read only |
 | `twinos_health` | `twinos_health: check` | `GET /functions/v1/health` | Read only |
 | `twinos_csi` | `twinos_csi: gold news today \| 82 \| up \| beginner` | `POST /functions/v1/research-csi` | Nothing; it is a log line |
+| `twinos_research` | `twinos_research: expand` | `POST /functions/v1/research/expand` | Only `expand` or `feeds`; anything else, including `brief`, is refused (`brief` messages the Desk and belongs to the cron) |
+| `twinos_feeds` | `twinos_feeds: latest` | `GET /rest/v1/feed_items` | Read only; `since` has to be an ISO date |
 
 ## Not added, on purpose
 

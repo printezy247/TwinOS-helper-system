@@ -94,6 +94,8 @@ ENDPOINTS = {
     "twinos_link":             ("fn", "links"),                      # phase 2
     "twinos_manual_metrics":   ("fn", "friday/manual"),
     "twinos_csi_log":          ("fn", "research/csi"),               # phase 5
+    "twinos_research":         ("fn", "research"),                   # expand | feeds, route built per call
+    "twinos_feeds":            ("rest", "feed_items"),
     "twinos_clip":             ("fn", "jobs/enqueue"),               # kind=clip
     "twinos_friday":           ("rest", "v_friday_scoreboard"),
     "twinos_health":           ("fn", "health"),
@@ -141,6 +143,13 @@ TOOLS = [
     ("twinos_csi_log", "Log a TikTok Creator Search Insights topic Jack read off the screen: topic, search popularity, trend, "
                        "content gap, and which ICP it fits.",
      {"topic": "string", "popularity": "number", "trend": "string", "gap": "boolean", "icp": "string", "note": "string"}, ["topic"]),
+    ("twinos_research", "Run the research now instead of waiting for the weekly cron. what = expand (every persona's seed questions "
+                        "through Google autocomplete, scored into topics) | feeds (poll every RSS/Atom feed once). Safe to repeat: "
+                        "expand is keyed to today, feeds only stores items it has not seen.",
+     {"what": "string"}, []),
+    ("twinos_feeds", "What is new in the research feeds (macro news, YouTube channels): newest first, each item with the feed it came "
+                     "from. since = ISO date to start from; limit caps rows (default 20).",
+     {"since": "string", "limit": "integer"}, []),
     ("twinos_clip", "Queue a live recording for the PC worker: transcript, highlight picks, caption file, clean clips, CapCut-ready. "
                     "source = tiktok | telegram, date = ISO date of the live (default yesterday, Kuala Lumpur), or path = the file itself. "
                     "layout = chart_full | chart_face | blurred_fill makes 1080x1920 clips; face_box = [x, y, width, height] of the camera "
@@ -356,6 +365,28 @@ def tool_call(name, a, idem=None):
         return fn(target, dict(_clean(a, ("week",)), source=str(a["source"]).lower(), values=vals, actor=ACTOR), idem)
     if name == "twinos_csi_log":
         return fn(target, dict(_clean(a, ("topic", "popularity", "trend", "gap", "icp", "note")), actor=ACTOR), idem)
+    if name == "twinos_research":
+        # One tool, two routes: ENDPOINTS holds the base and the arg picks it,
+        # the way the {id} content routes build their path per call.
+        what = str(a.get("what") or "expand").strip().lower()
+        if what not in ("expand", "feeds"):
+            raise ValueError("what must be expand (demand crawl) or feeds (poll the feeds)")
+        return fn("%s/%s" % (target, what), {"actor": ACTOR}, idem)
+    if name == "twinos_feeds":
+        # The feed name lives in feeds, not on the item; one cheap lookup joins
+        # it so the answer says where a headline came from.
+        limit = max(1, min(int(a.get("limit") or 20), 100))
+        since = str(a.get("since") or "").strip()
+        q = "order=published_at.desc"
+        if since:
+            if not re.match(r"^\d{4}-\d{2}-\d{2}", since):
+                raise ValueError("since must be an ISO date, e.g. 2026-10-05")
+            q += "&published_at=gte." + urllib.parse.quote(since, safe=":-")
+        items = _rows(rest(target, q, limit))
+        names = {f.get("id"): f.get("name") for f in _rows(rest("feeds", "order=name", 500))}
+        for it in items:
+            it["feed"] = names.get(it.get("feed_id")) or "?"
+        return items
     if name == "twinos_clip":
         # jobs/enqueue stores body.payload and ignores every other field, so the options go inside it.
         payload = _clean(a, ("source", "date", "max_clips", "layout", "face_box", "end_text", "path"))
