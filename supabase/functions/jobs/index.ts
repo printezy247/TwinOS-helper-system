@@ -280,7 +280,6 @@ serve(async (req) => {
         : await db.from("assets").insert(row).select("id").single();
       if (error || !data) throw bad(`assets ingest failed: ${error?.message}`);
       await logAction({ actor: caller.actor, action: "assets.ingest", target: data.id, payload: { path, bytes: body.bytes } });
-      // TODO(phase3): fan-out → caption variants per platform + publish kits.
       return remember(idem, 201, { ok: true, asset_id: data.id });
     }
 

@@ -73,6 +73,7 @@ Exit: Friday report arrives without Jack opening a spreadsheet.
 Exit: one TikTok reaches seven places with only the TikTok, YouTube and X taps by hand; ≥60% hours cut.
 - [ ] Meta app Live, Standard Access — Jack (docs/SETUP.md 3.1). Providers are written and tested against a stand-in Graph API (`_shared/meta.ts`: Instagram Reels/photo, Facebook Reels, Threads; 24 h caps 100/30/250 hold a job for 30 min without using an attempt); they switch on when the secrets exist
 - [x] Fan-out: one master post becomes a child item per platform (`POST /content/{id}/fanout`, Desk `/fanout`); captions adapted per platform, TikTok/YouTube/X as copy-paste kits sent to the Desk, approvals stay per platform in the dashboard. The worker drop folder already ingests the asset; attach it with `asset_id`
+- [ ] Asset-ingest fan-out: an ingested asset becomes caption variants per platform plus publish kits. `POST /jobs/asset` stops at the `assets` row today (was a TODO in the handler)
 - [ ] YouTube API project; audit form submitted; private uploads until it passes
 - [x] Per-platform validator (`_shared/platforms.ts`: media needed, video length and size, hashtag count, caption length; conservative limits in one table) and the caption adapter (risk line kept in front of any cut)
 - [ ] Metrics pollers (IG/FB/Threads/YouTube) — Meta token-expiry watch is done (`health` warns 7 days ahead and alerts once a day); the pollers wait for the Meta tokens
