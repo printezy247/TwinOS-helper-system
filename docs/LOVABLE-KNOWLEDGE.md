@@ -80,7 +80,8 @@ The server enforces it again (403), so the UI is not the guard, just honest.
    (an embedded select is ambiguous: two foreign keys point at `content_items`).
    `compliance` is `{ ok, needs_approval, findings: [{ check, severity, message, evidence? }], claim_flags }`.
 2. **Content Calendar** (built) — week view from `publish_jobs` (run_at, status) joined to
-   `content_items` (post_type, lang). The 15 post types as filters. Click → inbox detail.
+   `content_items` (post_type, lang). The 17 post types as filters (read them
+   from `templates`, do not hardcode them). Click → inbox detail.
    Failed jobs in red with `last_error`.
 3. **Health** (built) — `GET /health`: beats per source with stale flag, open `alerts`,
    failed publish jobs, one-line "anything broken?" summary at the top.

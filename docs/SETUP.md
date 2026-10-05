@@ -92,7 +92,7 @@ No `psql` on this PC? Open the dashboard's **SQL Editor** and paste the file
 (18 KB, runs in about a second). Then check it landed:
 
 ```sql
-select (select count(*) from templates)      as templates,   -- expect 15  (the Posting Kit's 15 post types)
+select (select count(*) from templates)      as templates,   -- expect 17  (the Posting Kit's 17 post types)
        (select count(*) from brand_facts)    as brand_facts, -- expect 25
        (select count(*) from personas)       as personas,    -- expect 6   (the six ICPs)
        (select count(*) from hooks)          as hooks,       -- expect 40  (20 pairs, EN + MS)
