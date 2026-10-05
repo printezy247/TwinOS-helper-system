@@ -364,7 +364,7 @@ Include the IB disclosure line for variant A. One call to action. Under 500 char
    $t$Update the pinned Start here post. Current free content: {LIST}. Current buttons: {BUTTONS}. Keep the pledge and disclosure lines word for word.$t$,
    '["LIST", "BUTTONS"]',
    '[{"label": "EXAMPLE", "lang": "en", "body": "*Welcome to EzyMap*\n\nWhat you get here, free:\n- Gold map every day at 8am\n- 1-2 signals with every result posted\n- Lessons, weekly scorecard, Sunday outlook\n\nOur pledge: every loss stays up, win rate counted strictly, and we tell you openly that we earn a broker commission if you use our link. You never need it for the free content.\n\nEducation only, not financial advice.\n\n[Today''s map] [Lessons] [Tools & signals]"}]',
-   '{pledge_pinned,education,disclosure}', 900, null, 'Pledge and disclosure lines locked word for word (brand_facts). Jack approves any change.', true, 'Three buttons: Today''s map, Learn (lesson index), Get tools and signals (bot).')
+   '{pledge_pinned,education,disclosure}', 900, null, 'Pledge and disclosure lines locked word for word (brand_facts). Jack approves any change.', true, 'Three buttons: Today''s map, Learn (lesson index), Get tools and signals (bot).'),
   ('faq', 16, 'FAQ / repeat question', 'Whenever the same question is asked twice (v_repeat_questions).',
    $t$Write a post answering the question members keep asking: {QUESTION}. Answer it the way the channel's lessons do — short, practical, and with no number the channel has not already used.$t$,
    '["QUESTION", "ANSWER"]',
