@@ -136,3 +136,72 @@ export function csiRow(b: Record<string, unknown>): CsiRow {
     note,
   };
 }
+
+/** A fresh feed item as the scorer sees it. */
+export interface IdeaItem {
+  id: string;
+  title: string;
+  summary?: string | null;
+  publishedAt?: string | null;
+}
+
+/** One persona's terms: what that reader actually asks about. */
+export interface IdeaPersona {
+  id: number;
+  pillar: string | null;
+  terms: string[];
+}
+
+export interface Idea {
+  id: string;
+  title: string;
+  publishedAt: string | null;
+  pillar: string | null;
+  icp: number | null;
+  matched: string[];
+  score: number;
+}
+
+/**
+ * Turn what other people published this fortnight into post ideas Jack can
+ * pick from: every item that mentions one of a persona's seed terms, ranked by
+ * how many of them it mentions, with the persona and the matched words on the
+ * row so the reason it surfaced is visible.
+ *
+ * Deliberately word counting, not a model: the terms come from questions real
+ * readers asked (`personas.seed_questions`), so a hit means someone is talking
+ * about a question Jack answers. Nothing is written and nothing is posted.
+ */
+export function pickIdeas(
+  items: IdeaItem[],
+  personas: IdeaPersona[],
+  opts: { now?: number; days?: number; limit?: number } = {},
+): Idea[] {
+  const now = opts.now ?? Date.now();
+  const windowMs = (opts.days ?? 14) * 86_400_000;
+  const limit = Math.max(1, opts.limit ?? 10);
+  const out: Idea[] = [];
+
+  for (const it of items) {
+    const at = it.publishedAt ? Date.parse(it.publishedAt) : NaN;
+    // An undated item cannot be proven stale, so it stays in.
+    if (Number.isFinite(at) && now - at > windowMs) continue;
+    const text = `${it.title}\n${it.summary ?? ""}`.toLowerCase();
+    let best: Idea | null = null;
+    for (const p of personas) {
+      const matched = p.terms.filter((t) => t && text.includes(t.toLowerCase()));
+      if (!matched.length) continue;
+      if (!best || matched.length > best.matched.length) {
+        best = {
+          id: it.id, title: it.title, publishedAt: it.publishedAt ?? null,
+          pillar: p.pillar, icp: p.id, matched, score: matched.length,
+        };
+      }
+    }
+    if (best) out.push(best);
+  }
+
+  out.sort((a, b) => b.score - a.score ||
+    (Date.parse(b.publishedAt ?? "") || 0) - (Date.parse(a.publishedAt ?? "") || 0));
+  return out.slice(0, limit);
+}

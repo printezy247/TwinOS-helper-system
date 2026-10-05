@@ -97,3 +97,73 @@ export function parseFeed(xml: string): FeedItem[] {
   }
   return out;
 }
+
+/**
+ * Bluesky and Mastodon public endpoints (the two official APIs with a
+ * keyword read and no key). They answer JSON, not XML, so they need their own
+ * reader: everything else about a feed — id, text, link, time — is the same.
+ *
+ * A post has no title, so the headline is the first words of the post itself;
+ * the whole text is still kept as the summary, which is what the idea scorer
+ * reads.
+ */
+export type JsonFeedKind = "bluesky" | "mastodon";
+
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/** A headline that fits feed_items.title: cut on a word when there is one, ellipsis always inside `max`. */
+function head(text: string, max = 80): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return (space > 20 ? cut.slice(0, space) : cut).trimEnd() + "…";
+}
+
+export function parseJsonFeed(payload: unknown, kind: JsonFeedKind): FeedItem[] {
+  // Accept the response body as it arrives: already-parsed objects from the
+  // route, or the raw text a fetch hands back.
+  let data = payload;
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return [];
+    }
+  }
+  const out: FeedItem[] = [];
+  if (kind === "bluesky") {
+    const posts = Array.isArray(obj(data).posts) ? obj(data).posts as Record<string, unknown>[] : [];
+    for (const p of posts) {
+      const uri = str(p.uri);
+      const text = str(obj(p.record).text).trim();
+      if (!uri || !text) continue;
+      const handle = str(obj(p.author).handle);
+      const rkey = uri.split("/").pop() ?? "";
+      out.push({
+        externalId: uri,
+        title: head(text),
+        summary: text,
+        link: handle ? `https://bsky.app/profile/${handle}/post/${rkey}` : uri,
+        publishedAt: parseDate(str(obj(p.record).createdAt) || null),
+      });
+    }
+  } else {
+    const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+    for (const s of rows) {
+      const id = str(s.id);
+      const text = prose(str(s.content));
+      if (!id || !text) continue;
+      out.push({
+        externalId: id,
+        title: head(text),
+        summary: text,
+        link: str(s.url) || null,
+        publishedAt: parseDate(str(s.created_at) || null),
+      });
+    }
+  }
+  // Newest first whatever the source promised, undated last: the route stores
+  // them in this order and the reader shows them in it.
+  return out.sort((a, b) => (Date.parse(b.publishedAt ?? "") || 0) - (Date.parse(a.publishedAt ?? "") || 0));
+}

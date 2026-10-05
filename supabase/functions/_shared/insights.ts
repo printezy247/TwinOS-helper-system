@@ -70,3 +70,18 @@ export function channelStale(lastPostAt: string | null, now = Date.now(), maxGap
   if (Number.isNaN(t)) return true;
   return now - t > maxGapMs;
 }
+
+/** A research feed is polled every 6 hours; one missed run is a delay, two is a failure. */
+export const FEED_STALE_MS = 12 * 3600_000;
+
+/**
+ * Has a feed stopped reporting? True when it has never been fetched — a feed
+ * with no run yet is untested, not healthy — or when the last run is older
+ * than two poll cycles, so one flaky cron does not page anybody.
+ */
+export function feedStale(lastFetchedAt: string | null | undefined, now = Date.now(), maxGapMs = FEED_STALE_MS): boolean {
+  if (!lastFetchedAt) return true;
+  const t = Date.parse(lastFetchedAt);
+  if (Number.isNaN(t)) return true;
+  return now - t > maxGapMs;
+}

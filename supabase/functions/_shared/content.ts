@@ -462,3 +462,58 @@ export async function enqueuePublish(
   await setStatus(content_id, "scheduled", actor, { scheduled_at: run_at });
   return rows.length;
 }
+
+/** What a body looks like once it is a poll: the poll itself, and the prose around it. */
+export interface PollParts {
+  question: string;
+  options: string[];
+  preamble: string;
+  postamble: string;
+}
+
+const OPTION_MARK = /^\s*(?:[-•*–]|\d{1,2}[.)])\s+/;
+const POLL_LIMITS = { question: 300, option: 100, options: 10 };
+
+/**
+ * Read a Telegram poll out of a drafted body.
+ *
+ * The poll template renders a question line, a bulleted option list and two
+ * lines of prose around it (plan §9.E.36 asks for a *native* poll, because
+ * its results feed next week's lesson topics). This finds that shape and
+ * returns the pieces; anything that is not clearly a poll is null, and the
+ * publisher falls back to sending the body as ordinary text — never the other
+ * way round, so a prose post can never become a broken poll.
+ */
+export function parsePoll(body: string): PollParts | null {
+  const lines = (body ?? "").split("\n");
+  const qi = lines.findIndex((l) => l.trim().endsWith("?") && !OPTION_MARK.test(l));
+  if (qi < 0) return null;
+
+  const raw = lines[qi].trim();
+  const question = raw.length > POLL_LIMITS.question ? raw.slice(0, POLL_LIMITS.question - 1).trimEnd() + "?" : raw;
+
+  const options: string[] = [];
+  let blank = false;
+  let i = qi + 1;
+  for (; i < lines.length; i++) {
+    if (!lines[i].trim()) {
+      blank = true;
+      continue;
+    }
+    if (!OPTION_MARK.test(lines[i])) break;
+    // A blank line inside the list ends it: that is where the prose resumes.
+    if (blank && options.length) break;
+    blank = false;
+    const text = lines[i].replace(OPTION_MARK, "").trim();
+    if (text) options.push(text.slice(0, POLL_LIMITS.option));
+    if (options.length === POLL_LIMITS.options) { i += 1; break; }
+  }
+  if (options.length < 2) return null;
+
+  return {
+    question,
+    options,
+    preamble: lines.slice(0, qi).join("\n").trim(),
+    postamble: lines.slice(i).join("\n").trim(),
+  };
+}
