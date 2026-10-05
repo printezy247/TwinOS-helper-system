@@ -175,3 +175,22 @@ Deno.test("pickIdeas: a ticker is not a subject, a number is not a topic, and cr
   assert(!ids.includes("coin"), "an asset Jack does not cover is not a candidate at all");
   assertEquals(got.find((i) => i.id === "au")?.matched, ["gold", "usd", "yields"], "the digits in a price are not a topic");
 });
+
+Deno.test("pickIdeas: an equity post is out of scope, without taking the dollar index with it", () => {
+  const now = Date.parse("2026-10-05T00:00:00Z");
+  const personas = [{ id: 1, pillar: "Macro", terms: ["gold", "usd", "stocks", "dxy", "index"] }];
+  const got = pickIdeas([
+    { id: "tickers", title: "META and MSFT ride higher as stocks rally", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    // matches `index`, so only the scope list can take it out
+    { id: "apple", title: "Apple climbs 3% as the dollar index eases", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    // DXY is the dollar index and it is Jack's, not an equity index
+    { id: "dxy", title: "DXY index falls as gold holds; USD steady", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+  ], personas, { now });
+
+  const ids = got.map((i) => i.id);
+  assert(!ids.includes("tickers"), "equity tickers are not candidates");
+  assert(!ids.includes("apple"), "a company name is not a candidate even when the post also says index");
+  const keep = got.find((i) => i.id === "dxy");
+  assert(keep, "the dollar index stays: it is a subject Jack covers");
+  assertEquals(keep.matched, ["gold", "usd", "dxy", "index"]);
+});
