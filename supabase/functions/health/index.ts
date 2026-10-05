@@ -21,7 +21,7 @@ import { escapeHtml, sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
 import { runProviderChecks } from "_shared/providers.ts";
 import { deskAlert, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
-import { channelStale, CHANNEL_STALE_MS } from "_shared/insights.ts";
+import { channelStale, CHANNEL_STALE_MS, feedStale, FEED_STALE_MS } from "_shared/insights.ts";
 
 const SOURCES = ["ezyai", "ops_bot", "scheduler", "pc_worker", "poller", "abdul", "sales_bot"] as const;
 const STALE_DEFAULT_MIN: Record<string, number> = {
@@ -176,6 +176,22 @@ serve(async (req) => {
         kind: "channel_stale",
         severity: "high",
         message: "\u26A0\uFE0F Nothing has posted to the channel in over 36 hours. A quiet channel loses members \u2014 queue a map or a lesson.",
+      });
+    }
+    // The research feeds are polled every 6 hours: when the newest run is
+    // older than two cycles the cron itself is the thing that broke, and
+    // Monday's brief plus the idea list quietly age out if nobody says so.
+    const { data: newestFeed } = await db.from("feeds")
+      .select("name, last_fetched_at").eq("active", true)
+      .order("last_fetched_at", { ascending: false, nullsFirst: false })
+      .limit(1).maybeSingle();
+    if (feedStale((newestFeed?.last_fetched_at as string | null) ?? null, Date.now(), FEED_STALE_MS)) {
+      await deskAlert({
+        db,
+        key: "research-feeds",
+        kind: "feeds_stale",
+        severity: "medium",
+        message: `\u26A0\uFE0F The research feeds have not been polled in over 12 hours (last run: ${newestFeed?.name ? escapeHtml(String(newestFeed.name)) : "never"}). Monday's brief and the idea list age out while this is broken.`,
       });
     }
     // Webhook handler failures cluster when Telegram or the database misbehaves:

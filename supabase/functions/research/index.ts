@@ -5,8 +5,13 @@
  *                           (Malaysia, English / Malay / Manglish) → queries + a scored topic_clusters row per seed
  *   POST /research/brief    (cron, Monday 07:00 MYT) next week's 28-day calendar slots with the best fitting
  *                           scored topic for each → briefs, and a short note in the Desk
- *   POST /research/feeds  { feed_id? } poll every active RSS/Atom feed (cron, 6-hourly) → new items into
- *                           feed_items; one dead feed records why and the run continues
+ *   POST /research/feeds  { feed_id? } poll every active feed (cron, 6-hourly) → new items into feed_items;
+ *                           RSS 2.0 / Atom as XML, Bluesky search and a Mastodon tag as JSON; one dead feed
+ *                           records why and the run continues
+ *   POST /research/ideas   { days?, limit? } fresh feed items that mention a persona's own seed questions,
+ *                           ranked by how many → post ideas for Jack. Nothing is written, nothing is posted
+ *   POST /research/channels { refresh? } the reference channels: manual notes, plus a live member count from
+ *                           the Bot API for the ones the bot is actually in
  *   POST /research/article  { topic | cluster_id, lang? } a search-article brief (BM first) from the autocomplete suggestions
  *   POST /research/csi      { topic, category?, metric?, value?, trend?, note? } one TikTok Creator Search
  *                           Insights reading Jack typed in → csi_captures
@@ -20,13 +25,14 @@ import { require as requireRole } from "_shared/roles.ts";
 import { remember, replay } from "_shared/idempotency.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import { logAction } from "_shared/log.ts";
-import { sendMessage } from "_shared/tg.ts";
+import { getChatMemberCount, sendMessage } from "_shared/tg.ts";
 import { cycleWeek, nextMonday } from "_shared/batch.ts";
 import { similarity } from "_shared/moderation.ts";
 import { articleBrief } from "_shared/articles.ts";
-import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, topicRisk } from "_shared/research.ts";
+import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, personaTerms, pickIdeas, queryVariants, topicRisk } from "_shared/research.ts";
 import { nextHook } from "_shared/hooks.ts";
-import { parseFeed } from "_shared/feed.ts";
+import { parseFeed, parseJsonFeed } from "_shared/feed.ts";
+import { tmeHandle } from "_shared/tme.ts";
 
 const LANGS = ["en", "ms", "manglish"] as const;
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -67,7 +73,7 @@ serve(async (req) => {
     requireRole(caller.role, "research.run");
     const only = typeof body.feed_id === "string" ? body.feed_id : null;
     const { data: feeds } = await db.from("feeds")
-      .select("id, name, url, lang, items_seen").eq("active", true).order("name");
+      .select("id, name, url, lang, kind, items_seen").eq("active", true).order("name");
     const list = only ? (feeds ?? []).filter((f) => f.id === only) : (feeds ?? []);
     if (only && !list.length) throw bad("no active feed with that id");
 
@@ -100,10 +106,12 @@ serve(async (req) => {
       if (xml) {
         // Newest first in both shapes; 50 is a day's worth of macro news, and a
         // first run against a ten-year archive should not write ten thousand rows.
-        const parsed = parseFeed(xml).slice(0, 50);
-        if (!parsed.length && !/<(item|entry)\b/i.test(xml)) {
+        const kind = feed.kind === "bluesky" || feed.kind === "mastodon" ? feed.kind : null;
+        const parsed = (kind ? parseJsonFeed(xml, kind) : parseFeed(xml)).slice(0, 50);
+        const unreadable = kind ? !parsed.length : (!parsed.length && !/<(item|entry)\b/i.test(xml));
+        if (unreadable) {
           status = "parse_error";
-          why = "not an RSS or Atom feed";
+          why = kind ? `not a ${kind} response` : "not an RSS or Atom feed";
         } else if (parsed.length) {
           const ids = parsed.map((p) => p.externalId);
           const { data: seenRows } = await db.from("feed_items").select("external_id")
@@ -137,6 +145,85 @@ serve(async (req) => {
 
     await logAction({ actor: caller.actor, action: "research.feeds", payload: { feeds: list.length, items, failed: failed.length } });
     return json({ ok: true, feeds: list.length, items, failed });
+  }
+
+  // POST /research/ideas — what other people published that touches a question
+  // one of Jack's readers actually asked. Word counting against
+  // personas.seed_questions, no model, nothing written: the answer is a ranked
+  // list for him to pick from.
+  if (tail[0] === "ideas") {
+    requireRole(caller.role, "research.run");
+    const days = Math.min(Math.max(Number(body.days ?? 14) || 14, 1), 60);
+    const limit = Math.min(Math.max(Number(body.limit ?? 10) || 10, 1), 50);
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+
+    const { data: personas, error: pErr } = await db.from("personas")
+      .select("id, main_pillar, seed_questions").eq("active", true).order("id");
+    if (pErr) throw bad(`personas: ${pErr.message}`);
+    const { data: rows, error: fErr } = await db.from("feed_items")
+      .select("id, title, summary, published_at, feeds(name)")
+      .gte("published_at", since)
+      .order("published_at", { ascending: false })
+      .limit(300);
+    if (fErr) throw bad(`feed_items: ${fErr.message}`);
+
+    const people = (personas ?? []).map((p) => ({
+      id: Number(p.id),
+      pillar: (p.main_pillar as string | null) ?? null,
+      terms: personaTerms((p.seed_questions ?? {}) as Record<string, unknown>, p.main_pillar as string | null),
+    }));
+    const items = (rows ?? []).map((r) => ({
+      id: String(r.id),
+      title: String(r.title),
+      summary: (r.summary as string | null) ?? null,
+      publishedAt: (r.published_at as string | null) ?? null,
+    }));
+    const names = new Map((rows ?? []).map((r) => [String(r.id), (r as { feeds?: { name?: string } | null }).feeds?.name ?? null]));
+    const ideas = pickIdeas(items, people, { days, limit }).map((i) => ({ ...i, feed: names.get(i.id) ?? null }));
+    await logAction({ actor: caller.actor, action: "research.ideas", payload: { days, ideas: ideas.length } });
+    return json({ ok: true, days, ideas });
+  }
+
+  // POST /research/channels — the reference-channel table, refreshed. The member
+  // count comes from the Bot API, which only answers for channels the bot is in;
+  // everywhere else the row still stands on the notes Jack entered by hand, and
+  // says why there is no live number rather than pretending to one.
+  if (tail[0] === "channels") {
+    requireRole(caller.role, "research.run");
+    const refresh = body.refresh !== false;
+    const { data: rows, error: bErr } = await db.from("benchmarks")
+      .select("id, name, handle, audience_tier, is_usual_ib, size_members, posts_per_day, avg_views, view_rate_pct, offer_structure, qualification_notes, disclosures, note, captured_at, source")
+      .eq("active", true)
+      .order("view_rate_pct", { ascending: false, nullsFirst: false });
+    if (bErr) throw bad(`benchmarks: ${bErr.message}`);
+
+    const channels: Record<string, unknown>[] = [];
+    let refreshed = 0;
+    for (const r of rows ?? []) {
+      const handle = tmeHandle(r.handle);
+      let live: number | null = null;
+      let why: string | null = null;
+      if (!r.handle) {
+        why = "no handle yet";
+      } else if (!handle) {
+        why = "handle not readable";
+      } else if (refresh) {
+        try {
+          live = await getChatMemberCount(`@${handle}`);
+          const { error: uErr } = await db.from("benchmarks").update({
+            size_members: live, source: "bot_api", captured_at: new Date().toISOString(),
+          }).eq("id", r.id);
+          if (uErr) throw new Error(uErr.message);
+          refreshed += 1;
+        } catch (err) {
+          // Expected: the bot is in Jack's channels, not in a competitor's.
+          why = (err instanceof Error ? err.message : String(err)).slice(0, 160);
+        }
+      }
+      channels.push({ ...r, handle, live_members: live, refresh_error: why });
+    }
+    await logAction({ actor: caller.actor, action: "research.channels", payload: { channels: channels.length, refreshed } });
+    return json({ ok: true, channels, refreshed });
   }
 
   if (tail[0] === "article") {

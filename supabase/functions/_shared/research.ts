@@ -100,6 +100,28 @@ export function coreTerms(seed: string, n = 3): string {
   return (keep.length ? keep : words).slice(0, n).join(" ");
 }
 
+/**
+ * The words one persona actually talks in, for `pickIdeas`.
+ *
+ * Seed questions arrive as full sentences in three languages, and nobody
+ * publishes the exact sentence a reader asked — so each is reduced to its
+ * meaningful words (`coreTerms`) and the words are collected, not the phrase.
+ * A hit therefore means "someone is writing about a question this reader
+ * asks", which is the only claim the scorer makes.
+ */
+export function personaTerms(bag: Record<string, unknown> | null | undefined, pillar?: string | null): string[] {
+  const out = new Set<string>();
+  const add = (sentence: string) => {
+    for (const w of coreTerms(sentence, 12).split(" ")) if (w) out.add(w);
+  };
+  for (const lang of ["en", "ms", "manglish"]) {
+    const list = Array.isArray(bag?.[lang]) ? (bag[lang] as unknown[]).map(String) : [];
+    for (const seed of list) add(seed);
+  }
+  if (pillar) add(pillar);
+  return [...out].slice(0, 80);
+}
+
 export interface CsiRow {
   topic: string;
   category: string | null;

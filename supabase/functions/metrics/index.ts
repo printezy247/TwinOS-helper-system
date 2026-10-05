@@ -15,7 +15,7 @@ import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { logAction } from "_shared/log.ts";
 import * as tg from "_shared/tg.ts";
-import { benchmarkStats, parsePage, snapshotsDue, type TmePage } from "_shared/tme.ts";
+import { benchmarkStats, parsePage, snapshotsDue, tmeHandle, type TmePage } from "_shared/tme.ts";
 
 const HANDLE = /^[A-Za-z0-9_]{4,32}$/;
 
@@ -88,7 +88,10 @@ serve(async (req) => {
     let updated = 0;
     let skipped = 0;
     for (const r of rows ?? []) {
-      const page = await fetchPage(String(r.handle).replace(/^@/, "").replace(/^https?:\/\/t\.me\/(s\/)?/, ""));
+      // Whatever the row holds — @name, t.me/name, a pasted link — one normaliser decides it.
+      const handle = tmeHandle(r.handle);
+      if (!handle) { skipped += 1; continue; }
+      const page = await fetchPage(handle);
       const stats = page ? benchmarkStats(page) : null;
       if (!stats) { skipped += 1; continue; }
       const { error } = await db.from("benchmarks").update({

@@ -20,7 +20,7 @@ import { serve, json, readJson, bad } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
-import { setStatus } from "_shared/content.ts";
+import { parsePoll, setStatus } from "_shared/content.ts";
 import { check as complianceCheck, checkComment, TELEGRAM_CAPTION_LIMIT } from "_shared/compliance.ts";
 import {
   classify, isUnknownOutcome, MAX_ATTEMPTS, retryPlan, type Kind, unknownOutcomePatch,
@@ -97,7 +97,18 @@ async function sendTelegram(item: Item, v: Variant): Promise<{ chat_id: number; 
   };
   const media = v.media ?? [];
   let msg: tg.TgMessage;
-  if (media.length >= 2) {
+  // A poll post type goes out as a real poll, not as four lines of prose: the
+  // tally is public in the channel and is the only read on what members want
+  // next week's lesson to be. The prose around the poll still posts, before and
+  // after, because the template writes an intro and a note on how answers are
+  // used. A body that does not parse as a poll falls through to the text path
+  // unchanged, so nothing can go out as a broken half-poll.
+  const poll = item.post_type === "poll" ? parsePoll(v.body) : null;
+  if (poll) {
+    if (poll.preamble) await tg.sendMessage(chatId, poll.preamble, opts);
+    msg = await tg.sendPoll(chatId, poll.question, poll.options, opts);
+    if (poll.postamble) await tg.sendMessage(chatId, poll.postamble, opts);
+  } else if (media.length >= 2) {
     const group = await tg.sendMediaGroup(
       chatId,
       media.slice(0, 10).map((m, i) => ({

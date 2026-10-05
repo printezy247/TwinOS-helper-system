@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertThrows } from "std/assert/mod.ts";
 import {
-  buildBrief, coreTerms, csiRow, demandScore, parseSuggest, pickIdeas, queryVariants, topicRisk,
+  buildBrief, coreTerms, csiRow, demandScore, parseSuggest, personaTerms, pickIdeas, queryVariants, topicRisk,
 } from "./research.ts";
 
 Deno.test("parseSuggest: the suggestion list out of Google's autocomplete answer", () => {
@@ -120,4 +120,21 @@ Deno.test("pickIdeas: only the window, the limit and a sane answer for nothing f
   assertEquals(got.map((i) => i.id), ["new"], "the stale month-old item is outside the window");
   assertEquals(pickIdeas([{ id: "x", title: "nothing", summary: null, publishedAt: null }], personas, { now }), []);
   assertEquals(pickIdeas([], personas, { now }), []);
+});
+
+Deno.test("personaTerms: every language's seed questions become the words the scorer looks for", () => {
+  const terms = personaTerms(
+    { en: ["where should my stop loss go on gold"], ms: ["di mana nak letak stop loss"], manglish: ["settled lah already"] },
+    "Gold & Risk",
+  );
+  assert(terms.includes("gold"), "the question's own words are in");
+  assert(terms.includes("stop"), "a two-word phrase matches as its parts, not as one long phrase nobody writes");
+  assert(terms.includes("risk"), "the pillar counts too");
+  assertEquals(new Set(terms).size, terms.length, "no word arrives twice");
+  assert(terms.length <= 80, "capped, so one persona cannot match every item");
+});
+
+Deno.test("personaTerms: an empty or unusable bag still answers, so the scorer never crashes on a thin persona", () => {
+  assertEquals(personaTerms({}, null), []);
+  assertEquals(personaTerms({ en: ["???"] }, null), [], "nothing readable means no terms, not a throw");
 });

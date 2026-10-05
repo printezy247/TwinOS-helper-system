@@ -102,6 +102,9 @@ ENDPOINTS = {
     "twinos_brief":            ("rest", "briefs"),
     "twinos_inbox":            ("rest", "inbox_items"),
     "twinos_analytics":        ("rest", None),   # the view is a parameter, from ANALYTICS_VIEWS
+    "twinos_search":           ("rest", "feed_items"),
+    "twinos_ideas":            ("fn", "research/ideas"),
+    "twinos_channels":         ("fn", "research/channels"),
 }
 # Views ANALYTICS_VIEWS may read, with the ones that are not views marked, so a
 # bad name is refused locally instead of becoming a confusing PostgREST error.
@@ -150,6 +153,18 @@ TOOLS = [
     ("twinos_feeds", "What is new in the research feeds (macro news, YouTube channels): newest first, each item with the feed it came "
                      "from. since = ISO date to start from; limit caps rows (default 20).",
      {"since": "string", "limit": "integer"}, []),
+    ("twinos_search", "Search what the research feeds have collected (macro news, YouTube, Bluesky and Mastodon posts) for one "
+                      "phrase: matches in title or summary, newest first. since = ISO date to start from, limit caps rows "
+                      "(default 20). Reads only.",
+     {"q": "string", "since": "string", "limit": "integer"}, ["q"]),
+    ("twinos_ideas", "Post ideas from what other people published: fresh feed items that mention one of your personas' own seed "
+                     "questions, ranked by how many of them they mention, each row carrying the persona and the matched words. "
+                     "days = window (default 14), limit = rows (default 10). Reads only: nothing is drafted, nothing is posted.",
+     {"days": "integer", "limit": "integer"}, []),
+    ("twinos_channels", "Research the reference channels: the manual notes Jack recorded (offer structure, how they qualify, "
+                        "disclosures) plus a live Telegram member count from the Bot API for the channels the bot is actually in. "
+                        "refresh = false skips the refresh and just reads the rows.",
+     {"refresh": "boolean"}, []),
     ("twinos_clip", "Queue a live recording for the PC worker: transcript, highlight picks, caption file, clean clips, CapCut-ready. "
                     "source = tiktok | telegram, date = ISO date of the live (default yesterday, Kuala Lumpur), or path = the file itself. "
                     "layout = chart_full | chart_face | blurred_fill makes 1080x1920 clips; face_box = [x, y, width, height] of the camera "
@@ -433,6 +448,39 @@ def tool_call(name, a, idem=None):
         for it in items:
             it["feed"] = names.get(it.get("feed_id")) or "?"
         return items
+    if name == "twinos_search":
+        # The term becomes a PostgREST ilike, so anything that could end the
+        # filter clause is removed before it is quoted: a search box that can
+        # rewrite the query is a search box that can be talked into a 400.
+        term = " ".join(re.sub(r"[^0-9A-Za-z]+", " ", str(a.get("q") or "")).split())
+        if not term:
+            raise ValueError("q needs a word or a number to search for")
+        parts = []
+        since = str(a.get("since") or "").strip()
+        if since:
+            if not re.match(r"^\d{4}-\d{2}-\d{2}", since):
+                raise ValueError("since must be an ISO date, e.g. 2026-10-05")
+            parts.append("published_at=gte." + urllib.parse.quote(since, safe=":-"))
+        enc = urllib.parse.quote(term, safe="")
+        parts.append("or=(title.ilike.*%s*,summary.ilike.*%s*)" % (enc, enc))
+        parts.append("order=published_at.desc")
+        return _rows(rest(target, "&".join(parts), a.get("limit") or 20))
+    if name == "twinos_ideas":
+        # Window and size only: the ranking is the server's, worked out from
+        # Jack's personas, so ABDUL cannot ask for a different one.
+        body = {"actor": ACTOR}
+        for key in ("days", "limit"):
+            if a.get(key) is None:
+                continue
+            try:
+                body[key] = int(a[key])
+            except (TypeError, ValueError):
+                raise ValueError("%s must be a whole number" % key)
+        return fn(target, body, idem)
+    if name == "twinos_channels":
+        # refresh=false must survive the trip: false and absent mean different
+        # things here, one reads the rows and the other goes and asks Telegram.
+        return fn(target, {"actor": ACTOR, "refresh": a.get("refresh") is not False}, idem)
     if name == "twinos_clip":
         # jobs/enqueue stores body.payload and ignores every other field, so the options go inside it.
         payload = _clean(a, ("source", "date", "max_clips", "layout", "face_box", "end_text", "path"))

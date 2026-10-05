@@ -284,6 +284,14 @@ export function restrictChatMember(
   });
 }
 
+/**
+ * Member count for a channel the bot is in (it is an admin there, or the call
+ * fails — which is the answer for a competitor's channel).
+ */
+export function getChatMemberCount(chat_id: number | string) {
+  return call<number>("getChatMemberCount", { chat_id });
+}
+
 export function getChatMember(chat_id: number | string, user_id: number) {
   return call<{ status: string }>("getChatMember", { chat_id, user_id });
 }

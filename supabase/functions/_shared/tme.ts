@@ -86,3 +86,18 @@ export function snapshotsDue(
   }
   return out;
 }
+
+const HANDLE = /^[A-Za-z0-9_]{4,32}$/;
+
+/**
+ * Whatever Jack pasted — `@name`, `t.me/name`, `https://t.me/s/name/412` — as
+ * the bare handle the preview page needs. Anything that does not reduce to a
+ * plausible handle is null, so a malformed row is skipped rather than fetched
+ * as a nonsense URL.
+ */
+export function tmeHandle(raw: string | null | undefined): string | null {
+  let s = String(raw ?? "").trim();
+  s = s.replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, "").replace(/^@/, "").replace(/^s\//, "");
+  const path = s.split(/[/?#]/)[0];
+  return HANDLE.test(path) ? path : null;
+}
