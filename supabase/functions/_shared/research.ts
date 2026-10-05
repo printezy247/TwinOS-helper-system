@@ -194,6 +194,31 @@ export interface Idea {
  * readers asked (`personas.seed_questions`), so a hit means someone is talking
  * about a question Jack answers. Nothing is written and nothing is posted.
  */
+/**
+ * A term that means something only as a whole word. "Golden" is not gold and
+ * "BTCUSD" is not usd — substring matching had both of them in the top three
+ * for a gold channel, scoring a crypto chart on a Malay word and a ticker.
+ */
+const wordRx = (term: string): RegExp => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+
+/**
+ * Subjects Jack does not cover. A post about one of them is not a weaker
+ * idea, it is not a candidate: it never enters the ranking. Whole words again,
+ * so `sol` cannot fire on "solution".
+ */
+const OUT_OF_SCOPE = [
+  "crypto", "bitcoin", "ethereum", "solana", "dogecoin", "ripple", "cardano", "litecoin", "altcoin",
+  "blockchain", "binance", "coinbase", "tether", "defi", "nft", "coin", "coins", "token", "tokens",
+  "usdc", "usdt", "btc", "eth", "xrp", "doge", "bnb", "ltc", "avax",
+];
+const OUT_OF_SCOPE_RX = OUT_OF_SCOPE.map(wordRx);
+
+/** The terms worth testing at all, compiled once per call rather than per item. */
+const scorable = (terms: string[]): Array<{ t: string; rx: RegExp }> =>
+  terms
+    .filter((t) => t.length >= 3 && !GENERIC.has(t.toLowerCase()) && !/^\d+$/.test(t))
+    .map((t) => ({ t: t.toLowerCase(), rx: wordRx(t.toLowerCase()) }));
+
 export function pickIdeas(
   items: IdeaItem[],
   personas: IdeaPersona[],
@@ -203,6 +228,7 @@ export function pickIdeas(
   const windowMs = (opts.days ?? 14) * 86_400_000;
   const limit = Math.max(1, opts.limit ?? 10);
   const texts = items.map((it) => `${it.title}\n${it.summary ?? ""}`.toLowerCase());
+  const compiled = personas.map((p) => ({ persona: p, terms: scorable(p.terms) }));
   const out: Idea[] = [];
 
   for (let i = 0; i < items.length; i += 1) {
@@ -211,9 +237,10 @@ export function pickIdeas(
     // An undated item cannot be proven stale, so it stays in.
     if (Number.isFinite(at) && now - at > windowMs) continue;
     const text = texts[i];
+    if (OUT_OF_SCOPE_RX.some((rx) => rx.test(text))) continue;
     let best: Idea | null = null;
-    for (const p of personas) {
-      const matched = p.terms.filter((t) => t.length >= 3 && !GENERIC.has(t.toLowerCase()) && text.includes(t.toLowerCase()));
+    for (const { persona: p, terms } of compiled) {
+      const matched = terms.filter((x) => x.rx.test(text)).map((x) => x.t);
       if (!matched.length) continue;
       if (!best || matched.length > best.matched.length) {
         best = {

@@ -289,7 +289,8 @@ database.
 
 **Done (2 Oct 2026).** Project **TwinOS** in the PrintEzy workspace,
 id `8aa151d6-f29b-4fba-8daf-345c4df50963`
-(editor: https://lovable.dev/projects/8aa151d6-f29b-4fba-8daf-345c4df50963).
+(editor: https://lovable.dev/projects/8aa151d6-f29b-4fba-8daf-345c4df50963),
+**live at https://twin-approval-hub.lovable.app/**.
 It was created over the Lovable MCP as a **frontend-only** app: no Lovable
 Cloud (database status: not enabled), no Supabase integration, no migrations.
 It talks to this project with `@supabase/supabase-js`, the public URL and the
