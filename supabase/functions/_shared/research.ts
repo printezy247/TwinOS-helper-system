@@ -202,16 +202,18 @@ export function pickIdeas(
   const now = opts.now ?? Date.now();
   const windowMs = (opts.days ?? 14) * 86_400_000;
   const limit = Math.max(1, opts.limit ?? 10);
+  const texts = items.map((it) => `${it.title}\n${it.summary ?? ""}`.toLowerCase());
   const out: Idea[] = [];
 
-  for (const it of items) {
+  for (let i = 0; i < items.length; i += 1) {
+    const it = items[i];
     const at = it.publishedAt ? Date.parse(it.publishedAt) : NaN;
     // An undated item cannot be proven stale, so it stays in.
     if (Number.isFinite(at) && now - at > windowMs) continue;
-    const text = `${it.title}\n${it.summary ?? ""}`.toLowerCase();
+    const text = texts[i];
     let best: Idea | null = null;
     for (const p of personas) {
-      const matched = p.terms.filter((t) => t && text.includes(t.toLowerCase()));
+      const matched = p.terms.filter((t) => t.length >= 3 && !GENERIC.has(t.toLowerCase()) && text.includes(t.toLowerCase()));
       if (!matched.length) continue;
       if (!best || matched.length > best.matched.length) {
         best = {
@@ -227,3 +229,28 @@ export function pickIdeas(
     (Date.parse(b.publishedAt ?? "") || 0) - (Date.parse(a.publishedAt ?? "") || 0));
   return out.slice(0, limit);
 }
+
+/**
+ * Words that carry no signal about what a post is *about*.
+ *
+ * Calibrated against the live corpus rather than guessed. The first scoring
+ * pass counted every word of a persona's seed questions equally, so "all",
+ * "one", "best" and "stop" scored a crypto chart as a gold idea, and the top
+ * ten was a ranking by word count.
+ *
+ * Word frequency was tried first and is the wrong instrument here: measured
+ * over 233 real items, "gold" appears in 46% of them and "all" in 36%, so
+ * dropping the frequent words would have dropped gold first. What separates
+ * the posts is whether a word names a subject or merely travels with trading
+ * writing, and that is a list, not a ratio.
+ *
+ * Deliberately not on it: gold, usd, nfp, fed, yields, forex, signal, firm,
+ * zone, macro, risk, news. Those are Jack's subjects.
+ */
+const GENERIC = new Set((
+  "all one not out just only more most than then when while also even still next new now way ways " +
+  "make look show read keep first last always never real really best better good bad why how into via per own same " +
+  "up down move take trade trades trading long short buy sell red green open opened close closed " +
+  "daily day days week weeks time times price prices market markets chart charts position positions " +
+  "stop loss losses profit profits win wins rate rates tp sl dd ai"
+).split(" "));
