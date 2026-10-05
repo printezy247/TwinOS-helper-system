@@ -96,7 +96,7 @@ ENDPOINTS = {
     "twinos_csi_log":          ("fn", "research/csi"),               # phase 5
     "twinos_clip":             ("fn", "jobs/enqueue"),               # kind=clip
     "twinos_friday":           ("rest", "v_friday_scoreboard"),
-    "twinos_health":           ("rest", "health_checks"),
+    "twinos_health":           ("fn", "health"),
     "twinos_brief":            ("rest", "briefs"),
     "twinos_inbox":            ("rest", "inbox_items"),
     "twinos_analytics":        ("rest", None),   # the view is a parameter, from ANALYTICS_VIEWS
@@ -375,17 +375,20 @@ def tool_call(name, a, idem=None):
         rows = _rows(rest(target, q, 1))
         return rows[0] if rows else {"text": "No scoreboard yet. Friday hasn't happened, or nothing was counted."}
     if name == "twinos_health":
-        checks = _rows(rest(target, "order=checked_at.desc", 50))
-        alerts = _rows(rest("alerts", "resolved_at=is.null&order=created_at.desc", 20))
-        broken = [c for c in checks if str(c.get("status", "")).lower() not in ("ok", "pass", "green", "")]
-        if not broken and not alerts:
-            text = "Nothing broken. Carry on."
-        else:
-            bits = ["%s: %s" % (c.get("name") or c.get("check") or "?", c.get("status") or c.get("detail") or "not ok") for c in broken[:6]]
-            bits += [str(x.get("title") or x.get("text") or x.get("message") or "alert") for x in alerts[:6]]
-            n = len(broken) + len(alerts)
-            text = "%s want%s attention: %s" % ("One thing" if n == 1 else "%d things" % n, "s" if n == 1 else "", "; ".join(bits))
-        return {"text": text, "broken": broken, "alerts": alerts}
+        # The health function owns this answer: stale beats, expiring tokens,
+        # open alerts and the failed-job count in one summary. Reading
+        # health_checks from here used a column that does not exist and always
+        # came back as a 400, so ABDUL could never get the line.
+        res = request("GET", "/functions/v1/" + target)
+        if not isinstance(res, dict):
+            return {"text": "no answer from the health function"}
+        text = str(res.get("summary") or "").strip()
+        if not text:
+            text = "Nothing broken. Carry on." if res.get("ok") else "no summary in the health answer"
+        failed = res.get("failed_jobs")
+        if isinstance(failed, int) and failed > 0:
+            text += "; %d failed job(s)" % failed
+        return {"text": text}
     if name == "twinos_brief":
         rows = _rows(rest(target, "order=created_at.desc", 1))
         return rows[0] if rows else {"text": "No brief yet. Monday's research hasn't run."}

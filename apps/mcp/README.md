@@ -43,7 +43,7 @@ verbs for Phase 2: `../abdul/PATCH-NOTES.md`.
 | `twinos_link` | Named invite or bot link, `src-campaign-yymm` (Phase 2) | `POST /functions/v1/links` |
 | `twinos_manual_metrics` | Vantage / TikTok / Telechurn weekly numbers | `POST /functions/v1/friday/manual` |
 | `twinos_friday` | The Friday scoreboard | `GET /rest/v1/v_friday_scoreboard` |
-| `twinos_health` | "Anything broken?" in one line | `GET /rest/v1/health_checks`, open `alerts` |
+| `twinos_health` | "Anything broken?" in one line | `GET /functions/v1/health` |
 | `twinos_csi_log` | Log a Creator Search Insights topic (Phase 5) | `POST /functions/v1/research/csi` |
 | `twinos_clip` | Queue a live for the PC worker: transcript, picks, captions, clips | `POST /functions/v1/jobs/enqueue` (`kind: clip`) |
 | `twinos_brief` | Latest Monday research brief | `GET /rest/v1/briefs` |

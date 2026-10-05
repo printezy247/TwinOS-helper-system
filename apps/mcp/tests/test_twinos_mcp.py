@@ -114,8 +114,7 @@ class TestToolList(Base):
             {"jsonrpc": "2.0", "id": 6, "method": "ping"},
         ]) + "\n")
         out = io.StringIO()
-        FakeTwinOS.state["bodies"]["/rest/v1/health_checks"] = []
-        FakeTwinOS.state["bodies"]["/rest/v1/alerts"] = []
+        FakeTwinOS.state["bodies"]["/functions/v1/health"] = {"ok": True, "summary": "Nothing broken. Carry on."}
         tm.mcp_serve(inp, out)
         msgs = [json.loads(l) for l in out.getvalue().strip().split("\n")]
         self.assertEqual([m["id"] for m in msgs], [1, 2, 3, 4, 5, 6])
@@ -246,13 +245,14 @@ class TestRequestShapes(Base):
         self.assertIn("week=eq.2026-09-21", self.last()["path"])
 
     def test_health_summarises(self):
-        FakeTwinOS.state["bodies"]["/rest/v1/health_checks"] = [{"name": "ezyai beat", "status": "ok"}, {"name": "scheduler", "status": "stale"}]
-        FakeTwinOS.state["bodies"]["/rest/v1/alerts"] = [{"title": "YouTube token expires in 3 days"}]
+        FakeTwinOS.state["bodies"]["/functions/v1/health"] = {
+            "ok": False, "summary": "stale: scheduler; 2 open alert(s)", "failed_jobs": 3,
+        }
         res = tm.tool_call("twinos_health", {})
-        self.assertTrue(res["text"].startswith("2 things want attention"))
-        self.assertIn("scheduler: stale", res["text"])
-        self.assertIn("YouTube token", res["text"])
-        self.assertIn("resolved_at=is.null", self.last()["path"])
+        self.assertEqual((self.last()["method"], self.last()["path"]), ("GET", "/functions/v1/health"))
+        self.assertTrue(res["text"].startswith("stale: scheduler"))
+        self.assertIn("2 open alert(s)", res["text"])
+        self.assertIn("3 failed job(s)", res["text"])
 
     def test_brief_inbox_analytics(self):
         tm.tool_call("twinos_brief", {})
@@ -472,8 +472,7 @@ class TestAbdulVerbs(Base):
         FakeTwinOS.state["bodies"]["/rest/v1/v_friday_scoreboard"] = [{"week": "2026-09-28", "members": 1200, "net_joins": 34, "id": 1}]
         out = tv.twinos_action("twinos_friday", "latest", {})
         self.assertEqual(out, "Friday numbers, week of 2026-09-28: members 1200; net joins 34")
-        FakeTwinOS.state["bodies"]["/rest/v1/health_checks"] = []
-        FakeTwinOS.state["bodies"]["/rest/v1/alerts"] = []
+        FakeTwinOS.state["bodies"]["/functions/v1/health"] = {"ok": True, "summary": "Nothing broken. Carry on."}
         self.assertEqual(tv.twinos_action("twinos_health", "check", {}), "Nothing broken. Carry on.")
         out = tv.twinos_action("twinos_csi", "gold news today | 82 | up | beginner", {})
         self.assertEqual(self.last()["body"]["popularity"], 82)

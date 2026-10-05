@@ -27,7 +27,7 @@ They are the `TWINOS_VERBS` list in `twinos_verbs.py`, so the preferred wiring i
 | `twinos_result` | `twinos_result: 3` | `POST /functions/v1/results-reply` with `{signal_id}` only | A result not on the board: nothing is posted. ABDUL never supplies numbers |
 | `twinos_link` | `twinos_link: swap-macronews-2611 \| swap \| macronews \| MacroNews` | `POST /functions/v1/links` | A name not in `src-campaign-yymm` form |
 | `twinos_friday` | `twinos_friday: latest` | `GET /rest/v1/v_friday_scoreboard` | Read only |
-| `twinos_health` | `twinos_health: check` | `GET /rest/v1/health_checks` + open `alerts` | Read only |
+| `twinos_health` | `twinos_health: check` | `GET /functions/v1/health` | Read only |
 | `twinos_csi` | `twinos_csi: gold news today \| 82 \| up \| beginner` | `POST /functions/v1/research-csi` | Nothing; it is a log line |
 
 ## Not added, on purpose
