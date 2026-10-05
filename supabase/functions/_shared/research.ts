@@ -220,6 +220,30 @@ const OUT_OF_SCOPE = [
 ];
 const OUT_OF_SCOPE_RX = OUT_OF_SCOPE.map(wordRx);
 
+/**
+ * What Jack trades. A symbol shaped like a pair that is not on this list is
+ * somebody else's market, so it never becomes a candidate — which is how
+ * `QNTUSD` got past a denylist that cannot know every ticker.
+ *
+ * Only titles are read: symbols live in titles, and a summary quoting three
+ * pairs is normal for one macro post. Anything that does not carry a currency
+ * or metal suffix (NFP, DXY) is not a symbol at all and is never judged here,
+ * so education posts stay in without having to name an asset.
+ */
+const ALLOWED_ASSETS = new Set([
+  "xauusd", "xagusd", "eurusd", "gbpusd", "usdjpy", "usdchf", "usdcad", "audusd", "nzdusd",
+  "eurjpy", "gbpjpy", "eurgbp", "usdsek", "usdnok", "dxy", "xau", "xag", "gold", "silver",
+]);
+const PAIR_SYMBOL = /^[A-Z]{3,8}(?:USD|USDT|EUR|GBP|JPY|CHF|CAD|AUD|NZD|XAU|XAG|BTC|ETH)$/;
+
+const tradesOurMarket = (title: string): boolean => {
+  for (const raw of title.split(/[^A-Za-z]+/)) {
+    if (raw.length < 3 || !PAIR_SYMBOL.test(raw)) continue;
+    if (!ALLOWED_ASSETS.has(raw.toLowerCase())) return false;
+  }
+  return true;
+};
+
 /** The terms worth testing at all, compiled once per call rather than per item. */
 const scorable = (terms: string[]): Array<{ t: string; rx: RegExp }> =>
   terms
@@ -245,6 +269,7 @@ export function pickIdeas(
     if (Number.isFinite(at) && now - at > windowMs) continue;
     const text = texts[i];
     if (OUT_OF_SCOPE_RX.some((rx) => rx.test(text))) continue;
+    if (!tradesOurMarket(it.title)) continue;
     let best: Idea | null = null;
     for (const { persona: p, terms } of compiled) {
       const matched = terms.filter((x) => x.rx.test(text)).map((x) => x.t);
