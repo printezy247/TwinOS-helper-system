@@ -256,6 +256,23 @@ class PgEnvFromUrl(unittest.TestCase):
         self.assertEqual(env["PGPORT"], "5432")
         self.assertEqual(env["PGUSER"], "postgres")
 
+    def test_a_percent_encoded_password_is_decoded(self):
+        # libpq sends PGPASSWORD verbatim; it never decodes it the way it
+        # decodes a full connection URI. A password holding a reserved
+        # character is percent-encoded in the DSN, so passing the encoded
+        # text through authenticates as the wrong password. Three nightly
+        # backups failed on exactly this before the unquote.
+        for raw, encoded in (("Zarul@24071994", "Zarul%4024071994"),
+                             ("pa:ss", "pa%3Ass"),
+                             ("pa/ss", "pa%2Fss"),
+                             ("pa ss", "pa%20ss")):
+            env, _ = w._pg_env_from_url(f"postgresql://u:{encoded}@db.host:5432/postgres")
+            self.assertEqual(env["PGPASSWORD"], raw, encoded)
+
+    def test_an_encoded_username_is_decoded_too(self):
+        env, _ = w._pg_env_from_url("postgresql://user%40name:pw@db.host:5432/postgres")
+        self.assertEqual(env["PGUSER"], "user@name")
+
     def test_a_url_without_a_database_name_is_refused(self):
         with self.assertRaises(RuntimeError):
             w._pg_env_from_url("postgresql://postgres:secret@db.host")

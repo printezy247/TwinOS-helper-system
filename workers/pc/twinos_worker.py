@@ -291,9 +291,13 @@ def _pg_env_from_url(db_url: str) -> tuple[dict[str, str], str]:
     if u.port:
         env["PGPORT"] = str(u.port)
     if u.username:
-        env["PGUSER"] = u.username
+        env["PGUSER"] = urllib.parse.unquote(u.username)
     if u.password:
-        env["PGPASSWORD"] = u.password
+        # libpq does not decode a PGPASSWORD env var, it sends it verbatim.
+        # A password holding '@', ':' or '/' is percent-encoded in the DSN,
+        # so it must be decoded here or pg_dump authenticates with the
+        # encoded text and the server refuses it.
+        env["PGPASSWORD"] = urllib.parse.unquote(u.password)
     dbname = (u.path or "/").lstrip("/")
     if not dbname:
         raise RuntimeError("keyring twinos/db_url has no database name")
