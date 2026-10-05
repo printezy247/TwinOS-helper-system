@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import tempfile
 import unittest
@@ -179,6 +180,58 @@ class LlmVariantsTests(unittest.TestCase):
     def test_handler_is_registered(self):
         self.assertIn("llm_variants", w.KINDS)
         self.assertIn("llm_variants", w.HANDLERS)
+
+
+class RewriteTests(unittest.TestCase):
+    BODY = "XAU holds 4590, bias up. Next I watch 4612."
+
+    def _model(self, content, seen):
+        doc = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+
+        class Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return doc
+
+        def fake_urlopen(req, timeout=None):
+            seen["prompt"] = json.loads(req.data.decode())["messages"][0]["content"]
+            return Resp()
+
+        return fake_urlopen
+
+    def test_a_body_and_an_instruction_are_required(self):
+        for payload in ({}, {"body": self.BODY}, {"instruction": "shorter"}):
+            with self.assertRaises(RuntimeError, msg=payload):
+                w.job_rewrite(FakeApi(), payload)
+
+    def test_only_a_loopback_model_is_called(self):
+        for url in ("http://example.com:8080", "https://10.0.0.1/"):
+            with self.assertRaises(RuntimeError, msg=url):
+                w.job_rewrite(FakeApi(), {"llama_url": url, "body": self.BODY, "instruction": "shorter"})
+
+    def test_the_instruction_and_the_draft_numbers_ride_in_the_prompt(self):
+        seen = {}
+        with mock.patch("urllib.request.urlopen", self._model("softer text", seen)):
+            out = w.job_rewrite(FakeApi(), {"llama_url": "http://127.0.0.1:8080", "body": self.BODY, "instruction": "shorter"})
+        self.assertIn("shorter", seen["prompt"])
+        self.assertIn("4590", seen["prompt"])           # the draft's own numbers come along
+        self.assertIn("invent no price", seen["prompt"])
+        self.assertEqual(out, {"body": "softer text"})
+
+    def test_an_empty_answer_from_the_model_is_refused(self):
+        seen = {}
+        with mock.patch("urllib.request.urlopen", self._model("   ", seen)):
+            with self.assertRaises(RuntimeError):
+                w.job_rewrite(FakeApi(), {"llama_url": "http://127.0.0.1:8080", "body": self.BODY, "instruction": "shorter"})
+
+    def test_handler_is_registered(self):
+        self.assertIn("rewrite", w.KINDS)
+        self.assertIn("rewrite", w.HANDLERS)
 
 
 class LongformTests(unittest.TestCase):

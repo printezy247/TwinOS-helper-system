@@ -54,7 +54,7 @@ VIDEO_EXT = {".mp4", ".mov", ".webm"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 # Live recordings are often OBS .mkv; they live in LIVES_DIR, not the drop folder, so VIDEO_EXT stays as it is.
 LIVE_EXT = VIDEO_EXT | {".mkv", ".flv", ".ts"}
-KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "clip_candidates", "research_batch", "scorecard_image", "llm_variants"]
+KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "clip_candidates", "research_batch", "rewrite", "scorecard_image", "llm_variants"]
 LLM_ANGLES = 3
 
 
@@ -465,6 +465,41 @@ def job_llm_variants(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     return {"variants": variants}
 
 
+def job_rewrite(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
+    """A short Desk instruction applied to a draft by the LOCAL model.
+
+    The Desk queues this and tells Jack the new draft is coming; jobs/result
+    re-runs compliance plus the rewrite guard on whatever comes back, so a body
+    that quotes a number the original never had is blocked before Jack sees it.
+    """
+    body = str(payload.get("body") or "").strip()
+    instruction = str(payload.get("instruction") or "").strip()
+    if not body or not instruction:
+        raise RuntimeError("rewrite: needs the draft body and an instruction")
+    lang = str(payload.get("lang") or "en")
+    base = _loopback_only(str(payload.get("llama_url") or os.environ.get("TWINOS_LLAMA_URL", "http://127.0.0.1:8080")))
+    prompt = (
+        f"Apply the instruction to the post below. Keep every fact and every "
+        f"number exactly as written; invent no price, percent, result or offer. "
+        f"Keep the language ({lang}). Reply with the rewritten post text only.\n\n"
+        f"Instruction: {instruction}\n\nPost:\n{body}"
+    )
+    req = urllib.request.Request(
+        f"{base}/v1/chat/completions",
+        data=json.dumps({"messages": [{"role": "user", "content": prompt}], "temperature": 0.7}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300) as res:
+            doc = json.load(res)
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"rewrite: local model unreachable: {e}") from e
+    text = (((doc.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    if not text:
+        raise RuntimeError("rewrite: the model returned an empty body")
+    return {"body": text}
+
+
 def job_clip_candidates(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     """Wave 4 item 3: scene splits + transcript bursts → ranked moments.
 
@@ -502,6 +537,7 @@ HANDLERS: dict[str, Callable[[Api, dict[str, Any]], dict[str, Any]]] = {
     "clip": job_clip,
     "clip_candidates": job_clip_candidates,
     "research_batch": job_research_batch,
+    "rewrite": job_rewrite,
     "scorecard_image": job_scorecard_image,
     "llm_variants": job_llm_variants,
 }

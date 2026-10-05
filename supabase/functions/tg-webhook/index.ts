@@ -1177,8 +1177,10 @@ async function applyEdit(content_id: string, post_type: PostType, lang: "en" | "
   if (!v) return;
   const short = instruction.length <= 40 && !/\n/.test(instruction);
   if (short) {
-    // Short instruction: queue a rewrite job for ABDUL / the PC worker (Phase 2 voice module).
-    const { error: jobErr } = await db.from("jobs").insert({ kind: "rewrite", payload: { content_id, variant_id: v.id, instruction, lang }, status: "queued", created_by: ACTOR });
+    // Short instruction: queue a rewrite job for the PC worker. The body rides
+    // along so the worker never has to read the Desk's tables; jobs/result
+    // re-checks whatever comes back against the row that is stored now.
+    const { error: jobErr } = await db.from("jobs").insert({ kind: "rewrite", payload: { content_id, variant_id: v.id, body: v.body, instruction, lang }, status: "queued", created_by: ACTOR });
     if (jobErr) {
       await tg.sendMessage(m.chat.id, "⚠️ Could not queue that rewrite. Try again in a minute.", { reply_to_message_id: m.message_id });
       return;
