@@ -147,7 +147,7 @@ def mcp_routes() -> None:
 # 3. One vocabulary for post types across enum, seed and the compliance engine.
 # ---------------------------------------------------------------------------
 def post_types() -> None:
-    mig = read("supabase/migrations/0002_content.sql")
+    mig = read(str(next((ROOT / "supabase/migrations").glob("*_content.sql"))))
     seed = read("supabase/seed.sql")
     compliance = read("supabase/functions/_shared/compliance.ts")
 
@@ -308,7 +308,8 @@ def desk_state_wave0() -> None:
     migrations = "\n".join(
         p.read_text(encoding="utf-8") for p in sorted((ROOT / "supabase/migrations").glob("*.sql"))
     )
-    later = sorted((ROOT / "supabase/migrations").glob("002*.sql"))
+    later = sorted((ROOT / "supabase/migrations").glob("*_desk_state_wave0.sql"))
+    later += sorted((ROOT / "supabase/migrations").glob("*_cta_library.sql"))
     later_src = "\n".join(p.read_text(encoding="utf-8") for p in later)
     check(
         "desk_state: a migration after 0011 allows 'kit'",
