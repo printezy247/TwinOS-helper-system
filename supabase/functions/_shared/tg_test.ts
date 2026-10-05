@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "std/assert/mod.ts";
-import { answerCallbackQuery, call, editMessageReplyMarkup, editMessageText, sendPoll, TgError } from "./tg.ts";
+import { answerCallbackQuery, call, editMessageReplyMarkup, editMessageText, pollSnapshot, sendPoll, TgError } from "./tg.ts";
 
 // A token-shaped value would trip the CI secret grep; the client never
 // validates its shape, so anything non-empty works.
@@ -118,4 +118,39 @@ Deno.test("sendPoll: the question, the options and an anonymous electorate, as T
   } finally {
     restore(state);
   }
+});
+
+Deno.test("pollSnapshot: the tally Telegram pushes becomes a row, and anything malformed is refused", () => {
+  assertEquals(pollSnapshot({
+    id: "poll-123",
+    question: "What hurts most?",
+    total_voter_count: 87,
+    is_closed: false,
+    options: [
+      { text: "Entering early", voter_count: 41 },
+      { text: "Moving stops", voter_count: 30 },
+      { text: "Overtrading", voter_count: 16 },
+    ],
+  }), {
+    pollId: "poll-123",
+    question: "What hurts most?",
+    options: [
+      { text: "Entering early", votes: 41 },
+      { text: "Moving stops", votes: 30 },
+      { text: "Overtrading", votes: 16 },
+    ],
+    totalVoters: 87,
+    closed: false,
+  });
+
+  assertEquals(pollSnapshot(null), null, "not a poll at all");
+  assertEquals(pollSnapshot({ question: "no id" }), null,
+    "the id is the only thing tying a tally to the post that asked it");
+  assertEquals(pollSnapshot({ id: "x", question: "q", options: "nope" })?.options, [],
+    "an options field that is not a list is an empty list, not a throw");
+  assertEquals(
+    pollSnapshot({ id: "x", question: { text: "Nested?" }, total_voter_count: -5, options: [{ text: "a", voter_count: "7" }] }),
+    { pollId: "x", question: "Nested?", options: [{ text: "a", votes: 7 }], totalVoters: 0, closed: false },
+    "question arrives as an object now, and counts are whole numbers or nothing",
+  );
 });

@@ -96,9 +96,9 @@ class TestToolList(Base):
         for n in ("twinos_draft", "twinos_batch", "twinos_request_approval", "twinos_schedule", "twinos_result_reply", "twinos_link",
                   "twinos_manual_metrics", "twinos_friday", "twinos_health", "twinos_csi_log", "twinos_clip", "twinos_brief",
                   "twinos_inbox", "twinos_analytics", "twinos_research", "twinos_feeds",
-                  "twinos_search", "twinos_ideas", "twinos_channels"):
+                  "twinos_search", "twinos_ideas", "twinos_channels", "twinos_polls"):
             self.assertIn(n, names)
-        self.assertEqual(len(names), 19)
+        self.assertEqual(len(names), 20)
         for n in names:
             self.assertFalse(n == "twinos_approve" or (("approv" in n) and n != "twinos_request_approval"), n)
         for t in tm.mcp_tools():
@@ -124,7 +124,7 @@ class TestToolList(Base):
         msgs = [json.loads(l) for l in out.getvalue().strip().split("\n")]
         self.assertEqual([m["id"] for m in msgs], [1, 2, 3, 4, 5, 6])
         self.assertEqual(msgs[0]["result"]["serverInfo"]["name"], "twinos")
-        self.assertEqual(len(msgs[1]["result"]["tools"]), 19)
+        self.assertEqual(len(msgs[1]["result"]["tools"]), 20)
         self.assertEqual(msgs[2]["result"]["content"][0]["text"], "Nothing broken. Carry on.")
         self.assertTrue(msgs[3]["result"].get("isError"))
         self.assertIn("Jack", msgs[3]["result"]["content"][0]["text"])
@@ -612,6 +612,21 @@ class TestResearchReads(Base):
             self.assertEqual(out["ideas"][0]["matched"], ["gold"])
         finally:
             FakeTwinOS.state["bodies"].pop("/functions/v1/research/ideas", None)
+
+    def test_polls_read_the_tally_newest_first(self):
+        FakeTwinOS.state["bodies"]["/rest/v1/poll_results"] = [
+            {"poll_id": "p1", "question": "What hurts most?", "total_voters": 87, "is_closed": True,
+             "options": [{"text": "Entering early", "votes": 41}]},
+        ]
+        try:
+            out = tm.tool_call("twinos_polls", {})
+            r = self.last()
+            self.assertEqual(r["path"].split("?")[0], "/rest/v1/poll_results")
+            self.assertIn("order=captured_at.desc", r["path"], "the latest tally is the one that counts")
+            self.assertEqual(out[0]["total_voters"], 87)
+            self.assertEqual(out[0]["options"][0]["votes"], 41)
+        finally:
+            FakeTwinOS.state["bodies"].pop("/rest/v1/poll_results", None)
 
     def test_channels_asks_for_a_live_count_by_default_and_can_be_read_without_one(self):
         FakeTwinOS.state["bodies"]["/functions/v1/research/channels"] = {
