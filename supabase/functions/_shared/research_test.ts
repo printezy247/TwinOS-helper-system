@@ -194,3 +194,22 @@ Deno.test("pickIdeas: an equity post is out of scope, without taking the dollar 
   assert(keep, "the dollar index stays: it is a subject Jack covers");
   assertEquals(keep.matched, ["gold", "usd", "dxy", "index"]);
 });
+
+Deno.test("pickIdeas: a currency-pair-shaped symbol must be one Jack trades, and education posts need no symbol at all", () => {
+  const now = Date.parse("2026-10-05T00:00:00Z");
+  const personas = [{ id: 1, pillar: "Gold", terms: ["bull", "flag", "gold", "trade", "rules"] }];
+  const got = pickIdeas([
+    { id: "qnt", title: "QNTUSD — Bull flag after the rip", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    { id: "xau", title: "XAUUSD — Bull flag above 4100", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    // no symbol in the title at all: a lesson about trading rules is in scope
+    { id: "lesson", title: "5 ways traders break the rules they set", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    // NFP is an acronym, not an asset, and must not be read as a pair
+    { id: "nfp", title: "Gold and NFP week ahead", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+  ], personas, { now });
+
+  const ids = got.map((i) => i.id);
+  assert(!ids.includes("qnt"), "a pair-shaped symbol outside the allowlist is not a candidate");
+  assert(ids.includes("xau"), "XAUUSD trades, so XAUUSD stays");
+  assert(ids.includes("lesson"), "an education post is not required to name an asset");
+  assert(ids.includes("nfp"), "NFP is macro vocabulary, not a symbol");
+});
