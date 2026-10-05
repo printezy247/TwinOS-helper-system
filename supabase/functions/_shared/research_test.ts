@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertThrows } from "std/assert/mod.ts";
 import {
-  buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, scoreTopic, topicRisk,
+  buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, topicRisk,
 } from "./research.ts";
 
 Deno.test("parseSuggest: the suggestion list out of Google's autocomplete answer", () => {
@@ -34,13 +34,6 @@ Deno.test("demandScore: autocomplete depth, lifted by Creator Search Insights, c
   assertEquals(demandScore({ suggestions: 5, csiPopularity: 100, csiTrend: "up" }), 0.9);
   assertEquals(demandScore({ suggestions: 9, csiPopularity: 100, csiTrend: "up" }), 1);
   assertEquals(demandScore({ suggestions: 5, csiTrend: "down" }), 0.5);
-});
-
-Deno.test("scoreTopic: demand x ICP fit x (1 - risk)", () => {
-  assertEquals(scoreTopic({ demand: 0.8, icpFit: 1, risk: 0 }), 0.8);
-  assertEquals(scoreTopic({ demand: 0.8, icpFit: 0.5, risk: 0 }), 0.4);
-  assertEquals(scoreTopic({ demand: 0.8, icpFit: 1, risk: 1 }), 0);
-  assertEquals(scoreTopic({ demand: 0.8, icpFit: 1, risk: 0.25 }), 0.6);
 });
 
 Deno.test("buildBrief: the week's calendar slots, the best fitting topic for each pillar, each topic once", () => {

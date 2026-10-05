@@ -22,7 +22,7 @@ import { sendMessage } from "_shared/tg.ts";
 import { cycleWeek, nextMonday } from "_shared/batch.ts";
 import { similarity } from "_shared/moderation.ts";
 import { articleBrief } from "_shared/articles.ts";
-import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, scoreTopic, topicRisk } from "_shared/research.ts";
+import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, queryVariants, topicRisk } from "_shared/research.ts";
 import { nextHook } from "_shared/hooks.ts";
 
 const LANGS = ["en", "ms", "manglish"] as const;
@@ -126,13 +126,22 @@ serve(async (req) => {
             .filter((x) => x.sim >= 0.5).sort((a, b) => b.sim - a.sim)[0]?.c;
           const demand = demandScore({ suggestions: terms.length, csiPopularity: lift?.value === null ? null : Number(lift?.value), csiTrend: lift?.trend as string | null });
           const risk = topicRisk(seed);
+          // total_score is a generated column (0007): Postgres computes it from
+          // demand_score x icp_fit x (1 - compliance_risk) and refuses a write
+          // (error 428C9). Writing it here made every insert fail, and the
+          // failure was discarded — 260 queries, zero clusters, and a Monday
+          // brief with nothing to suggest. The write is checked now.
           const row = {
             name: seed, pillar: persona.main_pillar, icp: persona.id, demand_score: demand, icp_fit: 1,
-            compliance_risk: risk, total_score: scoreTopic({ demand, icpFit: 1, risk }), query_count: terms.length,
+            compliance_risk: risk, query_count: terms.length,
           };
-          const { data: existing } = await db.from("topic_clusters").select("id").eq("name", seed).eq("icp", persona.id).maybeSingle();
-          if (existing) await db.from("topic_clusters").update(row).eq("id", existing.id);
-          else await db.from("topic_clusters").insert({ ...row, status: "new", created_by: caller.actor });
+          const { data: existing, error: findErr } = await db.from("topic_clusters")
+            .select("id").eq("name", seed).eq("icp", persona.id).maybeSingle();
+          if (findErr) throw bad(`topic_clusters: ${findErr.message}`);
+          const { error: writeErr } = existing
+            ? await db.from("topic_clusters").update(row).eq("id", existing.id)
+            : await db.from("topic_clusters").insert({ ...row, status: "new", created_by: caller.actor });
+          if (writeErr) throw bad(`topic_clusters: ${writeErr.message}`);
         }
       }
     }

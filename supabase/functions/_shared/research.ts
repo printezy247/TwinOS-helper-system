@@ -4,7 +4,10 @@
  *
  *   parseSuggest / queryVariants   Google autocomplete, the free demand signal (ms / MY included)
  *   topicRisk                      a topic that needs a claim, or a banned word, is risky to film
- *   demandScore / scoreTopic       demand x ICP fit x (1 - compliance risk), each 0..1
+ *   demandScore                   demand, each 0..1; the row's total_score is
+ *                                 demand x ICP fit x (1 - compliance risk) and
+ *                                 Postgres computes it (topic_clusters is
+ *                                 generated) — never write it
  *   buildBrief                     next week's calendar slots with the best fitting topic for each
  *
  * Pure. research/index.ts does the fetching and the writing.
@@ -43,10 +46,6 @@ export function demandScore(p: { suggestions: number; csiPopularity?: number | n
   const pop = p.csiPopularity ? (Math.min(Math.max(p.csiPopularity, 0), 100) / 100) * 0.3 : 0;
   const trend = p.csiTrend === "up" ? 0.1 : 0;
   return Math.min(1, round2(base + pop + trend));
-}
-
-export function scoreTopic(p: { demand: number; icpFit: number; risk: number }): number {
-  return round2(p.demand * p.icpFit * (1 - p.risk));
 }
 
 export interface BriefSlot { dow: number; pillar: string | null; topic: string | null }
