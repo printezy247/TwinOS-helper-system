@@ -138,3 +138,20 @@ Deno.test("personaTerms: an empty or unusable bag still answers, so the scorer n
   assertEquals(personaTerms({}, null), []);
   assertEquals(personaTerms({ en: ["???"] }, null), [], "nothing readable means no terms, not a throw");
 });
+
+Deno.test("pickIdeas: words every post uses do not score, so a topical post beats a coincidental one", () => {
+  const now = Date.parse("2026-10-05T00:00:00Z");
+  const personas = [{ id: 1, pillar: "Gold", terms: ["all", "one", "best", "stop", "tp", "gold", "nfp"] }];
+  const got = pickIdeas([
+    // a post on any subject at all, carrying the vocabulary of every trading post
+    { id: "generic", title: "All one best stop tp — read now", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+    // the one a gold channel would actually publish
+    { id: "topic", title: "Gold and NFP week ahead", summary: null, publishedAt: "2026-10-05T00:00:00Z" },
+  ], personas, { now });
+
+  const topic = got.find((i) => i.id === "topic");
+  assertEquals(topic?.matched, ["gold", "nfp"], "the words that tell posts apart are the ones that count");
+  assertEquals(topic?.score, 2);
+  assertEquals(got.find((i) => i.id === "generic"), undefined,
+    "a post matching only words every post carries is not an idea, however many of them it carries");
+});
