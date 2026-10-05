@@ -463,7 +463,12 @@ export function check(v: VariantInput): CheckResult {
       evidence: claims.map((c) => `${c.kind}: ${c.match}`),
     });
   }
-  // Offer and signal posts always need Jack regardless of what the regex saw.
+  // These post types always need Jack regardless of what the regex saw. The
+  // flag list is the mechanism, not just a label: needs_approval above and the
+  // DB trigger (cardinality(claim_flags) > 0 → requires_approval) both read it,
+  // so an empty list here would let an offer publish without Jack. claim_flags
+  // therefore carries claim kinds AND these five post types — do not tidy it
+  // into one vocabulary without replacing the trigger.
   if (["offer", "signal_card", "gold_map", "member_result", "scorecard"].includes(v.post_type)) {
     if (!claimFlags.includes(v.post_type)) claimFlags.push(v.post_type);
   }
