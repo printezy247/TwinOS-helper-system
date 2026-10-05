@@ -11,10 +11,14 @@
  * real UTC instant. MYT (UTC+8) midnight is 16:00Z the previous day.
  */
 export function startOfDayInTz(tz: string, now: Date = new Date()): string {
+  const offsetAt = (t: Date) => t.getTime() - new Date(t.toLocaleString("en-US", { timeZone: tz })).getTime();
   const local = new Date(now.toLocaleString("en-US", { timeZone: tz }));
-  const offsetMs = now.getTime() - local.getTime();
   local.setHours(0, 0, 0, 0);
-  return new Date(local.getTime() + offsetMs).toISOString();
+  // A zone that changes offset between now and today's midnight (a DST change)
+  // would get the wrong instant from one offset for both, so correct the guess
+  // with the offset the candidate instant actually falls in.
+  const guess = local.getTime() + offsetAt(now);
+  return new Date(local.getTime() + offsetAt(new Date(guess))).toISOString();
 }
 
 /**

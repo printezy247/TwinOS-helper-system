@@ -15,6 +15,14 @@ Deno.test("dayAndWeekStart: on a Monday the week starts today", () => {
   assertEquals(r.week, r.day);
 });
 
+Deno.test("dayAndWeekStart: the offset at today's midnight, not the one at now", () => {
+  // Sunday 1 Nov 2026: New York leaves DST at 06:00Z. Noon local is EST
+  // (UTC-5) but midnight local was still EDT (UTC-4) — one offset for both
+  // lands an hour late.
+  const r = dayAndWeekStart("America/New_York", new Date("2026-11-01T12:00:00Z"));
+  assertEquals(r.day, "2026-11-01T04:00:00.000Z");
+});
+
 Deno.test("todaySummary: counts, failures, next up, saved minutes", () => {
   const s = todaySummary([
     { platform: "telegram", run_at: "2026-10-03T05:00:00Z", status: "done" },
