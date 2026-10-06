@@ -22,7 +22,9 @@ Description=TwinOS PC worker (drop folder, Telechurn import, backup, clips)
 [Service]
 Type=simple
 WorkingDirectory=%h/TwinOS-helper-system/workers/pc
-ExecStart=/usr/bin/python3 %h/TwinOS-helper-system/workers/pc/twinos_worker.py
+# The wrapper picks .venv/bin/python3 when it exists (faster-whisper and
+# Pillow live there) and the system python when it does not.
+ExecStart=/bin/bash %h/TwinOS-helper-system/workers/pc/run_worker.sh
 # always, not on-failure: a worker that exits cleanly - a locked keyring at
 # boot, for instance - would otherwise stay down until someone noticed.
 Restart=always

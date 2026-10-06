@@ -3,6 +3,13 @@
 
 # studio/clipper.py — GPU transcription for live clipping (Phase 5)
 faster-whisper>=1.0 ; extra == "studio"
+# faster-whisper 1.2.1 still calls av.open(..., metadata_errors="ignore"), which
+# av 14 removed: without the pin every transcription dies in the decoder.
+av<14 ; extra == "studio"
+# CTranslate2 loads cuBLAS and cuDNN at run time. The pip wheels keep them in
+# site-packages, which run_worker.sh puts on LD_LIBRARY_PATH.
+nvidia-cublas-cu12 ; extra == "studio"
+nvidia-cudnn-cu12 ; extra == "studio"
 
 # studio/scorecard.py — Friday scorecard image renderer (Phase 2, port of ASAP receipt.py)
 Pillow>=10 ; extra == "studio"

@@ -224,3 +224,46 @@ class AssTime(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhisperComputeType(unittest.TestCase):
+    """The GPU this runs on decides the compute type; the code must not assume
+    the fastest one exists. A GTX 1050 Ti is compute 6.1 and has no int8_float16."""
+
+    def test_it_falls_back_to_a_type_this_gpu_supports_and_reports_which(self):
+        tried = []
+
+        class FakeWhisper:
+            def __init__(self, name, device=None, compute_type=None):
+                tried.append((device, compute_type))
+                if compute_type == "int8_float16":
+                    raise ValueError(
+                        "Requested int8_float16 compute type, but the target device or backend "
+                        "do not support efficient int8_float16 computation."
+                    )
+
+        _model, device, compute_type = clipper.load_model(FakeWhisper, "small")
+        self.assertEqual(device, "cuda")
+        self.assertEqual(compute_type, "int8_float32", "the next type down, not a crash")
+        self.assertEqual(tried[0], ("cuda", "int8_float16"), "the fast one is tried first")
+
+    def test_when_no_gpu_type_works_it_lands_on_the_cpu(self):
+        class FakeWhisper:
+            def __init__(self, name, device=None, compute_type=None):
+                if device == "cuda":
+                    raise RuntimeError("no CUDA driver")
+
+        _model, device, compute_type = clipper.load_model(FakeWhisper, "small")
+        self.assertEqual(device, "cpu")
+        self.assertIn(compute_type, clipper.COMPUTE_CANDIDATES["cpu"])
+
+    def test_every_device_list_is_ordered_fastest_first_and_portable_last(self):
+        self.assertEqual(clipper.COMPUTE_CANDIDATES["cuda"][0], "int8_float16")
+        self.assertEqual(clipper.COMPUTE_CANDIDATES["cuda"][-1], "float32")
+        self.assertEqual(clipper.COMPUTE_CANDIDATES["cpu"][-1], "float32")
+        self.assertTrue(all(clipper.COMPUTE_CANDIDATES[d] for d in ("cuda", "cpu")))
+
+    def test_a_missing_faster_whisper_says_so_rather_than_crashing_oddly(self):
+        with self.assertRaises(RuntimeError) as cm:
+            clipper.load_model(None, "small")
+        self.assertIn("faster-whisper", str(cm.exception))

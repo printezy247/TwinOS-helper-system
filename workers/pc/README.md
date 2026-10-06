@@ -12,8 +12,46 @@ result back (plan §7).
 | `twinos_worker.py` | The worker. Python 3.12 standard library only |
 | `studio/clipper.py` | Live recording → transcript → clips (needs `faster-whisper`, `ffmpeg`). Phase 5 |
 | `requirements.txt` | Optional extras; the worker runs without them |
+| `run_worker.sh` | Starts the worker with the `.venv` python when it exists |
 | `twinos-worker.service` | systemd **user** unit |
 | `test_worker.py` | `python3 -m unittest` (no network, no keyring) |
+
+## GPU setup (clipping)
+
+The worker itself is standard library only. Clipping needs the studio extras,
+and they live in a venv beside the worker so they can never collide with the
+system python:
+
+```bash
+cd ~/TwinOS-helper-system/workers/pc
+python3 -m venv .venv
+./.venv/bin/pip install "faster-whisper>=1.0" "Pillow>=10" "av<14" nvidia-cublas-cu12 nvidia-cudnn-cu12
+systemctl --user restart twinos-worker      # picks the venv up via run_worker.sh
+```
+
+Three things on this machine are not optional, and each one cost a real
+failure to find:
+
+- **`av<14`.** faster-whisper 1.2.1 still calls
+  `av.open(..., metadata_errors="ignore")`; av 14 removed that argument, so
+  every transcription dies in the decoder with `TypeError: open() got an
+  unexpected keyword argument 'metadata_errors'`.
+- **`nvidia-cublas-cu12` and `nvidia-cudnn-cu12`.** CTranslate2 loads them at
+  run time and finds nothing without them:
+  `Library libcublas.so.12 is not found or cannot be loaded`. `run_worker.sh`
+  puts their `lib` directories on `LD_LIBRARY_PATH`.
+- **The compute type is discovered, not assumed.** The GTX 1050 Ti is compute
+  capability 6.1 and has no `int8_float16`; `clipper.load_model()` walks down
+  a list per device and reports which one it used (this machine lands on
+  `cuda`/`int8_float32`).
+
+Verify without a recording of your own:
+
+```bash
+ffmpeg -f lavfi -i "sine=frequency=440:duration=6" -ar 16000 -ac 1 /tmp/t.wav
+./.venv/bin/python -c "import sys; sys.path.insert(0,'.'); from pathlib import Path; \
+  from studio import clipper; print(clipper.transcribe(Path('/tmp/t.wav'), 'en')[:1])"
+```
 
 ## Job kinds (Phase 1)
 

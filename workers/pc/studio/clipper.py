@@ -40,10 +40,52 @@ def _ffmpeg() -> str:
     return exe
 
 
-def transcribe(audio: Path, lang: str) -> list[dict[str, Any]]:
-    if WhisperModel is None:
+MODEL_NAME = "small"
+
+# Compute types worth trying per device, fastest first. Not every GPU supports
+# every one: int8_float16 needs compute capability 7.0, so a Pascal card — the
+# GTX 1050 Ti on this machine is 6.1 — answers "Requested int8_float16 compute
+# type, but the target device or backend do not support efficient int8_float16
+# computation". Clipping must not fail on the hardware it is installed on, so
+# the loader walks down the list instead of assuming the top of it.
+COMPUTE_CANDIDATES: dict[str, tuple[str, ...]] = {
+    "cuda": ("int8_float16", "int8_float32", "float16", "float32"),
+    "cpu": ("int8_float32", "int8", "float32"),
+}
+
+_MODEL_CACHE: dict[str, tuple[Any, str, str]] = {}
+
+
+def load_model(model_class: Any = None, name: str = MODEL_NAME) -> tuple[Any, str, str]:
+    """The first (device, compute_type) this machine can build.
+
+    Returns `(model, device, compute_type)`. The real model is cached: the
+    worker is long-lived and reloading 500 MB per clip job would be the most
+    expensive thing it does. A test passes its own class and never touches the
+    cache. Nothing working raises RuntimeError with the last reason, so a job
+    reports something readable instead of a bare library error.
+    """
+    cls = WhisperModel if model_class is None else model_class
+    if cls is None:
         raise RuntimeError("faster-whisper not installed")
-    model = WhisperModel("small", device="cuda", compute_type="int8_float16")
+    if model_class is None and name in _MODEL_CACHE:
+        return _MODEL_CACHE[name]
+    last: Exception | None = None
+    for device in ("cuda", "cpu"):
+        for compute_type in COMPUTE_CANDIDATES[device]:
+            try:
+                model = cls(name, device=device, compute_type=compute_type)
+            except Exception as e:  # noqa: BLE001 - this type is not for this card; try the next
+                last = e
+                continue
+            if model_class is None:
+                _MODEL_CACHE[name] = (model, device, compute_type)
+            return model, device, compute_type
+    raise RuntimeError(f"could not load the whisper model {name!r}: {last}")
+
+
+def transcribe(audio: Path, lang: str) -> list[dict[str, Any]]:
+    model, _device, _compute_type = load_model()
     segments, _ = model.transcribe(str(audio), language=lang if lang in ("en", "ms") else None, word_timestamps=True)
     return [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments]
 
