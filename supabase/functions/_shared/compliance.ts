@@ -29,6 +29,19 @@ export type PostType =
 export type Platform = "telegram" | "instagram" | "facebook" | "threads" | "youtube" | "tiktok" | "x";
 export type Lang = "en" | "ms";
 
+/**
+ * The three lists, in one place. They lived in content/index.ts, which meant a
+ * second function needing them (jobs, for the asset fan-out) either duplicated
+ * the list or could not check its input at all.
+ */
+export const POST_TYPES: readonly PostType[] = [
+  "gold_map", "macro_card", "signal_card", "result_reply", "lesson", "channel_audit", "scorecard",
+  "outlook", "offer", "poll", "evening_wrap", "news_alert", "member_result", "holiday", "start_here",
+  "faq", "live_recap",
+];
+export const PLATFORMS: readonly Platform[] = ["telegram", "instagram", "facebook", "threads", "youtube", "tiktok", "x"];
+export const LANGS: readonly Lang[] = ["en", "ms"];
+
 export interface VariantInput {
   post_type: PostType;
   platform: Platform;

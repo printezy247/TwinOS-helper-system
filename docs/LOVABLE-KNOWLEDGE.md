@@ -101,6 +101,11 @@ The server enforces it again (403), so the UI is not the guard, just honest.
 
 Also a thin **Settings** page that only reads `settings` (editing stays in SQL for now).
 
+Two more read-only screens are specified as prompts 6 and 7 in
+`docs/LOVABLE-WAVE4-PROMPTS.md` and may be built when you get to them, in the
+same style as the rest: **Research feeds** (`feeds` + `feed_items`) and
+**Poll results** (`poll_results`). Both are read-only; neither writes.
+
 ## Design notes
 
 - Dark UI. EzyMap colours: green `#19C37D` (up / approved / ok), red `#E5484D`

@@ -13,6 +13,7 @@ export type Role =
   | "ops_bot" // the tg-webhook function acting for the bot
   | "pc_worker" // scoped key on Jack's PC
   | "ezyai" // scoped key held by the EzyAi bot on its host
+  | "sales_bot" // scoped key for @EzyRegisterBot, wherever it is hosted
   | "tradingview" // tv-webhook secret
   | "cron" // pg_cron / scheduler invocations (service role + x-twinos-actor: cron)
   | "dashboard" // any other logged-in dashboard user (read-mostly)
@@ -52,6 +53,7 @@ const ALL: Role[] = [
   "ops_bot",
   "pc_worker",
   "ezyai",
+  "sales_bot",
   "tradingview",
   "cron",
   "dashboard",
@@ -79,7 +81,10 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "metrics.manual": ["jack", "abdul"],
   "imports.telechurn": ["jack", "pc_worker"],
   "reports.read": ALL,
-  "health.beat": ["ezyai", "ops_bot", "pc_worker", "cron", "abdul", "jack"],
+  // sales_bot is here because the health board watches it and it could never
+  // report: there was no such role, so no key could ever carry one. It gets
+  // nothing else — least privilege until it has a job to do here.
+  "health.beat": ["ezyai", "sales_bot", "ops_bot", "pc_worker", "cron", "abdul", "jack"],
   "research.csi": ["jack", "abdul"],
   "research.brief": ["jack", "abdul", "pc_worker"],
   "research.run": ["jack", "abdul", "cron"],

@@ -123,8 +123,9 @@ class MintKeys(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assert_no_key_shown(out)
         active = {r["name"]: r for r in self.rows() if not r["revoked"]}
-        self.assertEqual(set(active), {"abdul", "pc-worker", "ezyai", "abdul-viewer"})
-        for name, entry in (("abdul", "abdul_key"), ("pc-worker", "worker_key"), ("ezyai", "ezyai_key"), ("abdul-viewer", "viewer_key")):
+        self.assertEqual(set(active), {"abdul", "pc-worker", "ezyai", "abdul-viewer", "sales-bot"})
+        for name, entry in (("abdul", "abdul_key"), ("pc-worker", "worker_key"), ("ezyai", "ezyai_key"),
+                            ("abdul-viewer", "viewer_key"), ("sales-bot", "sales_bot_key")):
             self.assertEqual(self.ring_value(entry), active[name]["key"])
             self.assertIn(active[name]["key_prefix"], out)
         self.assertEqual(self.ring_value("url"), "https://testref.supabase.co")
@@ -137,7 +138,7 @@ class MintKeys(unittest.TestCase):
         before = self.rows()
         code, out = self.run_script()
         self.assertEqual(code, 0, out)
-        self.assertEqual(out.count("already set"), 6, out)  # url, apikey and the four keys
+        self.assertEqual(out.count("already set"), 7, out)  # url, apikey and the five keys
         self.assertEqual(self.rows(), before)
 
     def test_key_missing_from_keyring_is_not_reminted_silently(self):
@@ -146,7 +147,7 @@ class MintKeys(unittest.TestCase):
         code, out = self.run_script()
         self.assertEqual(code, 0, out)
         self.assertIn("--rotate worker", out)
-        self.assertEqual(len(self.rows()), 4)
+        self.assertEqual(len(self.rows()), 5)
 
     def test_rotate_revokes_the_old_key_and_stores_a_new_one(self):
         self.run_script()
@@ -181,7 +182,7 @@ class MintKeys(unittest.TestCase):
     def test_unknown_who_is_refused(self):
         code, out = self.run_script("--rotate", "bob")
         self.assertNotEqual(code, 0)
-        self.assertIn("abdul, worker, ezyai or viewer", out)
+        self.assertIn("abdul, worker, ezyai, viewer or sales", out)
 
 
 if __name__ == "__main__":

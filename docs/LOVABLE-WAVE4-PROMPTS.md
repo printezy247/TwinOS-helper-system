@@ -88,3 +88,40 @@ the prompts below assume them.)
 > say so once in a caption. No charts library needed; plain tables and
 > tiles are fine. Empty state: "Numbers arrive after the first posts"
 > with the honest reason.
+
+## 6. Research feeds (the social sources)
+
+> Add a read-only **Research feeds** page. It shows what the feed reader has
+> collected, and it never writes anything.
+>
+> Top: one row per active feed from `feeds` (`name`, `kind`, `last_status`,
+> `last_fetched_at`, `items_seen`) as a compact table. Colour the row red when
+> `last_status` is not `ok` and show `last_error` in a tooltip or a caption —
+> a feed that has stopped is the point of this screen. `kind` is one of `rss`,
+> `atom`, `youtube_rss`, `bluesky`, `mastodon`; show it as a small badge so it
+> is obvious which sources are social and which are XML.
+>
+> Below: the newest items from `feed_items`, newest first by `published_at`,
+> 50 at a time with a "load more". Each row: `title` (link to `link` if it is
+> set), the feed's `name` (join `feed_id` → `feeds.name`), `published_at`, and
+> `summary` truncated to two lines with a click to expand. Add a text box that
+> filters the loaded rows on `title` and `summary` client-side — no server
+> search needed.
+>
+> Empty state: "No feed items yet" with the honest reason (the reader runs
+> every 6 hours).
+
+## 7. Poll results (what members answered)
+
+> Add a read-only **Poll results** page on `poll_results`. One card per row,
+> newest `captured_at` first.
+>
+> Each card: `question` as the title, then one row per entry in the `options`
+> JSON array — `text` and `votes` — as a horizontal bar sized against the
+> largest `votes` in that poll, with the count at the end of the bar. Under the
+> bars: "N voted" from `total_voters`, and a "closed" badge when `is_closed`.
+> If `variant_id` is set, link through to that content item; if it is null, no
+> link (the poll predates the link).
+>
+> Sort by `captured_at` desc. Empty state: "No polls have run yet" with the
+> honest reason (a poll records when members vote, not when it is posted).

@@ -21,7 +21,12 @@ import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
-import { aiNumberGuard, check as complianceCheck, withRewriteGuard } from "_shared/compliance.ts";
+import {
+  aiNumberGuard, check as complianceCheck, PLATFORMS, POST_TYPES, withRewriteGuard,
+  type Platform, type PostType,
+} from "_shared/compliance.ts";
+import { createDraft } from "_shared/content.ts";
+import { fanOut } from "_shared/fanout.ts";
 import { logAction } from "_shared/log.ts";
 import { nextHook } from "_shared/hooks.ts";
 import * as tg from "_shared/tg.ts";
@@ -279,8 +284,48 @@ serve(async (req) => {
         ? await db.from("assets").update(row).eq("id", known.id).select("id").single()
         : await db.from("assets").insert(row).select("id").single();
       if (error || !data) throw bad(`assets ingest failed: ${error?.message}`);
-      await logAction({ actor: caller.actor, action: "assets.ingest", target: data.id, payload: { path, bytes: body.bytes } });
-      return remember(idem, 201, { ok: true, asset_id: data.id });
+
+      // Fan-out (PHASES line 76): an asset that arrives with a caption and a
+      // post type becomes the drafts for every platform, instead of stopping at
+      // the assets row. It reuses the draft pipeline (so the compliance
+      // checklist and the [NEEDED] fields apply exactly as they do for a draft
+      // made by hand) and fanOut for everything past the master platform.
+      //
+      // Without `meta.post_type` this is the old behaviour: the row, and
+      // nothing else. That keeps the drop folder and the studio working.
+      const meta = (row.meta ?? {}) as Record<string, unknown>;
+      const wanted = typeof meta.post_type === "string" && (POST_TYPES as readonly string[]).includes(meta.post_type)
+        ? meta.post_type as PostType : null;
+      let draft: { content_id: string; platforms: string[] } | null = null;
+      if (wanted) {
+        const platforms = [...new Set(
+          (Array.isArray(meta.platforms) ? meta.platforms.map(String) : ["telegram"])
+            .filter((pl) => (PLATFORMS as readonly string[]).includes(pl)),
+        )];
+        const list = platforms.length ? platforms : ["telegram"];
+        const kind = /video|clip|reel/i.test(row.kind) ? "video" as const : "photo" as const;
+        const made = await createDraft({
+          post_type: wanted,
+          lang: meta.lang === "ms" ? "ms" : "en",
+          platform: list[0] as Platform,
+          fields: {},
+          body_override: typeof meta.caption === "string" ? meta.caption : "",
+          media: [{ kind, asset_id: data.id }],
+          source: { via: "jobs.asset", asset_id: data.id },
+          actor: caller.actor,
+        });
+        await db.from("assets").update({ item_id: made.content_id }).eq("id", data.id);
+        if (list.length > 1) {
+          await fanOut(made.content_id, { platforms: list, assetId: data.id, actor: caller.actor });
+        }
+        draft = { content_id: made.content_id, platforms: list };
+      }
+
+      await logAction({
+        actor: caller.actor, action: "assets.ingest", target: data.id,
+        payload: { path, bytes: body.bytes, draft: draft?.content_id ?? null },
+      });
+      return remember(idem, 201, { ok: true, asset_id: data.id, draft });
     }
 
     case "telechurn": {

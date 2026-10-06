@@ -30,15 +30,7 @@ import { startOfDayInTz } from "_shared/time.ts";
 import {
   cycleWeek, mondayOf, nextMonday, planBatch, runAtToInstant, slotToInstant, summaryLines, sweepPlan, topicTitle, type SweepItem,
 } from "_shared/batch.ts";
-import type { Lang, Platform, PostType } from "_shared/compliance.ts";
-
-const POST_TYPES: readonly PostType[] = [
-  "gold_map", "macro_card", "signal_card", "result_reply", "lesson", "channel_audit", "scorecard",
-  "outlook", "offer", "poll", "evening_wrap", "news_alert", "member_result", "holiday", "start_here",
-  "faq", "live_recap",
-];
-const PLATFORMS: readonly Platform[] = ["telegram", "instagram", "facebook", "threads", "youtube", "tiktok", "x"];
-const LANGS: readonly Lang[] = ["en", "ms"];
+import { LANGS, PLATFORMS, POST_TYPES, type PostType } from "_shared/compliance.ts";
 
 const REMINDERS: Record<string, { post_type: PostType; text: string }> = {
   "remind-map": {

@@ -6,7 +6,8 @@
 #   ./scripts/mint-keys.sh --rotate WHO    revoke WHO's key and mint a new one
 #   ./scripts/mint-keys.sh --revoke WHO    revoke WHO's key and remove it from the keyring
 #
-# WHO is one of: abdul, worker, ezyai, viewer (read-only: ABDUL's TwinOS status line).
+# WHO is one of: abdul, worker, ezyai, viewer (read-only: ABDUL's status line),
+# sales (the sales bot's key, for its health beat).
 #
 # A key is printed nowhere: the CLI's answer is held in a shell variable, the key
 # is cut out of it and piped into `secret-tool store`. Only its first 12
@@ -28,10 +29,11 @@ spec() {
     worker) echo "pc-worker pc_worker worker_key" ;;
     ezyai)  echo "ezyai ezyai ezyai_key" ;;
     viewer) echo "abdul-viewer viewer viewer_key" ;;
+    sales)  echo "sales-bot sales_bot sales_bot_key" ;;
     *) return 1 ;;
   esac
 }
-ALL=(abdul worker ezyai viewer)
+ALL=(abdul worker ezyai viewer sales)
 field() { local f; read -r -a f <<<"$(spec "$1")"; echo "${f[$2]}"; }
 db_name()  { field "$1" 0; }
 db_role()  { field "$1" 1; }
@@ -122,7 +124,7 @@ case "${1:-}" in
     echo
     ;;
   --rotate|--revoke)
-    who="${2:-}"; spec "$who" >/dev/null || die "say who: abdul, worker, ezyai or viewer"
+    who="${2:-}"; spec "$who" >/dev/null || die "say who: abdul, worker, ezyai, viewer or sales"
     if [ "$1" = "--rotate" ]; then
       say "rotating $who (the old key stops working now)"
       mint_into_ring "$who"
