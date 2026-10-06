@@ -118,31 +118,16 @@ async function verifyServiceJwt(jwt: string, secret: string): Promise<boolean> {
 
 /**
  * True when `jwt` is this project's service-role key. The key Supabase injects
- * into the function is compared first (constant time). Projects that run both
- * the legacy and the new API-key systems can inject a differently formatted
- * value than the legacy JWT Jack stores in Vault for pg_cron, so a miss falls
- * back to verifying the token itself (HS256 signature + `role` claim against
- * the project JWT secret). Without that secret, the last resort asks PostgREST
- * for a row of a table seed.sql always fills — `[]` is exactly what every
- * non-service JWT gets once RLS hides the rows, so a row must come back.
+ * into the function is compared first (constant time).
  */
 export async function isServiceKey(jwt: string): Promise<boolean> {
   const injected = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (injected && safeEqual(jwt, injected)) return true;
+
   const jwtSecret = Deno.env.get("SUPABASE_JWT_SECRET") ?? "";
   if (jwtSecret && await verifyServiceJwt(jwt, jwtSecret)) return true;
-  const url = Deno.env.get("SUPABASE_URL") ?? "";
-  if (!url || !jwt) return false;
-  try {
-    const res = await fetch(`${url}/rest/v1/settings?select=key&limit=1`, {
-      headers: { apikey: jwt, Authorization: `Bearer ${jwt}` },
-    });
-    if (!res.ok) return false;
-    const rows = await res.json().catch(() => null);
-    return Array.isArray(rows) && rows.length >= 1;
-  } catch {
-    return false;
-  }
+
+  return false;
 }
 
 export async function sha256Hex(value: string): Promise<string> {

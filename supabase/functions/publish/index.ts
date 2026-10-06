@@ -29,7 +29,7 @@ import { deskAlert } from "_shared/alerts.ts";
 import {
   DAILY_CAPS, metaConfigFromEnv, type MetaPlatform, publishFacebookReel, publishInstagram, publishThreads,
 } from "_shared/meta.ts";
-import { logAction, logTimeSaved } from "_shared/log.ts";
+import { logAction, logTimeSaved, sanitizeError } from "_shared/log.ts";
 import * as tg from "_shared/tg.ts";
 
 const PACE_MS = 1100; // Telegram: ~1 msg/s to one chat, 20/min to a group
@@ -265,7 +265,7 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
   } catch (err) {
     const c = classify(err);
     await setStatus(item.id, c.kind === "permanent" || job.attempts >= MAX_ATTEMPTS ? "failed" : "scheduled", actor, {
-      last_error: c.reason.slice(0, 500),
+      last_error: sanitizeError(c.reason).slice(0, 500),
     });
     return { ok: false, ...c };
   }

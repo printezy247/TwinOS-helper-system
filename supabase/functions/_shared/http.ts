@@ -50,8 +50,18 @@ export function errorResponse(err: unknown): Response {
   if (err instanceof HttpError) {
     return json({ error: err.code, message: err.message, ...err.detail }, err.status);
   }
-  console.error("[twinos] unhandled", err);
+  console.error("[twinos] unhandled", sanitizeError(err));
   return json({ error: "internal", message: "unexpected failure" }, 500);
+}
+
+/**
+ * Prevents sensitive data (tokens, keys, env vars) from leaking into logs.
+ * Replaces common secret patterns with [redacted].
+ */
+export function sanitizeError(err: unknown): string {
+  const msg = typeof err === "string" ? err : (err as any)?.message ?? String(err);
+  const SECRET_RE = /(?:token|secret|password|authorization|api_key|apikey|key_hash)\s*[:=]\s*[^,\s\n"]+/gi;
+  return msg.replace(SECRET_RE, "$1=[redacted]");
 }
 
 export const bad = (message: string, detail: Record<string, unknown> = {}) =>

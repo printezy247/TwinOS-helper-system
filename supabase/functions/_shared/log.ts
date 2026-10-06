@@ -16,6 +16,7 @@
  * and payload.minutes, so "what TwinOS did instead of Jack" is one query.
  */
 import { admin } from "./supabase.ts";
+import { sanitizeError } from "./http.ts";
 
 export interface LogEntry {
   actor: string;
@@ -45,11 +46,11 @@ export async function logAction(entry: LogEntry): Promise<void> {
       action: entry.action,
       target_table: entry.action.split(".")[0] || "system",
       target_id: entry.target ?? null,
-      payload: redact(entry.payload),
+      payload: redact(sanitizeError(entry.payload)),
     });
     if (error) console.warn("[action_log] insert failed", error.message, entry.action);
   } catch (err) {
-    console.warn("[action_log] insert threw", err);
+    console.warn("[action_log] insert threw", sanitizeError(err));
   }
 }
 
