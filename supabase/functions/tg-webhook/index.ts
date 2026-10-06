@@ -70,6 +70,8 @@ interface Update {
   my_chat_member?: ChatMemberUpdated;
   chat_join_request?: { chat: Chat; from: User; user_chat_id?: number; date: number; invite_link?: { invite_link: string; name?: string } };
   message_reaction_count?: { chat: Chat; message_id: number; date: number; reactions: Array<{ type: { type: string; emoji?: string }; total_count: number }> };
+  /** A post placed in a channel, by TwinOS or by hand. */
+  channel_post?: Message;
   /** A tally on its own: no chat, no message id, only the poll's id. */
   poll?: Record<string, unknown>;
 }
@@ -1419,6 +1421,27 @@ async function onReactions(r: NonNullable<Update["message_reaction_count"]>) {
 }
 
 /**
+ * A post that landed in a channel, whoever placed it.
+ *
+ * TwinOS records what it publishes, but Jack also posts by hand, and without
+ * this the channel-quiet watchdog cannot see those: it would keep warning
+ * about a channel that is posting every day. `tg_posts` is unique on
+ * (chat_id, message_id), so a post TwinOS sent itself is a duplicate here and
+ * is dropped rather than counted twice.
+ */
+async function onChannelPost(m: Message) {
+  const { error } = await admin().from("tg_posts").insert({
+    chat_id: m.chat.id,
+    message_id: m.message_id,
+    posted_at: new Date(m.date * 1000).toISOString(),
+    has_media: Boolean(m.photo || m.video),
+  });
+  if (error && !/duplicate|unique/i.test(error.message)) {
+    throw new Error(`tg_posts: ${error.message}`);
+  }
+}
+
+/**
  * A poll tally (UPGRADE-IDEAS #26). The poll update carries no chat and no
  * message id, so the row is joined back to the post through the id captured
  * when the poll was sent; a tally for a poll this install never sent is still
@@ -1480,6 +1503,7 @@ serve(async (req) => {
     else if (update.my_chat_member) await onMember(update.my_chat_member, "my_chat_member");
     else if (update.chat_join_request) await onJoinRequest(update.chat_join_request);
     else if (update.message_reaction_count) await onReactions(update.message_reaction_count);
+    else if (update.channel_post) await onChannelPost(update.channel_post);
     else if (update.poll) await onPoll(update.poll);
     else if (update.message) {
       const m = update.message;

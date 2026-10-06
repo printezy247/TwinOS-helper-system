@@ -169,7 +169,11 @@ serve(async (req) => {
     // tell the Desk once per cooldown instead of letting it fade silently.
     const { data: lastPost } = await db.from("tg_posts")
       .select("posted_at").order("posted_at", { ascending: false }).limit(1).maybeSingle();
-    if (channelStale(lastPost?.posted_at as string | null ?? null, Date.now(), CHANNEL_STALE_MS)) {
+    // A channel with no post on record is not quiet, it is not in use yet —
+    // the same rule the beats use above (never reported is setup, not an
+    // outage). Before this, a project that had not published once warned
+    // every cooldown forever. Once there is a first post, it behaves as before.
+    if (lastPost && channelStale(lastPost.posted_at as string, Date.now(), CHANNEL_STALE_MS)) {
       await deskAlert({
         db,
         key: "channel-quiet",
