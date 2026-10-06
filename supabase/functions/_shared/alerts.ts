@@ -2,9 +2,15 @@
  * Error alerts to the Desk with a cooldown per error and a repeat count
  * (plan §17 Wave 3 item 3).
  *
- * One open `alerts` row per key (`dedupe_key = err:<key>`). Inside the
- * cooldown the Desk stays quiet and only `payload.repeats` grows; past it a
- * new message goes out. Recovery notes go through the same path.
+ * One open `alerts` row per key (`dedupe_key = err:<key>`), which is what the
+ * schema says and what this now does. Inside the cooldown the Desk stays quiet
+ * and only `payload.repeats` grows; past it the SAME row is bumped and the
+ * message goes out again.
+ *
+ * It used to insert a fresh row past every cooldown, so a beat that stayed
+ * down for a day left a dozen identical open alerts and the board showed the
+ * same outage over and over. The row is the alert; a recurrence is a repeat
+ * of it, not a new one.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSetting, SETTING_KEYS } from "./supabase.ts";
@@ -29,6 +35,21 @@ export function cooldownDue(lastAt: string | null | undefined, cooldownMs: numbe
   return now - t >= cooldownMs;
 }
 
+/** What a new occurrence of an already-possible error should do. */
+export type AlertAction = "insert" | "update" | "update_and_notify";
+
+/**
+ * `insert` when nothing is open for the key; `update` when the open one is
+ * still inside its cooldown (the Desk stays quiet, the repeat count grows);
+ * `update_and_notify` when the cooldown has passed (same row, new message).
+ * An unparseable timestamp counts as due, so a corrupt row cannot mute an
+ * error forever.
+ */
+export function alertAction(recentAt: string | null | undefined, cooldownMs: number, now = Date.now()): AlertAction {
+  if (recentAt === null || recentAt === undefined) return "insert";
+  return cooldownDue(recentAt, cooldownMs, now) ? "update_and_notify" : "update";
+}
+
 export async function deskAlert(opts: {
   db: SupabaseClient;
   key: string;
@@ -43,21 +64,38 @@ export async function deskAlert(opts: {
   const { data: recent } = await opts.db.from("alerts")
     .select("id, at, payload").eq("dedupe_key", dedupe).is("resolved_at", null)
     .order("at", { ascending: false }).limit(1).maybeSingle();
-  const repeats = Number((recent?.payload as { repeats?: number } | null)?.repeats ?? 0);
-  if (recent && !cooldownDue(recent.at as string | null, cooldownMs)) {
-    await opts.db.from("alerts")
-      .update({ payload: { ...((recent.payload as Record<string, unknown> | null) ?? {}), repeats: repeats + 1 } })
-      .eq("id", (recent as { id: string }).id);
-    return { sent: false, repeats: repeats + 1 };
+  const repeats = Number((recent?.payload as { repeats?: number } | null)?.repeats ?? 0) + 1;
+  const action = alertAction(recent?.at as string | null ?? null, cooldownMs);
+
+  if (action === "insert") {
+    await opts.db.from("alerts").insert({
+      kind: opts.kind,
+      severity: opts.severity,
+      message: opts.message,
+      payload: { key: opts.key, repeats: 0 },
+      dedupe_key: dedupe,
+    });
+    await notifyDesk(opts);
+    return { sent: true, repeats: 0 };
   }
-  await opts.db.from("alerts").insert({
-    kind: opts.kind,
-    severity: opts.severity,
-    message: opts.message,
-    payload: { key: opts.key, repeats: 0 },
-    dedupe_key: dedupe,
-  });
+
+  // Same row on purpose: `at` only moves when the Desk is told again, so the
+  // cooldown is measured from the last message and not from the last repeat.
+  const patch: Record<string, unknown> = {
+    payload: { ...((recent?.payload as Record<string, unknown> | null) ?? {}), key: opts.key, repeats },
+  };
+  if (action === "update_and_notify") {
+    Object.assign(patch, {
+      at: new Date().toISOString(), message: opts.message, severity: opts.severity, kind: opts.kind,
+    });
+  }
+  await opts.db.from("alerts").update(patch).eq("id", (recent as { id: string }).id);
+  if (action === "update") return { sent: false, repeats };
+  await notifyDesk(opts);
+  return { sent: true, repeats };
+}
+
+async function notifyDesk(opts: { message: string; buttons?: InlineButton[][] }): Promise<void> {
   const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
   await sendMessage(desk, redactSecrets(opts.message), { parse_mode: "HTML", buttons: opts.buttons });
-  return { sent: true, repeats: 0 };
 }
