@@ -8,11 +8,15 @@
  *   POST /friday/manual            { week_start, source: vantage|tiktok|telechurn, metrics: {…} }
  *                                   (jack, abdul) → manual_metrics upsert
  *   POST /friday/post              {}  → drafts the scorecard post (template 7) to the Desk group
+ *   GET  /friday/export?view=content_log → the content log as a CSV file. CSV and not
+ *                                   the Sheets API: no Google credentials, and importing it
+ *                                   is one menu click in Sheets.
  *
  * The scorecard IMAGE (plan §9.D.28) is rendered by the PC worker (Pillow),
  * queued here as a `scorecard_image` job once the numbers are complete.
  */
-import { serve, json, readJson, routeOf, reqString, oneOf, bad } from "_shared/http.ts";
+import { CORS_HEADERS, serve, json, readJson, routeOf, reqString, oneOf, bad } from "_shared/http.ts";
+import { toCsv } from "_shared/csv.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
@@ -47,6 +51,23 @@ serve(async (req) => {
   const caller = await authenticate(req);
   const { method, tail } = routeOf(req, "friday");
   const db = admin();
+
+  // Before the scoreboard branch: that one answers every GET.
+  if (method === "GET" && tail[0] === "export") {
+    requireRole(caller.role, "reports.read");
+    const view = new URL(req.url).searchParams.get("view") ?? "content_log";
+    if (view !== "content_log") throw bad("view must be content_log (the only sheet export so far)");
+    const { data, error } = await db.from("v_content_log").select("*").limit(5000);
+    if (error) throw bad(`v_content_log: ${error.message}`);
+    return new Response(toCsv(data ?? []), {
+      status: 200,
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": 'attachment; filename="twinos-content-log.csv"',
+        ...CORS_HEADERS,
+      },
+    });
+  }
 
   if (method === "GET") {
     requireRole(caller.role, "reports.read");

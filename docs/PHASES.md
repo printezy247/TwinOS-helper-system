@@ -25,7 +25,7 @@ Exit: schema reviewed; baseline logged.
 - [x] Functions deployed; Telegram webhook set with derived secret; `getWebhookInfo` clean (redeploy with `scripts/deploy.sh` after each merge that touches functions, then run `scripts/desk-tour.sh`: it walks /status, /friday, /hours today, /batch, /help, makes one draft, fans it out, rejects every post it made and checks nothing was queued to publish; `--dry-run` prints the payloads only)
 - [x] Cron schedules installed (publish, health/check, stop-if, friday, backup, keep-alive)
 - [x] Lovable project created (frontend-only, Jack's Supabase via public key, no Lovable Cloud), knowledge set — 2 Oct; GitHub sync optional (own repo)
-- [ ] Reference-channel benchmark study + `benchmarks` seed + high-capital ICP note — research task
+- [x] Reference-channel benchmark study: the numbers section is done (`docs/BENCHMARKS.md`; 2 of 7 channels publish a counter, view rate 1.80% vs 4.30% at a sixth the size). **Left: the five manual rows and the high-capital ICP note** — reading an offer is a judgement, not a fetch
 - [ ] Invite-link naming convention agreed (`src-campaign-yymm`) — Jack
 - [ ] The EzyMap indicator repo made private — Jack
 - [x] Backend scaffolding: `_shared`, ten functions, PC worker, docs, CI (this repo, Phase 0 commit)
@@ -65,7 +65,7 @@ Exit: Friday report arrives without Jack opening a spreadsheet.
 - [x] Thursday sweep (`content/batch-sweep`, cron `twinos-thursday-sweep` Thu 09:00 MYT): queues approved-but-unscheduled posts, nudges the Desk about the rest. `/batch ok` approves what is ready and claim-free
 - [x] Scorecard image renderer (`workers/pc/studio/scorecard.py`, Pillow; `test_scorecard.py`)
 - [ ] Friday scoreboard with Vantage + TikTok manual inputs; `v_friday_scoreboard` complete
-- [ ] Content log rows automatic + Sheet export
+- [x] Content log rows automatic (`v_content_log`, filled from `tg_posts` + `post_snapshots`) + `GET /friday/export?view=content_log` returns the sheet as CSV (RFC 4180 + formula guard). **Pushing straight into a Google Sheet needs a service account Jack has not set up**; importing the CSV is one menu click
 - [x] Named invite links through TwinOS (`POST /links`, `src-campaign-yymm` enforced). Weekly Telechurn import: the worker handler exists, it needs Jack's weekly CSV in `~/EzyMap/telechurn/`
 - [x] Content Calendar, Health, Analytics/Friday screens in Lovable (built 2 Oct; Jack to sign in and look at real data)
 
