@@ -14,14 +14,18 @@
 
 [Unit]
 Description=TwinOS PC worker (drop folder, Telechurn import, backup, clips)
-After=network-online.target
-Wants=network-online.target
+# No After=network-online.target here: a user manager has no such unit
+# ("Unit network-online.target could not be found"), and the worker does not
+# need one — it retries its own outbound calls and simply logs `unreachable`
+# until the network is up.
 
 [Service]
 Type=simple
 WorkingDirectory=%h/TwinOS-helper-system/workers/pc
 ExecStart=/usr/bin/python3 %h/TwinOS-helper-system/workers/pc/twinos_worker.py
-Restart=on-failure
+# always, not on-failure: a worker that exits cleanly - a locked keyring at
+# boot, for instance - would otherwise stay down until someone noticed.
+Restart=always
 RestartSec=30
 Environment=PYTHONUNBUFFERED=1
 # Optional overrides (defaults shown):
