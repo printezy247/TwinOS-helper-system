@@ -591,8 +591,13 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGINT, _stop)
 
     log.info("worker %s polling %s for %s", WORKER_NAME, api.base, kinds)
+    api.beat("ok", detail={"startup": True})
+    last_beat = time.time()
     while not stop["now"]:
         job = api.claim(kinds)
+        if time.time() - last_beat >= 300:  # beat every 5 minutes
+            api.beat("ok")
+            last_beat = time.time()
         if job:
             run_one(api, job)
             if args.once:
