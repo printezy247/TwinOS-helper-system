@@ -59,7 +59,7 @@ export function errorResponse(err: unknown): Response {
  * Replaces common secret patterns with [redacted].
  */
 export function sanitizeError(err: unknown): string {
-  const msg = typeof err === "string" ? err : (err as any)?.message ?? String(err);
+  const msg = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
   const SECRET_RE = /(?:token|secret|password|authorization|api_key|apikey|key_hash)\s*[:=]\s*[^,\s\n"]+/gi;
   return msg.replace(SECRET_RE, "$1=[redacted]");
 }

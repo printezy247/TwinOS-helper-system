@@ -39,6 +39,9 @@ export function redact(payload: Record<string, unknown> | undefined): Record<str
   return out;
 }
 
+/** Re-export for consumers that want error → safe string without importing http directly. */
+export { sanitizeError };
+
 export async function logAction(entry: LogEntry): Promise<void> {
   try {
     const { error } = await admin().from("action_log").insert({
@@ -46,7 +49,7 @@ export async function logAction(entry: LogEntry): Promise<void> {
       action: entry.action,
       target_table: entry.action.split(".")[0] || "system",
       target_id: entry.target ?? null,
-      payload: redact(sanitizeError(entry.payload)),
+      payload: redact(entry.payload),
     });
     if (error) console.warn("[action_log] insert failed", error.message, entry.action);
   } catch (err) {
