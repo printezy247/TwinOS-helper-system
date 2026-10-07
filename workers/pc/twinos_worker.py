@@ -54,7 +54,7 @@ VIDEO_EXT = {".mp4", ".mov", ".webm"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 # Live recordings are often OBS .mkv; they live in LIVES_DIR, not the drop folder, so VIDEO_EXT stays as it is.
 LIVE_EXT = VIDEO_EXT | {".mkv", ".flv", ".ts"}
-KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "clip_candidates", "research_batch", "rewrite", "scorecard_image", "llm_variants"]
+KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "clip_candidates", "research_batch", "rewrite", "scorecard_image", "llm_variants", "voiceover"]
 LLM_ANGLES = 3
 
 
@@ -530,6 +530,50 @@ def job_clip_candidates(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     ]}
 
 
+VOICE_DIR = Path("~/TwinOS-data/voice/jack").expanduser()
+RISK_LINE = "This is an AI-generated voice. Not financial advice. Trading involves risk of loss."
+
+
+def job_voiceover(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
+    """Wave 4.5: synthesize a voice track in Jack's cloned voice (UPGRADE-PLAN §17).
+
+    Payload: {script, lang, voice_profile_id, clip_path, content_id}
+    Reference clips: ~/TwinOS-data/voice/jack/{lang}/
+    Engine: Confucius4-TTS (Apache-2.0, EN+BM) — never OmniVoice (CC-BY-NC).
+
+    Gate: the engine is not installed yet and no reference clips exist.
+    This handler validates what it can, reports what's missing, and never
+    half-synthesizes: the transcript check (faster-whisper must find the
+    risk line) is the only path to a result.
+    """
+    script = str(payload.get("script") or "").strip()
+    if not script:
+        raise RuntimeError("script is required")
+    lang = str(payload.get("lang") or "en")
+    if lang not in ("en", "ms"):
+        raise RuntimeError(f"lang must be en or ms, got {lang}")
+    profile_id = str(payload.get("voice_profile_id") or "jack")
+    ref_dir = VOICE_DIR / lang
+    if not ref_dir.exists() or not any(ref_dir.iterdir()):
+        raise RuntimeError(
+            f"no reference clips in {ref_dir} — record 5-15s clips first "
+            f"(see {VOICE_DIR / 'README.md'})"
+        )
+    # Engine check: Confucius4-TTS or VoiceStudio (local only, never 0.0.0.0)
+    engine = shutil.which("confucius4-tts") or shutil.which("voicestudio")
+    if not engine:
+        raise RuntimeError(
+            "Confucius4-TTS not installed — pip install confucius4-tts "
+            "(Apache-2.0, EN+BM). Gate: 20s BM bake-off on GTX 1050 Ti first."
+        )
+    # When the engine lands: synthesize, transcript-check the risk line,
+    # ffmpeg-lay onto clip_path, return for Desk approval (AI-voice label).
+    raise RuntimeError(
+        "voiceover scaffolded but engine not wired: install Confucius4-TTS, "
+        "run bake-off, then implement synthesis + transcript check here"
+    )
+
+
 HANDLERS: dict[str, Callable[[Api, dict[str, Any]], dict[str, Any]]] = {
     "drop_folder_watch": job_drop_folder_watch,
     "telechurn_import": job_telechurn_import,
@@ -540,6 +584,7 @@ HANDLERS: dict[str, Callable[[Api, dict[str, Any]], dict[str, Any]]] = {
     "rewrite": job_rewrite,
     "scorecard_image": job_scorecard_image,
     "llm_variants": job_llm_variants,
+    "voiceover": job_voiceover,
 }
 
 

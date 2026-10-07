@@ -313,5 +313,6 @@ const GENERIC = new Set((
   "make look show read keep first last always never real really best better good bad why how into via per own same " +
   "up down move take trade trades trading long short buy sell red green open opened close closed " +
   "daily day days week weeks time times price prices market markets chart charts position positions " +
-  "stop loss losses profit profits win wins rate rates tp sl dd ai"
+  "stop loss losses profit profits win wins rate rates tp sl dd ai " +
+  "zone today map size account"
 ).split(" "));
