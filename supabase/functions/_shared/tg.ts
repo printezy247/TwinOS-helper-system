@@ -316,6 +316,30 @@ export function escapeHtml(s: string): string {
 }
 
 /**
+ * Escape, then fit `max` characters without splitting an entity: the cut is
+ * made on the raw text, so `&amp;` is never left as `&am`.
+ */
+export function escapeClip(s: string, max: number): string {
+  let raw = s.slice(0, max);
+  let out = escapeHtml(raw);
+  while (out.length > max && raw.length) {
+    raw = raw.slice(0, Math.max(0, raw.length - Math.ceil((out.length - max) / 5) - 1));
+    out = escapeHtml(raw);
+  }
+  return out;
+}
+
+/** Fit HTML text to Telegram's limit at a line break, never inside a tag or entity. */
+export function clipHtml(html: string, max = 4096): string {
+  if (html.length <= max) return html;
+  const nl = html.lastIndexOf("\n", max);
+  let out = html.slice(0, nl > 0 ? nl : max);
+  if (out.lastIndexOf("<") > out.lastIndexOf(">")) out = out.slice(0, out.lastIndexOf("<"));
+  if (out.lastIndexOf("&") > out.lastIndexOf(";")) out = out.slice(0, out.lastIndexOf("&"));
+  return out;
+}
+
+/**
  * Short callback ids under Telegram's 64-byte limit (plan §9.C.21).
  * Layout: `<verb>:<id8>` where id8 is the first 8 hex chars of a uuid.
  * The Desk looks the full id up by prefix; collisions among open drafts are

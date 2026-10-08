@@ -2,7 +2,7 @@ import { assert, assertEquals } from "std/assert/mod.ts";
 import {
   type BatchSlot, cycleWeek, mondayOf, nextMonday, planBatch, readyToApprove, runAtToInstant, slotToInstant,
   summaryLines, sweepPlan, topicTitle,
-  isEditable, isOpenBatchItem,
+  isAlreadyOut, isEditable, isOpenBatchItem, parseNumberedEdit,
 } from "./batch.ts";
 
 const TZ = "Asia/Kuala_Lumpur";
@@ -180,4 +180,23 @@ Deno.test("runAtToInstant: an explicit offset is taken as written", () => {
 
 Deno.test("runAtToInstant: garbage is null, not NaN", () => {
   assertEquals(runAtToInstant("not a time", TZ), null);
+});
+
+Deno.test("isAlreadyOut: only a post that is out or going out is beyond an edit", () => {
+  assertEquals(isAlreadyOut("published"), true);
+  assertEquals(isAlreadyOut("publishing"), true);
+  // approved/scheduled stay editable: an edit holds the queued job and goes back to draft
+  for (const st of ["draft", "pending_approval", "approved", "scheduled", "failed", "rejected"]) assertEquals(isAlreadyOut(st), false, st);
+});
+
+Deno.test("parseNumberedEdit: 'N: text' is an edit, a typed time is not", () => {
+  assertEquals(parseNumberedEdit("3: soften it"), { n: 3, instruction: "soften it" });
+  assertEquals(parseNumberedEdit("12 :  make it shorter"), { n: 12, instruction: "make it shorter" });
+  assertEquals(parseNumberedEdit("2:BM"), { n: 2, instruction: "BM" });
+  assertEquals(parseNumberedEdit("1: 30 pips from entry"), { n: 1, instruction: "30 pips from entry" });
+  assertEquals(parseNumberedEdit("4: line one\nline two"), { n: 4, instruction: "line one\nline two" });
+  assertEquals(parseNumberedEdit("10:30 meeting"), null);
+  assertEquals(parseNumberedEdit("13:00"), null);
+  assertEquals(parseNumberedEdit("4590: gold zone"), null);
+  assertEquals(parseNumberedEdit("no number here"), null);
 });

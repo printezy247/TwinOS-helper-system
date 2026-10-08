@@ -221,6 +221,20 @@ export function isEditable(status: string): boolean {
   return status === "draft" || status === "pending_approval";
 }
 
+/** A post that is out, or going out now, cannot be pulled back to a draft by an edit or an angle pick. */
+export function isAlreadyOut(status: string): boolean {
+  return status === "published" || status === "publishing";
+}
+
+/**
+ * "N: instruction" edits the N-th draft. A time typed with no space after the
+ * colon ("10:30 meeting", "13:00") is not an edit: it falls through as raw text.
+ */
+export function parseNumberedEdit(text: string): { n: number; instruction: string } | null {
+  const m = /^(\d{1,2})\s*:(?!\d{2}\b)\s*(.+)$/s.exec(text);
+  return m ? { n: Number(m[1]), instruction: m[2] } : null;
+}
+
 /** A batch stays open until each of its posts has gone out or been dropped. */
 export function isOpenBatchItem(status: string): boolean {
   return isEditable(status) || status === "approved" || status === "scheduled";

@@ -1,5 +1,7 @@
 import { assertEquals, assertRejects } from "std/assert/mod.ts";
-import { answerCallbackQuery, call, editMessageReplyMarkup, editMessageText, pollSnapshot, sendPoll, TgError } from "./tg.ts";
+import {
+  answerCallbackQuery, call, clipHtml, editMessageReplyMarkup, editMessageText, escapeClip, pollSnapshot, sendPoll, TgError,
+} from "./tg.ts";
 
 // A token-shaped value would trip the CI secret grep; the client never
 // validates its shape, so anything non-empty works.
@@ -153,4 +155,26 @@ Deno.test("pollSnapshot: the tally Telegram pushes becomes a row, and anything m
     { pollId: "x", question: "Nested?", options: [{ text: "a", votes: 7 }], totalVoters: 0, closed: false },
     "question arrives as an object now, and counts are whole numbers or nothing",
   );
+});
+
+Deno.test("escapeClip: fits the limit and never leaves half an entity", () => {
+  const out = escapeClip("a&b&c&d&e&f&g&h&i&j", 12);
+  assertEquals(out.length <= 12, true);
+  assertEquals(/&(?!amp;|lt;|gt;)/.test(out), false, out);
+  assertEquals(escapeClip("short <b>", 100), "short &lt;b&gt;");
+  assertEquals(escapeClip("<<<<<<<<", 10).length <= 10, true);
+});
+
+Deno.test("clipHtml: a short text is untouched, a long one is cut at a line break", () => {
+  assertEquals(clipHtml("<b>hi</b>", 4096), "<b>hi</b>");
+  const long = ["<b>head</b>", ...Array.from({ length: 50 }, (_, i) => `line ${i} <code>x</code>`)].join("\n");
+  const out = clipHtml(long, 200);
+  assertEquals(out.length <= 200, true);
+  assertEquals(long.startsWith(out), true);
+  assertEquals(out.endsWith("</code>"), true, "cut after a whole line");
+});
+
+Deno.test("clipHtml: with no line break it still never ends inside a tag or an entity", () => {
+  assertEquals(clipHtml("aaaa<b>bbbb</b>", 6), "aaaa");
+  assertEquals(clipHtml("aaaa&amp;bbbb", 7), "aaaa");
 });
