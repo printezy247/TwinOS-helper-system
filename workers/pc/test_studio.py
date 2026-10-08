@@ -264,6 +264,8 @@ class WhisperComputeType(unittest.TestCase):
         self.assertTrue(all(clipper.COMPUTE_CANDIDATES[d] for d in ("cuda", "cpu")))
 
     def test_a_missing_faster_whisper_says_so_rather_than_crashing_oddly(self):
-        with self.assertRaises(RuntimeError) as cm:
+        # Pin the import-failed state: a dev box with faster-whisper installed
+        # would otherwise try to build the real model here.
+        with mock.patch.object(clipper, "WhisperModel", None), self.assertRaises(RuntimeError) as cm:
             clipper.load_model(None, "small")
         self.assertIn("faster-whisper", str(cm.exception))
