@@ -60,6 +60,10 @@ curl -s "https://api.telegram.org/bot$TOKEN/getWebhookInfo"
 unset TOKEN SECRET
 ```
 
+Rotated the bot token? Run this block again — the secret is derived from the
+token, so after a rotation the old secret stops matching and every callback
+button answers with an auth error. Nothing else changes.
+
 `allowed_updates` must list `chat_member`, `message_reaction_count` and
 `chat_join_request` explicitly: Telegram does not deliver them by default.
 `message_reaction_count` only arrives in channels/groups where the bot is admin.
