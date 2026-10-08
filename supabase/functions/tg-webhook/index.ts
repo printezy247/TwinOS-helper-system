@@ -27,7 +27,7 @@ import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
 import { logAction } from "_shared/log.ts";
 import { fanOut } from "_shared/fanout.ts";
 import { fanoutSummary } from "_shared/platforms.ts";
-import { readyToApprove, summaryLines, sweepPlan, type SweepItem } from "_shared/batch.ts";
+import { isAlreadyOut, parseNumberedEdit, readyToApprove, summaryLines, sweepPlan, type SweepItem } from "_shared/batch.ts";
 import {
   casLookup, evaluate, floodWindowS, isQuestion, matchRepeat, type ModRule, normalizeQuestion, similarity,
 } from "_shared/moderation.ts";
@@ -250,7 +250,7 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
         }
       } catch (err) {
         if (chat) {
-          await tg.sendMessage(chat, `⚠️ ${tg.escapeHtml(err instanceof Error ? err.message : String(err)).slice(0, 300)}`, { parse_mode: "HTML", reply_to_message_id: mid });
+          await tg.sendMessage(chat, `⚠️ ${tg.escapeClip(err instanceof Error ? err.message : String(err), 300)}`, { parse_mode: "HTML", reply_to_message_id: mid });
         }
       }
       return;
@@ -260,7 +260,7 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
         .select("body").eq("content_id", content_id).limit(1).maybeSingle();
       await tg.answerCallbackQuery(cq.id);
       if (chat && v?.body) {
-        await tg.sendMessage(chat, `👁 <code>#${content_id.slice(0, 8)}</code>\n\n${tg.escapeHtml(String(v.body)).slice(0, 3500)}`, { parse_mode: "HTML", reply_to_message_id: mid });
+        await tg.sendMessage(chat, `👁 <code>#${content_id.slice(0, 8)}</code>\n\n${tg.escapeClip(String(v.body), 3500)}`, { parse_mode: "HTML", reply_to_message_id: mid });
       }
       return;
     }
@@ -392,7 +392,7 @@ async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: s
   await logAction({ actor: "jack", action: "content.adjust", target: content_id });
   await tg.answerCallbackQuery(cq.id, checked.ok ? "Adjusted (no AI): hook up top, CTA below." : "Adjusted, but the checklist blocks: see the draft.");
   if (chat) {
-    await tg.sendMessage(chat, `🎛 Adjusted <code>#${content_id.slice(0, 8)}</code> (no AI):\n<pre>${tg.escapeHtml(body).slice(0, 3000)}</pre>`, {
+    await tg.sendMessage(chat, `🎛 Adjusted <code>#${content_id.slice(0, 8)}</code> (no AI):\n<pre>${tg.escapeClip(body, 3000)}</pre>`, {
       parse_mode: "HTML", reply_to_message_id: mid,
     });
   }
@@ -426,7 +426,12 @@ async function onPick(cq: NonNullable<Update["callback_query"]>, short: string):
     return;
   }
   const body = String(v.body ?? "");
-  const { data: parent } = await db.from("content_items").select("post_type").eq("id", v.content_id).maybeSingle();
+  const { data: parent } = await db.from("content_items").select("post_type, status").eq("id", v.content_id).maybeSingle();
+  // Same guard as onAdjust: an angle must not pull a post that is out back to a draft.
+  if (parent && isAlreadyOut(String(parent.status))) {
+    await tg.answerCallbackQuery(cq.id, "Already out: pick an angle on a fresh draft instead.", true);
+    return;
+  }
   const { data: sibs } = await db.from("content_variants")
     .select("id, source").eq("content_id", v.content_id).eq("platform", v.platform);
   const sibling = (sibs ?? []).find((s) => ((s.source ?? {}) as Record<string, unknown>).via !== "llm_variants");
@@ -570,7 +575,7 @@ async function onFanout(m: Message): Promise<void> {
     await say(results.length ? fanoutSummary(id.slice(0, 8), results) : "Already copied to every platform.");
     await logAction({ actor: "jack", action: "content.fanout", target: id, payload: { platforms: results.map((r) => r.platform), via: "desk" } });
   } catch (err) {
-    await say(`⚠️ ${tg.escapeHtml(err instanceof Error ? err.message : String(err)).slice(0, 300)}`);
+    await say(`⚠️ ${tg.escapeClip(err instanceof Error ? err.message : String(err), 300)}`);
   }
 }
 
@@ -615,7 +620,7 @@ async function onBatch(m: Message): Promise<void> {
   }
 
   const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
-  await tg.sendMessage(m.chat.id, renderBatchList(batch, states, tz).slice(0, 4096), {
+  await tg.sendMessage(m.chat.id, tg.clipHtml(renderBatchList(batch, states, tz)), {
     parse_mode: "HTML",
     reply_to_message_id: m.message_id,
     buttons: tg.batchListKeyboard(batch.items.map((i) => ({ n: i.batch_no, id: i.id })), states.filter(readyToApprove).length),
@@ -681,7 +686,7 @@ async function onBatchCmd(cq: NonNullable<Update["callback_query"]>, name: strin
     const panel = await batchPanel();
     if (!panel) { await tg.answerCallbackQuery(cq.id, "No batch yet."); return; }
     await tg.answerCallbackQuery(cq.id, "Refreshed.");
-    await tg.editMessageText(chat, mid, panel.text.slice(0, 4096), { parse_mode: "HTML", buttons: panel.buttons }).catch(() => null);
+    await tg.editMessageText(chat, mid, tg.clipHtml(panel.text), { parse_mode: "HTML", buttons: panel.buttons }).catch(() => null);
     return;
   }
   if (name === "ready") {
@@ -703,14 +708,14 @@ async function onBatchCmd(cq: NonNullable<Update["callback_query"]>, name: strin
     const states = panel?.states ?? [];
     const { done, refused } = await approveReadyBatch(states, await jackId());
     await tg.answerCallbackQuery(cq.id, done.length ? `Approved ${done.join(", ")}.` : "Nothing was ready.");
-    await tg.editMessageText(chat, mid, batchResultLines(states, done, refused).join("\n").slice(0, 4096), { parse_mode: "HTML" }).catch(() => null);
+    await tg.editMessageText(chat, mid, tg.clipHtml(batchResultLines(states, done, refused).join("\n")), { parse_mode: "HTML" }).catch(() => null);
     return;
   }
   if (name === "batchno") {
     const panel = await batchPanel();
     await tg.answerCallbackQuery(cq.id, "Kept as drafts.");
     if (panel) {
-      await tg.editMessageText(chat, mid, panel.text.slice(0, 4096), { parse_mode: "HTML", buttons: panel.buttons }).catch(() => null);
+      await tg.editMessageText(chat, mid, tg.clipHtml(panel.text), { parse_mode: "HTML", buttons: panel.buttons }).catch(() => null);
     }
     return;
   }
@@ -886,8 +891,10 @@ async function hoursTodayText(): Promise<string> {
 }
 
 async function loadBatchStates(batch: { week: string; items: BatchRow[] }): Promise<SweepItem[]> {
+  // Oldest first: the master variant, so the find below never reads a fan-out copy's flags.
   const { data: variants } = await admin().from("content_variants")
-    .select("content_id, needed_fields, claim_flags, compliance").in("content_id", batch.items.map((i) => i.id));
+    .select("content_id, needed_fields, claim_flags, compliance").in("content_id", batch.items.map((i) => i.id))
+    .order("created_at", { ascending: true });
   return batch.items.map((i) => {
     const v = (variants ?? []).find((x) => x.content_id === i.id);
     return {
@@ -994,27 +1001,27 @@ async function onNav(
     const panel = await batchPanel();
     try {
       if (panel) {
-        await tg.editMessageText(chat, mid, panel.text.slice(0, 4096), { parse_mode: "HTML", buttons: panel.buttons });
+        await tg.editMessageText(chat, mid, tg.clipHtml(panel.text), { parse_mode: "HTML", buttons: panel.buttons });
       } else {
         await tg.editMessageText(chat, mid, "No batch yet. It is drafted on Wednesday at 14:30.", { parse_mode: "HTML", buttons: tg.backHomeRows() });
       }
     } catch {
-      await tg.sendMessage(chat, panel?.text.slice(0, 4096) ?? "No batch yet.", { parse_mode: "HTML" });
+      await tg.sendMessage(chat, tg.clipHtml(panel?.text ?? "No batch yet."), { parse_mode: "HTML" });
     }
     return;
   }
   if (screen === "drafts") {
     const panel = await draftsPanel(nav.kind === "page" ? nav.n : 1);
     try {
-      await tg.editMessageText(chat, mid, panel.text.slice(0, 4096), { parse_mode: "HTML", buttons: panel.buttons });
+      await tg.editMessageText(chat, mid, tg.clipHtml(panel.text), { parse_mode: "HTML", buttons: panel.buttons });
     } catch {
-      await tg.sendMessage(chat, panel.text.slice(0, 4096), { parse_mode: "HTML" });
+      await tg.sendMessage(chat, tg.clipHtml(panel.text), { parse_mode: "HTML" });
     }
     return;
   }
   const text = await navScreenText(screen);
   try {
-    await tg.editMessageText(chat, mid, text.slice(0, 4096), {
+    await tg.editMessageText(chat, mid, tg.clipHtml(text), {
       parse_mode: "HTML",
       buttons: screen === "home"
         ? tg.menuKeyboard()
@@ -1023,7 +1030,7 @@ async function onNav(
           : tg.backHomeRows(),
     });
   } catch {
-    await tg.sendMessage(chat, text.slice(0, 4096), { parse_mode: "HTML" });
+    await tg.sendMessage(chat, tg.clipHtml(text), { parse_mode: "HTML" });
   }
 }
 
@@ -1123,14 +1130,14 @@ async function onDeskMessage(m: Message): Promise<void> {
   }
 
   // "N: instruction" without a reply → edit the N-th draft of the day (kit's Wednesday flow)
-  const numbered = /^(\d{1,2})\s*:\s*(.+)$/s.exec(text);
+  const numbered = parseNumberedEdit(text);
   if (numbered) {
-    const n = Number(numbered[1]);
+    const n = numbered.n;
     // The open Wednesday batch has its own stable numbers (content_items.batch_no).
     const open = await openBatch();
     const inBatch = open?.items.find((i) => i.batch_no === n);
     if (inBatch) {
-      await applyEdit(inBatch.id, inBatch.post_type as PostType, inBatch.lang, numbered[2], m);
+      await applyEdit(inBatch.id, inBatch.post_type as PostType, inBatch.lang, numbered.instruction, m);
       return;
     }
     const { data: todays } = await admin().from("content_items")
@@ -1138,7 +1145,7 @@ async function onDeskMessage(m: Message): Promise<void> {
       .in("status", ["draft", "pending_approval"]).order("created_at", { ascending: true });
     const target = todays?.[n - 1];
     if (!target) { await tg.sendMessage(m.chat.id, `No draft #${n} today.`, { reply_to_message_id: m.message_id }); return; }
-    await applyEdit(target.id, target.post_type as PostType, target.lang, numbered[2], m);
+    await applyEdit(target.id, target.post_type as PostType, target.lang, numbered.instruction, m);
     return;
   }
 
@@ -1182,6 +1189,12 @@ async function onDeskMessage(m: Message): Promise<void> {
 /** Apply an edit: raw replacement text, or a short instruction → rendered as a note for ABDUL's rewrite job. */
 async function applyEdit(content_id: string, post_type: PostType, lang: "en" | "ms", instruction: string, m: Message) {
   const db = admin();
+  // A post that is out cannot be edited back to a draft: approving it again would post it twice.
+  const { data: cur } = await db.from("content_items").select("status").eq("id", content_id).maybeSingle();
+  if (cur && isAlreadyOut(String(cur.status))) {
+    await tg.sendMessage(m.chat.id, "That one is already out, so it cannot be edited. Start a fresh draft.", { reply_to_message_id: m.message_id });
+    return;
+  }
   // The master body is the first variant created, not "whichever row comes
   // back": without an order an unpicked AI angle could be edited instead.
   const { data: v } = await db.from("content_variants").select("id, body, platform").eq("content_id", content_id)
@@ -1379,6 +1392,13 @@ async function onDiscussionMessage(m: Message) {
     }
   } catch (err) {
     console.warn("[moderation] action failed", err);
+    // The event row above already says the action was taken. If it was not, the
+    // log must say so (same shape as moderation.failed in onModAction).
+    await logAction({
+      actor: ACTOR,
+      action: "moderation.failed",
+      payload: { action: final, event: modEv?.id ?? null, rule: verdict.hits[0].rule, error: String(err).slice(0, 300) },
+    });
   }
 }
 
@@ -1484,9 +1504,11 @@ serve(async (req) => {
   const update = (await req.json().catch(() => null)) as Update | null;
   if (!update || typeof update.update_id !== "number") return json({ ok: true });
 
-  // De-dupe: Telegram re-sends on any non-200; store the id and ignore repeats.
-  // A replay of a FAILED update is the retry (0 < failures < limit); past the
-  // limit the update is poison and dropped, not replayed forever.
+  // De-dupe: Telegram re-sends on any non-200 or a timeout; store the id and
+  // ignore repeats. A handler failure below still answers 200 (it is counted in
+  // `failures`, not replayed by Telegram), so a replay of a counted failure
+  // only happens after a redelivery: that is the retry (0 < failures < limit);
+  // past the limit the update is poison and dropped, not replayed forever.
   const db = admin();
   const { data: seen } = await db.from("tg_updates").select("failures")
     .eq("update_id", update.update_id).maybeSingle();
