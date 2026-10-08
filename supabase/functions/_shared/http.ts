@@ -60,8 +60,17 @@ export function errorResponse(err: unknown): Response {
  */
 export function sanitizeError(err: unknown): string {
   const msg = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
-  const SECRET_RE = /(?:token|secret|password|authorization|api_key|apikey|key_hash)\s*[:=]\s*[^,\s\n"]+/gi;
-  return msg.replace(SECRET_RE, "$1=[redacted]");
+  // `name: value` / `name=value`, keeping the name; `Authorization: Bearer x`
+  // redacts x, not just the word "Bearer".
+  const NAMED_RE = /((?:token|secret|password|authorization|api_key|apikey|key_hash)\s*[:=]\s*)(?:(?:bearer|basic)\s+)?[^,\s"]+/gi;
+  return msg
+    .replace(NAMED_RE, "$1[redacted]")
+    // Values with no name next to them: Deno's fetch errors quote the whole URL,
+    // and Telegram puts the bot token in it (api.telegram.org/bot<id>:<secret>/…).
+    .replace(/\bbot\d{6,}:[\w-]{20,}/g, "bot[redacted]")
+    .replace(/\b\d{8,10}:AA[\w-]{30,}/g, "[redacted]")
+    .replace(/\btwk_[a-z_]+_[0-9a-f]{40}\b/g, "twk_[redacted]")
+    .replace(/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]*/g, "[redacted]");
 }
 
 export const bad = (message: string, detail: Record<string, unknown> = {}) =>
