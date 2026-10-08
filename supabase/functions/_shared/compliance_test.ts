@@ -153,3 +153,34 @@ Deno.test("withRewriteGuard: a rewrite may only use the numbers already in the o
   assert(!invented.ok);
   assert(invented.findings.some((f) => f.check === "numbers" && f.severity === "blocking"));
 });
+
+Deno.test("telegram media captions block over 1024, text messages still run to 4096", () => {
+  // The publish path slices a photo/video caption at 1024 (sendPhoto/sendVideo),
+  // so anything past it vanishes in the channel — possibly the risk line.
+  const long = "Hold 4590 and watch 4612 through the week. ".repeat(30); // ~1320 chars
+  assert([...long].length > 1024, "the fixture must be over the caption limit");
+
+  const withPhoto = check({ post_type: "lesson", platform: "telegram", lang: "en", body: long, has_media: true } as never);
+  assert(
+    withPhoto.findings.some((f) => f.check === "caption_length" && f.severity === "blocking"),
+    `a ${[...long].length}-char caption with a photo must block: ${JSON.stringify(withPhoto.findings)}`,
+  );
+
+  const asMessage = check({ post_type: "lesson", platform: "telegram", lang: "en", body: long } as never);
+  assert(
+    !asMessage.findings.some((f) => f.check === "caption_length"),
+    "no media attached: 4096 is the limit, not 1024",
+  );
+
+  const atLimit = check({ post_type: "lesson", platform: "telegram", lang: "en", body: "x".repeat(1024), has_media: true } as never);
+  assert(
+    !atLimit.findings.some((f) => f.check === "caption_length"),
+    "1024 exactly fits a Telegram caption",
+  );
+
+  const onInstagram = check({ post_type: "lesson", platform: "instagram", lang: "en", body: long, has_media: true } as never);
+  assert(
+    !onInstagram.findings.some((f) => f.check === "caption_length"),
+    "Instagram has its own caption limit, already checked as length",
+  );
+});
