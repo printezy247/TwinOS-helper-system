@@ -812,6 +812,14 @@ async function onModAction(
       await tg.answerCallbackQuery(cq.id, "Unknown button.");
     }
   } catch (err) {
+    // Jack gets the toast; the log needs the failure too — a ban that did not
+    // happen is exactly the event worth finding later (same shape as
+    // desk.callback_failed above).
+    await logAction({
+      actor: "jack",
+      action: "moderation.failed",
+      payload: { action, event: ev.id, rule: ev.rule_key, error: String(err).slice(0, 300) },
+    });
     await tg.answerCallbackQuery(cq.id, `Failed: ${String(err instanceof Error ? err.message : err).slice(0, 120)}`, true);
   }
 }
