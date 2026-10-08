@@ -230,6 +230,7 @@ async function run(job: Job, actor: string): Promise<{ ok: boolean; kind: Kind; 
   // Last line of defence: re-run the checklist on the exact body going out.
   const final = complianceCheck({
     post_type: item.post_type as never, platform: variant.platform as never, lang: variant.lang, body: variant.body,
+    has_media: (variant.media?.length ?? 0) > 0,
   });
   if (!final.ok || (variant.needed_fields ?? []).length) {
     return { ok: false, kind: "permanent", reason: "compliance block at publish: " + final.findings.map((f) => f.message).join("; ") };

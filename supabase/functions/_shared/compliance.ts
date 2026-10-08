@@ -59,6 +59,8 @@ export interface VariantInput {
   offers_this_week?: number;
   /** Video posts: a spoken or on-screen risk line was confirmed. */
   video_warning_confirmed?: boolean;
+  /** True when the variant carries a photo or video: Telegram captions cut at 1024. */
+  has_media?: boolean;
 }
 
 export type Severity = "blocking" | "needs_approval" | "warn";
@@ -457,6 +459,17 @@ export function check(v: VariantInput): CheckResult {
     f.push({ check: "format", severity: "blocking", message: `${len} characters, platform hard limit ${limits.hard}` });
   } else if (len > limits.short && !v.long_form) {
     f.push({ check: "format", severity: "warn", message: `${len} characters, over ${limits.short} for a short post` });
+  }
+  // Telegram splits hard at 1024: a plain message runs to 4096, but the
+  // caption on a photo/video is cut at 1024 by the send path — silently, so
+  // the tail (where the risk line often sits) would just not appear. The gate
+  // must know whether media rides along; publish passes it from the variant.
+  if (v.platform === "telegram" && v.has_media && len > TELEGRAM_CAPTION_LIMIT) {
+    f.push({
+      check: "caption_length",
+      severity: "blocking",
+      message: `${len} characters with a photo or video; Telegram captions cut at ${TELEGRAM_CAPTION_LIMIT}`,
+    });
   }
   if (v.platform === "telegram" && boldCount(body) > 8) {
     f.push({ check: "format", severity: "warn", message: "heavy bold; the kit bolds key numbers only" });

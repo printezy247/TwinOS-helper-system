@@ -182,6 +182,7 @@ export async function createDraft(input: DraftInput): Promise<DraftResult> {
     body,
     allowed_numbers: input.allowed_numbers,
     long_form: ["lesson", "start_here", "channel_audit"].includes(input.post_type),
+    has_media: (input.media?.length ?? 0) > 0,
   });
 
   const db = admin();
