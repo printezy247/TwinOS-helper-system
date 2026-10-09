@@ -92,6 +92,39 @@ export async function fanOut(
   return results;
 }
 
+/**
+ * The `platform_signatures` setting (Wave 4 item 2) is a JSON map of
+ * platform → sign-off, or — when typed into the dashboard as free text —
+ * one sign-off for every platform. Malformed or misshapen config must never
+ * crash fan-out or paste raw junk under a post: it degrades to silence. A
+ * type-confused value (a number, an array) is the crash case the raw
+ * `signatures[platform]` had: withSignature calls .trim() on it.
+ */
+export function parseSignatures(raw: string | null | undefined): Record<string, string> {
+  const s = (raw ?? "").trim();
+  if (!s) return {};
+  try {
+    const parsed = JSON.parse(s) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof v === "string" && v.trim()) out[k] = v.trim();
+      }
+      return out;
+    }
+    return {}; // valid JSON of the wrong shape (array, number): not a sign-off
+  } catch {
+    // Not JSON at all. A plain sign-off signs every platform; something that
+    // was meant to be config ("{...") must never reach a post as junk.
+    return s.startsWith("{") ? {} : { "*": s };
+  }
+}
+
+/** A platform's sign-off, falling back to the catch-all free-text one. */
+export function signatureFor(map: Record<string, string>, platform: string): string | null {
+  return map[platform] ?? map["*"] ?? null;
+}
+
 async function fanOutOne(
   db: ReturnType<typeof admin>,
   masterId: string,
@@ -108,13 +141,8 @@ async function fanOutOne(
     // (platform_signatures setting; research 2026-10-02: kit hygiene). The
     // setting is free text in the dashboard: a malformed value must degrade
     // to "no signatures", not sink every fan-out.
-    let signatures: Record<string, string> = {};
-    try {
-      signatures = JSON.parse((await setting("platform_signatures")) ?? "{}") as Record<string, string>;
-    } catch (err) {
-      console.warn("[fanout] platform_signatures is not valid JSON; signing skipped", err);
-    }
-    const signed = withSignature(adapted.body, signatures[platform]);
+    const signatures = parseSignatures(await setting("platform_signatures"));
+    const signed = withSignature(adapted.body, signatureFor(signatures, platform));
     if (signed.added) adapted.body = signed.body;
     const findings = validatePlatform({ platform: platform as Platform, body: adapted.body, media: meta });
     const kit = isKitPlatform(platform);

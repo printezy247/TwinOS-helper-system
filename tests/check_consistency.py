@@ -626,7 +626,7 @@ def next_fixes() -> None:
     worker = read("workers/pc/twinos_worker.py")
     check(
         "clips: the long-form cut is one flag on the clip job",
-        '"longform"' in worker or "'longform'" in worker or "longform" in worker and "run_long" in worker,
+        '"longform"' in worker and "run_long" in worker,
         "job_clip with longform=true must cut the 8-20 minute window with chapters",
     )
     prompts = read("docs/LOVABLE-WAVE4-PROMPTS.md")
@@ -663,11 +663,16 @@ def research_upgrades() -> None:
         "trg_signal_posts_no_delete" in mig,
         "the #1 trust complaint is deleted losing trades; a trigger is the only hard guard",
     )
+    webhook = read("supabase/functions/tg-webhook/index.ts")
     check(
         "webhook: a poisoned update is dropped, not retried forever",
-        "isPoisonedUpdate" in read("supabase/functions/tg-webhook/index.ts")
-        and "isPoisonedUpdate" in read("supabase/functions/_shared/backoff.ts"),
+        "updateDisposition" in webhook and "isPoisonedUpdate" in read("supabase/functions/_shared/backoff.ts"),
         "3 recorded failures must end the loop with a tg.update_poisoned log",
+    )
+    check(
+        "webhook: a handled update is marked done, a redelivery is a duplicate",
+        'failuresAfter("handled"' in webhook and 'failuresAfter("failed"' in webhook,
+        "a successful retry must zero the failure count or redeliveries re-run the handler",
     )
     clipper = read("workers/pc/studio/clipper.py")
     moments = read("workers/pc/studio/moments.py")
@@ -679,8 +684,8 @@ def research_upgrades() -> None:
     check(
         "fanout: signatures come from the setting, appended once",
         "withSignature" in read("supabase/functions/_shared/platforms.ts")
-        and "platform_signatures" in read("supabase/functions/_shared/fanout.ts"),
-        "Wave 5: rotation without double-appending",
+        and "parseSignatures" in read("supabase/functions/_shared/fanout.ts"),
+        "Wave 5: rotation without double-appending; free text signs all, junk degrades to silence",
     )
     check(
         "growth: the quiet-channel alert watches the posting gap",
