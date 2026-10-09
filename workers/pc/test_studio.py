@@ -189,6 +189,15 @@ class WordCaptions(unittest.TestCase):
         ass = clipper.ass_words(segs, offset=0.5)
         self.assertIn("0:00:00.00", ass)
 
+    def test_the_centiseconds_never_round_into_a_third_digit(self):
+        # 59.999 s: naive per-component rounding writes CS=100, which is not
+        # a valid ASS clock; the carry must move it to 0:01:00.00.
+        self.assertEqual(clipper.ass_time(59.999), "0:01:00.00")
+        self.assertEqual(clipper.ass_time(3599.999), "1:00:00.00")
+        self.assertEqual(clipper.ass_time(1.234), "0:00:01.23")
+        self.assertEqual(clipper.ass_time(0.0), "0:00:00.00")
+        self.assertEqual(clipper.ass_time(-3.0), "0:00:00.00")
+
 
 class CoverThumbnail(unittest.TestCase):
     def test_the_cover_grabs_a_frame_and_draws_the_hook_text(self):
@@ -202,6 +211,13 @@ class CoverThumbnail(unittest.TestCase):
     def test_the_text_is_escaped_so_a_quote_cannot_break_the_filter(self):
         cmd = " ".join(moments.cover_command("ffmpeg", "/tmp/live.mp4", 1, "/tmp/cover.jpg", "it's a trap"))
         self.assertIn("it\\'s", cmd)
+
+    def test_percent_is_escaped_so_drawtext_cannot_expand_it(self):
+        # drawtext expands %{...}; a cover hook like "50% off" must not.
+        self.assertEqual(moments._drawtext_escape("50% off"), "50\\% off")
+        self.assertEqual(moments._drawtext_escape("50% off %{pts}"), "50\\% off \\%{pts}")
+        cmd = " ".join(moments.cover_command("ffmpeg", "/tmp/live.mp4", 1, "/tmp/cover.jpg", "50% off %{pts}"))
+        self.assertIn("50\\% off \\%{pts}", cmd)
 
 
 if __name__ == "__main__":

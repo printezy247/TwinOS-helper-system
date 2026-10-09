@@ -104,8 +104,12 @@ def window_cut_command(ff: str, source: str | Path, start_s: float, end_s: float
 
 
 def _drawtext_escape(text: str) -> str:
-    """A quote or backslash must not break the drawtext filter expression."""
-    return text.replace("\\", "\\\\").replace("'", "\\'")
+    """A quote, backslash or percent must not break the drawtext filter.
+
+    drawtext expands `%{...}` sequences, so a hook like "50% off" needs the
+    percent escaped or the cover text comes out mangled.
+    """
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("'", "\\'")
 
 
 def cover_command(ff: str, source: str | Path, at_s: float, dest: str | Path, text: str) -> list[str]:

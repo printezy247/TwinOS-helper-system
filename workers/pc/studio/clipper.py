@@ -64,12 +64,16 @@ def pick_highlights(segments: list[dict[str, Any]], max_clips: int) -> list[dict
 
 
 def ass_time(t: float) -> str:
-    """ASS clock H:MM:SS.CC; a time before the clip start clamps to zero."""
-    t = max(t, 0.0)
-    h, r = divmod(t, 3600)
-    m, s = divmod(r, 60)
-    cs = int(round((s - int(s)) * 100))
-    return f"{int(h)}:{int(m):02}:{int(s):02}.{cs:02}"
+    """ASS clock H:MM:SS.CC; a time before the clip start clamps to zero.
+
+    Rounded as one whole centisecond count so 59.999 s carries to
+    0:01:00.00 instead of the invalid 0:00:59.100.
+    """
+    total_cs = int(round(max(t, 0.0) * 100))
+    h, rem = divmod(total_cs, 3_600_00)
+    m, rem = divmod(rem, 60_00)
+    s, cs = divmod(rem, 100)
+    return f"{h}:{m:02}:{s:02}.{cs:02}"
 
 
 def ass_words(segments: list[dict[str, Any]], offset: float = 0.0) -> str:

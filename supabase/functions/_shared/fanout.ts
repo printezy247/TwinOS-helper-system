@@ -92,6 +92,37 @@ export async function fanOut(
   return results;
 }
 
+/**
+ * The `platform_signatures` setting (Wave 4 item 2) is a JSON map of
+ * platform → sign-off, or — when typed into the dashboard as plain text —
+ * one sign-off for every platform. Malformed config must never crash
+ * fan-out or paste raw JSON under a post: it degrades to no signatures.
+ */
+export function parseSignatures(raw: string | null | undefined): Record<string, string> {
+  const s = (raw ?? "").trim();
+  if (!s) return {};
+  try {
+    const parsed = JSON.parse(s) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof v === "string" && v.trim()) out[k] = v.trim();
+      }
+      return out;
+    }
+    return {}; // valid JSON of the wrong shape (array, number): not a sign-off
+  } catch {
+    // Not JSON at all. A plain sign-off signs every platform; something that
+    // was meant to be config ("{...") must never reach a post as junk.
+    return s.startsWith("{") ? {} : { "*": s };
+  }
+}
+
+/** A platform's sign-off, falling back to the catch-all plain-text one. */
+export function signatureFor(map: Record<string, string>, platform: string): string | null {
+  return map[platform] ?? map["*"] ?? null;
+}
+
 async function fanOutOne(
   db: ReturnType<typeof admin>,
   masterId: string,
@@ -106,8 +137,8 @@ async function fanOutOne(
     const adapted = adaptCaption(masterBody as string, platform as Platform);
     // The saved per-platform sign-off rides below every adapted caption
     // (platform_signatures setting; research 2026-10-02: kit hygiene).
-    const signatures = JSON.parse((await setting("platform_signatures")) ?? "{}") as Record<string, string>;
-    const signed = withSignature(adapted.body, signatures[platform]);
+    const signatures = parseSignatures(await setting("platform_signatures"));
+    const signed = withSignature(adapted.body, signatureFor(signatures, platform));
     if (signed.added) adapted.body = signed.body;
     const findings = validatePlatform({ platform: platform as Platform, body: adapted.body, media: meta });
     const kit = isKitPlatform(platform);

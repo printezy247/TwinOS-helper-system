@@ -89,3 +89,23 @@ export const UPDATE_FAIL_LIMIT = 3;
 export function isPoisonedUpdate(failures: number, limit = UPDATE_FAIL_LIMIT): boolean {
   return failures >= limit;
 }
+
+/** What a re-sent update deserves. `null` = never seen (the first delivery). */
+export type UpdateDisposition = "fresh" | "duplicate" | "retry" | "poison";
+
+export function updateDisposition(failures: number | null | undefined): UpdateDisposition {
+  if (failures === null || failures === undefined) return "fresh";
+  if (failures <= 0) return "duplicate";
+  if (isPoisonedUpdate(failures)) return "poison";
+  return "retry";
+}
+
+/**
+ * The failure count after a handler run. A handled update is marked done
+ * (count 0) so Telegram's later re-sends are duplicates — otherwise a
+ * successful retry leaves failures > 0 behind and every re-send re-runs the
+ * handler, creating duplicate drafts and cards.
+ */
+export function failuresAfter(outcome: "handled" | "failed", failures: number): number {
+  return outcome === "handled" ? 0 : failures + 1;
+}

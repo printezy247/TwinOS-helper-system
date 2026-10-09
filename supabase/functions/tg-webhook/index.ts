@@ -14,7 +14,7 @@
  *   message in discussion group → moderation rules (mod_rules, moderation_events)
  *   message_reaction_count → post_snapshots (reactions)
  */
-import { isPoisonedUpdate } from "_shared/backoff.ts";
+import { failuresAfter, updateDisposition } from "_shared/backoff.ts";
 import { HttpError, serve, json } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
@@ -1328,13 +1328,13 @@ serve(async (req) => {
   const { data: seen } = await db.from("tg_updates").select("failures")
     .eq("update_id", update.update_id).maybeSingle();
   const failures = Number(seen?.failures ?? 0);
-  if (seen) {
-    if (failures <= 0) return json({ ok: true, duplicate: true });
-    if (isPoisonedUpdate(failures)) {
-      await logAction({ actor: ACTOR, action: "tg.update_poisoned", payload: { update_id: update.update_id, failures } });
-      return json({ ok: true, poisoned: true });
-    }
-  } else {
+  const disposition = updateDisposition(seen ? failures : null);
+  if (disposition === "duplicate") return json({ ok: true, duplicate: true });
+  if (disposition === "poison") {
+    await logAction({ actor: ACTOR, action: "tg.update_poisoned", payload: { update_id: update.update_id, failures } });
+    return json({ ok: true, poisoned: true });
+  }
+  if (disposition === "fresh") {
     const { error: dup } = await db.from("tg_updates").insert({ update_id: update.update_id });
     if (dup && /duplicate|unique/i.test(dup.message)) return json({ ok: true, duplicate: true });
   }
@@ -1355,9 +1355,12 @@ serve(async (req) => {
       // Any other chat: ignored on purpose (no DMs, no other groups).
     }
     await admin().from("health_checks").insert({ source: "ops_bot", status: "ok", detail: { update_id: update.update_id } });
+    // Mark the update handled (failures 0): Telegram's later re-sends must
+    // hit the duplicate path instead of re-running the handler.
+    await db.from("tg_updates").update({ failures: failuresAfter("handled", failures) }).eq("update_id", update.update_id);
   } catch (err) {
     console.error("[tg-webhook] handler failed", err);
-    await db.from("tg_updates").update({ failures: failures + 1 }).eq("update_id", update.update_id);
+    await db.from("tg_updates").update({ failures: failuresAfter("failed", failures) }).eq("update_id", update.update_id);
     await logAction({ actor: ACTOR, action: "tg.update_failed", payload: { update_id: update.update_id, error: String(err).slice(0, 300) } });
   }
   return json({ ok: true });
