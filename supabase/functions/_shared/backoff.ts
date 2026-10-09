@@ -90,6 +90,26 @@ export function isPoisonedUpdate(failures: number, limit = UPDATE_FAIL_LIMIT): b
   return failures >= limit;
 }
 
+/** What a redelivered update deserves. `null` = never seen (the first delivery). */
+export type UpdateDisposition = "fresh" | "duplicate" | "retry" | "poison";
+
+export function updateDisposition(failures: number | null | undefined): UpdateDisposition {
+  if (failures === null || failures === undefined) return "fresh";
+  if (failures <= 0) return "duplicate";
+  if (isPoisonedUpdate(failures)) return "poison";
+  return "retry";
+}
+
+/**
+ * The failure count after a handler run. A handled update is marked done
+ * (count 0) so Telegram's later redeliveries are duplicates — otherwise a
+ * successful retry leaves failures > 0 behind and the next redelivery
+ * re-runs the handler, creating duplicate drafts and cards.
+ */
+export function failuresAfter(outcome: "handled" | "failed", failures: number): number {
+  return outcome === "handled" ? 0 : failures + 1;
+}
+
 /**
  * An unknown outcome (timeout, reset) may have posted. The job is parked, not
  * re-sent on a timer: the landed check cannot see a send that never returned

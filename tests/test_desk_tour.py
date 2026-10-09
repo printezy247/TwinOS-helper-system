@@ -84,7 +84,10 @@ class DeskTourTest(unittest.TestCase):
         fakes = {
             "supabase": ERROR_CLI,
             "secret-tool": "#!/bin/sh\necho fake-value\n",
-            "curl": "#!/bin/sh\necho 200\n",
+            # The fake must drain stdin like real curl does with -K -: an
+            # unread pipe races printf into SIGPIPE and pipefail kills the
+            # script silently (this flake cost a CI round to find).
+            "curl": "#!/bin/sh\ncat >/dev/null\necho 200\n",
         }
         for script in (SCRIPT, SELFTEST):
             r = run_with_tools(script, tools=QUERY_TOOLS + ("printf", "sleep"), fakes=fakes)
@@ -97,7 +100,10 @@ class DeskTourTest(unittest.TestCase):
         fakes = {
             "supabase": BARE_ARRAY_CLI,
             "secret-tool": "#!/bin/sh\necho fake-value\n",
-            "curl": "#!/bin/sh\necho 200\n",
+            # The fake must drain stdin like real curl does with -K -: an
+            # unread pipe races printf into SIGPIPE and pipefail kills the
+            # script silently (this flake cost a CI round to find).
+            "curl": "#!/bin/sh\ncat >/dev/null\necho 200\n",
             "sleep": "#!/bin/sh\nexit 0\n",
         }
         for script in (SCRIPT, SELFTEST):

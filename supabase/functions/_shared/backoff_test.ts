@@ -1,7 +1,19 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { backoffMs, classify, isPoisonedUpdate, MAX_ATTEMPTS, retryPlan, UPDATE_FAIL_LIMIT } from "./backoff.ts";
+import { backoffMs, classify, failuresAfter, isPoisonedUpdate, MAX_ATTEMPTS, retryPlan, UPDATE_FAIL_LIMIT, updateDisposition } from "./backoff.ts";
 import { MetaError } from "./meta.ts";
 import { TgError } from "./tg.ts";
+
+Deno.test("a handled retry is marked done: a later re-send is a duplicate, not a re-run", () => {
+  // Telegram can redeliver an update (timeout, lost 200). If the successful
+  // retry leaves failures > 0 behind, the next redelivery re-runs the handler
+  // and creates a second draft/card. Handling must zero the count.
+  assertEquals(updateDisposition(1), "retry");
+  assertEquals(failuresAfter("handled", 1), 0);
+  assertEquals(updateDisposition(failuresAfter("handled", 1)), "duplicate");
+  assertEquals(failuresAfter("failed", 1), 2);
+  assertEquals(updateDisposition(failuresAfter("failed", UPDATE_FAIL_LIMIT - 1)), "poison");
+  assertEquals(updateDisposition(null), "fresh");
+});
 
 Deno.test("backoff doubles from 30 s and caps at 15 min", () => {
   assertEquals(backoffMs(1), 30_000);
