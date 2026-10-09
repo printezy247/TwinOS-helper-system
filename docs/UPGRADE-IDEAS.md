@@ -35,7 +35,9 @@ waiting; **needs Jack** = a decision or a value only he has.
    *Built:* `cover_command` in `workers/pc/studio/moments.py`.
 7. **Hook A/B by evidence** — track `hook_id` on variants and let numbers pick
    the winner. *Built:* `content_variants.hook_id` (0032), `v_hook_performance`,
-   `hookWinner` in `_shared/insights.ts`; `onAdjust` records the hook used.
+   `hookWinner` in `_shared/insights.ts`; `onAdjust` records the hook used, and
+   fan-out drafts carry the hook that opened them (`hook_id` through
+   `createDraft`), so kit drafts count in the same evidence.
 8. **Signature rotation** — platform signatures from one setting, appended
    once. *Built:* `withSignature` in `_shared/platforms.ts`, read from the
    `platform_signatures` setting in `fanout.ts`.
@@ -53,10 +55,13 @@ waiting; **needs Jack** = a decision or a value only he has.
     `v_best_times` + `bestHours` in `_shared/insights.ts`. *(Best-times studies;
     Telegram is chronological, so timing is one of only two reach levers.)*
 11. **Engagement rate** — views-24h ÷ members per day. *Built:*
-    `v_post_engagement` + `engagementRate`.
+    `v_post_engagement` + `engagementRate`; the Friday card renders it too
+    (`avg_views_pct_of_members` on the scorecard image, one decimal).
 12. **Channel staleness alert** — channels fade after a ~36 h quiet gap. *
     Built:* `channelStale`/`CHANNEL_STALE_MS`, Desk alert `channel-quiet` in
-    `health/check`. *(Posting-consistency studies.)*
+    `health/check`; a 30 h heads-up (`channel-quiet-soon`, `channelStage` in
+    `_shared/insights.ts`) warns while there is still time to queue, and
+    closes itself when the real alert stands. *(Posting-consistency studies.)*
 13. **Hashtag minimum per platform** — warn under the floor (IG/TikTok 3,
     YouTube/X 2, FB/Threads 1, Telegram none). *Built:* `hashtagsMin` +
     warn finding in `_shared/platforms.ts`.

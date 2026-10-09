@@ -149,8 +149,10 @@ async function fanOutOne(
     // TikTok / YouTube kits ship a shooting script: hook + beats + the risk
     // line spoken, from the no-AI libraries (Wave 3 item 7).
     let scriptKitText: string | null = null;
+    let hookId: number | null = null;
     if (platform === "tiktok" || platform === "youtube") {
       const hook = await nextHook(db, { pillar: item.pillar as string | null, lang });
+      hookId = hook?.id ?? null;
       const cta = await nextCta(db, { platform, lang });
       scriptKitText = renderScriptKit(scriptKit({
         platform: platform as KitPlatform,
@@ -166,6 +168,7 @@ async function fanOutOne(
       platform: platform as Platform,
       fields: {},
       body_override: adapted.body,
+      hook_id: hookId,
       media,
       pillar: item.pillar as string | null,
       title: item.title as string | null,

@@ -175,10 +175,10 @@ Built 3 Oct in Lovable, one prompt per item (commits acc4e6e … 6cafec6; type c
 Ideas and sources: `docs/UPGRADE-IDEAS.md` (21 items from trending repos and Reddit; method rules hold).
 - [x] Poison-update guard (a failing update is dropped at 3 failures with a `tg.update_poisoned` log, never hot-looped; `tg_updates.failures` + `isPoisonedUpdate`, migration 0032)
 - [x] Burned-in word-level captions + hook-text cover thumbnails (`ass_words` / `cover_command` in `workers/pc/studio/`; WordCaption + CoverThumbnail tests)
-- [x] Hook A/B by evidence (`content_variants.hook_id`, `v_hook_performance`, `hookWinner`; `onAdjust` records the hook used)
-- [x] Best-times + engagement + signal ledger views (`v_best_times`, `v_post_engagement`, `v_signal_ledger`, `v_post_engagement` %; `bestHours`/`engagementRate` in `_shared/insights.ts`; registered in `ANALYTICS_VIEWS`)
+- [x] Hook A/B by evidence (`content_variants.hook_id`, `v_hook_performance`, `hookWinner`; `onAdjust` records the hook used, fan-out drafts carry `hook_id` through `createDraft`)
+- [x] Best-times + engagement + signal ledger views (`v_best_times`, `v_post_engagement`, `v_signal_ledger`, `v_post_engagement` %; `bestHours`/`engagementRate` in `_shared/insights.ts`; registered in `ANALYTICS_VIEWS`; the Friday card renders `avg_views_pct_of_members`)
 - [x] No-delete watchdog on `signal_posts` (trigger `trg_signal_posts_no_delete`; smoke §25)
-- [x] Channel staleness alert (36 h quiet gap → Desk alert `channel-quiet` in `health/check`)
+- [x] Channel staleness alert (36 h quiet gap → Desk alert `channel-quiet` in `health/check`; 30 h nudge `channel-quiet-soon` warns first and closes when the real alert stands)
 - [x] Hashtag minimum per platform + signature rotation (`hashtagsMin` warn floor, `withSignature` + `platform_signatures` setting)
 - [x] 2026 humanizer tells in the compliance warn list (EN + MS)
 - [ ] RSS macro digest — needs Jack's feed URL (the only non-self-contained idea)

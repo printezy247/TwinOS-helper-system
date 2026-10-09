@@ -21,7 +21,7 @@ import { escapeHtml, sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
 import { runProviderChecks } from "_shared/providers.ts";
 import { deskAlert, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
-import { channelStale, CHANNEL_STALE_MS, feedStale, FEED_STALE_MS } from "_shared/insights.ts";
+import { channelStage, feedStale, FEED_STALE_MS } from "_shared/insights.ts";
 
 const SOURCES = ["ezyai", "ops_bot", "scheduler", "pc_worker", "poller", "abdul", "sales_bot"] as const;
 const STALE_DEFAULT_MIN: Record<string, number> = {
@@ -173,14 +173,29 @@ serve(async (req) => {
     // the same rule the beats use above (never reported is setup, not an
     // outage). Before this, a project that had not published once warned
     // every cooldown forever. Once there is a first post, it behaves as before.
-    if (lastPost && channelStale(lastPost.posted_at as string, Date.now(), CHANNEL_STALE_MS)) {
-      await deskAlert({
-        db,
-        key: "channel-quiet",
-        kind: "channel_stale",
-        severity: "high",
-        message: "\u26A0\uFE0F Nothing has posted to the channel in over 36 hours. A quiet channel loses members \u2014 queue a map or a lesson.",
-      });
+    if (lastPost) {
+      const stage = channelStage(lastPost.posted_at as string, Date.now());
+      if (stage === "quiet") {
+        await deskAlert({
+          db,
+          key: "channel-quiet",
+          kind: "channel_stale",
+          severity: "high",
+          message: "\u26A0\uFE0F Nothing has posted to the channel in over 36 hours. A quiet channel loses members \u2014 queue a map or a lesson.",
+        });
+        // The 30 h heads-up is obsolete once the real alert stands: close it
+        // so the Desk log keeps one live thread per problem.
+        await db.from("alerts").update({ resolved_at: new Date().toISOString() })
+          .eq("dedupe_key", "err:channel-quiet-soon").is("resolved_at", null);
+      } else if (stage === "nudge") {
+        await deskAlert({
+          db,
+          key: "channel-quiet-soon",
+          kind: "channel_stale",
+          severity: "info",
+          message: "\u23F0 Nothing has posted in about 30 hours. If today's map or lesson is ready, queue it \u2014 the quiet alert fires at 36.",
+        });
+      }
     }
     // The research feeds are polled every 6 hours: when the newest run is
     // older than two cycles the cron itself is the thing that broke, and

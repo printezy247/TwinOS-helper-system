@@ -693,6 +693,23 @@ def research_upgrades() -> None:
         "channels fade after a 36 h gap; the Desk must hear about it",
     )
     check(
+        "growth: the nudge comes before the quiet mark, not after",
+        "channel-quiet-soon" in read("supabase/functions/health/index.ts")
+        and "channelStage" in read("supabase/functions/_shared/insights.ts"),
+        "a 30 h heads-up, the 36 h alert: warn while there is still time to queue",
+    )
+    check(
+        "fanout: every draft records the hook that opened it",
+        "hook_id" in read("supabase/functions/_shared/fanout.ts")
+        and "hook_id" in read("supabase/functions/_shared/content.ts"),
+        "v_hook_performance reads content_variants.hook_id; a draft that used a hook must carry it",
+    )
+    check(
+        "scorecard: the engagement line rides on the Friday card",
+        "avg_views_pct_of_members" in read("workers/pc/studio/scorecard.py"),
+        "views over members is already on the scoreboard; the card Jack posts must show it",
+    )
+    check(
         "docs: the research ideas are written down with status",
         (ROOT / "docs/UPGRADE-IDEAS.md").exists() and "## 5." in read("docs/LOVABLE-WAVE4-PROMPTS.md"),
         "docs/UPGRADE-IDEAS.md + Lovable prompt 5 (insights view)",

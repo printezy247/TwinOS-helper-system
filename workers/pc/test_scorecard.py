@@ -48,6 +48,10 @@ class ScorecardTest(unittest.TestCase):
             info = scorecard.render({}, week="2026-10-05", out_dir=d)
             self.assertTrue(Path(info["path"]).exists())
 
+class FormattingTests(unittest.TestCase):
+    """Pure formatting: no Pillow, so these run everywhere (they were inside
+    the Pillow-skipped class and never executed in CI)."""
+
     def test_the_colours_follow_the_sign(self):
         from studio import scorecard
 
@@ -66,6 +70,15 @@ class ScorecardTest(unittest.TestCase):
         self.assertEqual(scorecard._fmt(67, "pct"), "67%")
         self.assertEqual(scorecard._fmt(8.4, "r"), "+8.4R")
         self.assertEqual(scorecard._fmt(None, "int"), "–")
+
+    def test_the_engagement_line_formats_with_one_decimal(self):
+        from studio import scorecard
+
+        self.assertEqual(scorecard._fmt(12.34, "pct1"), "12.3%")
+        self.assertEqual(scorecard._fmt(None, "pct1"), "–")
+        self.assertIn("avg_views_pct_of_members", [k for k, _, _ in scorecard.ROWS])
+        # Engagement has no pass mark: the colour must not judge 12% as bad.
+        self.assertEqual(scorecard._colour("avg_views_pct_of_members", 12.3, "pct1"), scorecard.TEXT)
 
 
 if __name__ == "__main__":

@@ -143,6 +143,8 @@ export interface DraftInput {
   allowed_numbers?: number[];
   media?: Array<{ kind: "photo" | "video"; url?: string; asset_id?: string; file_id?: string }>;
   signal_id?: string | null;
+  /** The library hook that opened this draft (A/B: v_hook_performance reads it). */
+  hook_id?: number | null;
   scheduled_at?: string | null;
   /** When the post is meant to go out (the batch plan); scheduled_at is what the publisher acts on. */
   planned_for?: string | null;
@@ -216,6 +218,7 @@ export async function createDraft(input: DraftInput): Promise<DraftResult> {
       lang: input.lang,
       body,
       media: input.media ?? [],
+      hook_id: input.hook_id ?? null,
       claim_flags: compliance.claim_flags,
       needed_fields: needed,
       compliance,

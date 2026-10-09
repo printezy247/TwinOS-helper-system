@@ -30,6 +30,7 @@ WIDTH, HEIGHT = 1080, 1350
 ROWS: list[tuple[str, str, str]] = [
     ("channel_members", "Members", "int"),
     ("net_joins", "Net joins", "signed"),
+    ("avg_views_pct_of_members", "Avg views % of members", "pct1"),
     ("signals_posted", "Signals posted", "int"),
     ("results_posted", "Results posted", "int"),
     ("strict_win_rate_4w", "Strict win rate (4w)", "pct"),
@@ -55,6 +56,8 @@ def _fmt(value: Any, kind: str) -> str:
         return "–"
     if kind == "pct":
         return f"{float(value):.0f}%"
+    if kind == "pct1":
+        return f"{float(value):.1f}%"
     if kind == "r":
         return f"{float(value):+.1f}R"
     if kind == "signed":
@@ -98,7 +101,8 @@ def render(scoreboard: dict[str, Any] | None, week: str = "", out_dir: str | Pat
     d.rounded_rectangle([pad, top, WIDTH - pad, bottom], radius=24, fill=PANEL)
 
     y = top + 56
-    line_h = 104
+    # Rows share the panel: 104 px while they fit, tighter when the card grows.
+    line_h = min(104, (bottom - top - 116) // max(len(ROWS) - 1, 1))
     for key, label, kind in ROWS:
         value = sb.get(key)
         d.text((pad + 48, y + 16), label, font=_font(38), fill=MUTED)

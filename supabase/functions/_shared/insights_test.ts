@@ -1,5 +1,19 @@
 import { assert, assertEquals } from "std/assert/mod.ts";
-import { bestHours, channelStale, CHANNEL_STALE_MS, engagementRate, feedStale, FEED_STALE_MS, hookWinner } from "./insights.ts";
+import { bestHours, channelStage, channelStale, CHANNEL_STALE_MS, engagementRate, feedStale, FEED_STALE_MS, hookWinner } from "./insights.ts";
+
+Deno.test("channel stage: a heads-up at 30 h, the alert at 36 h", () => {
+  // The nudge exists so the quiet mark never surprises anyone: Jack hears
+  // "queue something" while there is still time, not after the fade.
+  const posted = "2026-10-01T00:00:00Z";
+  const at = (hours: number) => Date.parse(posted) + hours * 3600_000;
+  assertEquals(channelStage(posted, at(29)), "fresh");
+  assertEquals(channelStage(posted, at(31)), "nudge");
+  assertEquals(channelStage(posted, at(30.5)), "nudge");
+  assertEquals(channelStage(posted, at(37)), "quiet");
+  // Nothing ever posted: stale by the helper's contract; the caller treats
+  // "never used" as setup, not an outage.
+  assertEquals(channelStage(null, at(1)), "quiet");
+});
 
 Deno.test("bestHours: the hours with the most views come first, ties by hour", () => {
   assertEquals(bestHours([

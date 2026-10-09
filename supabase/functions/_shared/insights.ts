@@ -8,6 +8,7 @@
  *   hookWinner     which library hook's posts earned the most views (needs two
  *                  uses before it says anything)
  *   channelStale   has the channel gone quiet past the gap that loses members
+ *   channelStage   fresh / nudge at 30 h / quiet at 36 h
  */
 
 export interface HourViews {
@@ -69,6 +70,22 @@ export function channelStale(lastPostAt: string | null, now = Date.now(), maxGap
   const t = Date.parse(lastPostAt);
   if (Number.isNaN(t)) return true;
   return now - t > maxGapMs;
+}
+
+/** A gentle heads-up before the quiet mark: nudge at 30 h, alert at 36 h. */
+export const CHANNEL_NUDGE_MS = 30 * 3600_000;
+
+export type ChannelStage = "fresh" | "nudge" | "quiet";
+
+/**
+ * How bad the posting gap is: fresh, worth a nudge, or past the stale gap.
+ * Nothing ever posted is "quiet" by this helper's contract — the caller
+ * treats "never used" as setup, not an outage.
+ */
+export function channelStage(lastPostAt: string | null, now = Date.now()): ChannelStage {
+  if (channelStale(lastPostAt, now, CHANNEL_STALE_MS)) return "quiet";
+  if (channelStale(lastPostAt, now, CHANNEL_NUDGE_MS)) return "nudge";
+  return "fresh";
 }
 
 /** A research feed is polled every 6 hours; one missed run is a delay, two is a failure. */
