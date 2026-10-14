@@ -54,7 +54,7 @@ serve(async (req) => {
     );
     if (!due.length) return json({ ok: true, due: 0, taken: 0 });
 
-    const chat = await tg.call<{ username?: string }>("getChat", { chat_id: chatId });
+    const chat = await tg.getTgClient().call<{ username?: string }>("getChat", { chat_id: chatId });
     if (!chat.username) return json({ ok: true, due: due.length, taken: 0, skipped: "the channel has no public username" });
 
     // Newest page first; walk back while a due post is still older than the page.

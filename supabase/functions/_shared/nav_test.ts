@@ -33,10 +33,10 @@ Deno.test("grammar v2: nav, page and nop parse (Wave 1 item 1)", () => {
 });
 
 Deno.test("grammar v2: a stale layout fingerprint is detected (Wave 1 item 1)", () => {
-  assertEquals(isStaleFp(NAV_LAYOUT), false);
-  assertEquals(isStaleFp("v0"), true);
+  assertEquals(isStaleFp(NAV_LAYOUT, NAV_LAYOUT), false);
+  assertEquals(isStaleFp("v0", NAV_LAYOUT), true);
   const stale = parseCallback("nav:home@v0");
-  assert(stale?.kind === "nav" && isStaleFp(stale.fp), "old menus must answer outdated and redraw");
+  assert(stale?.kind === "nav" && isStaleFp(stale.fp, NAV_LAYOUT), "old menus must answer outdated and redraw");
 });
 
 Deno.test("grammar v2: every builder stays under 64 bytes (Wave 1 item 1)", () => {

@@ -989,7 +989,7 @@ async function onNav(
     await tg.answerCallbackQuery(cq.id, "Open /menu for the panel.");
     return;
   }
-  const stale = tg.isStaleFp(nav.fp);
+  const stale = tg.isStaleFp(nav.fp, tg.NAV_LAYOUT);
   const screen = nav.kind === "nav" &&
       ((tg.MENU_SCREENS as readonly string[]).includes(nav.screen) || nav.screen === "home")
     ? nav.screen
