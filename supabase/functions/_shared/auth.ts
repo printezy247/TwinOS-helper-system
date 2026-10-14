@@ -127,7 +127,45 @@ export async function isServiceKey(jwt: string): Promise<boolean> {
   const jwtSecret = Deno.env.get("SUPABASE_JWT_SECRET") ?? "";
   if (jwtSecret && await verifyServiceJwt(jwt, jwtSecret)) return true;
 
-  return false;
+  return await verifyServiceKeyRemote(jwt);
+}
+
+const REMOTE_OK_TTL_MS = 10 * 60_000;
+const REMOTE_NO_TTL_MS = 60_000;
+const remoteVerdicts = new Map<string, { ok: boolean; until: number }>();
+
+/**
+ * Last resort when the injected key is not the legacy JWT pg_cron holds (new
+ * API keys, a rotated JWT secret): let Supabase Auth judge it. Only the admin
+ * API answers 200 to a genuine service-role key, so a forged payload cannot
+ * pass. The verdict is cached so cron's one-a-minute calls cost one request
+ * every ten minutes, and a refusal is cached briefly so junk cannot make us
+ * hammer Auth.
+ */
+async function verifyServiceKeyRemote(jwt: string): Promise<boolean> {
+  const payload = decodeJwtPayload(jwt);
+  if (!payload || payload.role !== "service_role") return false;
+  if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+  const base = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/+$/, "");
+  if (!base) return false;
+
+  const id = await sha256Hex(jwt);
+  const hit = remoteVerdicts.get(id);
+  if (hit && hit.until > Date.now()) return hit.ok;
+
+  let ok = false;
+  try {
+    const res = await fetch(`${base}/auth/v1/admin/users?per_page=1`, {
+      headers: { apikey: jwt, authorization: `Bearer ${jwt}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    await res.body?.cancel();
+    ok = res.status === 200;
+  } catch {
+    ok = false;
+  }
+  remoteVerdicts.set(id, { ok, until: Date.now() + (ok ? REMOTE_OK_TTL_MS : REMOTE_NO_TTL_MS) });
+  return ok;
 }
 
 export async function sha256Hex(value: string): Promise<string> {

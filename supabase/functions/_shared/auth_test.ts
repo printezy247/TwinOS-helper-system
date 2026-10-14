@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { apiKeyFrom, bearer, miniAppSession } from "./auth.ts";
+import { apiKeyFrom, bearer, isServiceKey, miniAppSession } from "./auth.ts";
 import { CORS_HEADERS } from "./http.ts";
 
 const KEY = "twk_abdul_" + "0123456789abcdef".repeat(3).slice(0, 40);
@@ -40,4 +40,53 @@ Deno.test("miniAppSession: read from x-twinos-session, or a tma. bearer; never a
   assertEquals(miniAppSession(h({ authorization: "Bearer eyJ.anon" })), "");
   assertEquals(miniAppSession(h({ "x-twinos-session": "eyJ.not-a-session" })), "");
   assertEquals(CORS_HEADERS["access-control-allow-headers"].includes("x-twinos-session"), true);
+});
+
+// pg_cron holds the legacy service-role JWT; when the key Supabase injects is
+// in another format, Supabase Auth's admin API is the judge.
+function fakeJwt(claims: Record<string, unknown>): string {
+  const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return `${b64({ alg: "HS256", typ: "JWT" })}.${b64(claims)}.${"s".repeat(12)}`;
+}
+
+async function withAuthStub<T>(status: number, run: (calls: { n: number }) => Promise<T>): Promise<T> {
+  const original = globalThis.fetch;
+  const calls = { n: 0 };
+  Deno.env.set("SUPABASE_URL", "https://proj.invalid");
+  Deno.env.delete("SUPABASE_SERVICE_ROLE_KEY");
+  Deno.env.delete("SUPABASE_JWT_SECRET");
+  globalThis.fetch = (() => {
+    calls.n += 1;
+    return Promise.resolve(new Response("{}", { status }));
+  }) as typeof fetch;
+  try {
+    return await run(calls);
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+Deno.test("isServiceKey: a service-role JWT that Supabase Auth accepts is the service key, and the answer is cached", async () => {
+  const jwt = fakeJwt({ role: "service_role", ref: "proj", exp: 4_000_000_000 });
+  await withAuthStub(200, async (calls) => {
+    assertEquals(await isServiceKey(jwt), true);
+    assertEquals(await isServiceKey(jwt), true);
+    assertEquals(calls.n, 1, "the second call must come from the cache");
+  });
+});
+
+Deno.test("isServiceKey: a forged service-role payload that Supabase Auth refuses is not the service key", async () => {
+  const jwt = fakeJwt({ role: "service_role", ref: "proj", exp: 4_000_000_001 });
+  await withAuthStub(401, async () => {
+    assertEquals(await isServiceKey(jwt), false);
+  });
+});
+
+Deno.test("isServiceKey: an anon or expired token never even reaches Supabase Auth", async () => {
+  await withAuthStub(200, async (calls) => {
+    assertEquals(await isServiceKey(fakeJwt({ role: "anon", exp: 4_000_000_002 })), false);
+    assertEquals(await isServiceKey(fakeJwt({ role: "service_role", exp: 1 })), false);
+    assertEquals(await isServiceKey("not-a-jwt"), false);
+    assertEquals(calls.n, 0);
+  });
 });
