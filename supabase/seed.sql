@@ -83,6 +83,7 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('llm_variants_enabled', 'false', 'Wave 3 item 6: queue the local-model variant job from the Desk Adjust button. Off until Jack turns it on.', false),
   ('llm_angles', '3', 'Wave 3 item 6: angles per platform the local model writes.', false),
   ('llm_local_url', '"http://127.0.0.1:8080"', 'Wave 3 item 6: Jack''s local llama-server (OpenAI-compatible /v1). Loopback only.', false),
+  ('use_polling', 'false', 'Phase 1 step 4: long-polling fallback when webhooks are unavailable. Development only; off in production.', false),
   ('platform_signatures', '{"telegram": "", "instagram": "", "facebook": "", "threads": "", "youtube": "", "tiktok": "", "x": ""}', 'Wave 4 item 2: saved per-platform sign-off lines the calendar appends. Empty until Jack writes his.', false)
 -- Keep the operator's runtime value (edge_base_url, channel_chat_id, ...):
 -- the seed rows for those are null placeholders, and a re-run must never wipe

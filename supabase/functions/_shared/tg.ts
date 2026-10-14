@@ -53,10 +53,79 @@ const RETRY_LIMIT = 3;
 const MAX_RETRY_AFTER_S = 20; // an edge function cannot sleep for minutes
 const CALLBACK_LIMIT_BYTES = 64;
 
-function token(): string {
+/** Cached clients keyed by bot slot (plan §1.2). */
+const tgClients = new Map<string, TelegramClient>();
+
+/**
+ * A Telegram client with a bound bot token (plan §1.2).
+ * The token is read once at construction, not on every call, so the webhook,
+ * publisher and Desk each resolve the right token without re-reading secrets.
+ */
+export class TelegramClient {
+  constructor(private readonly tokenValue: string) {}
+
+  /** The bound bot token, for callers that need it directly (e.g. deriveWebhookSecret). */
+  get botToken(): string {
+    return this.tokenValue;
+  }
+
+  /**
+   * Post a JSON method call to the Bot API. Same retry + TgError logic as the
+   * previous module-level call(), but with a bound token.
+   */
+  async call<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<T> {
+    const body = JSON.stringify(stripUndefined(params));
+    let lastDesc = "unknown";
+    for (let attempt = 0; attempt <= RETRY_LIMIT; attempt += 1) {
+      const res = await fetch(`https://api.telegram.org/bot${this.tokenValue}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        result?: T;
+        description?: string;
+        error_code?: number;
+        parameters?: { retry_after?: number; migrate_to_chat_id?: number };
+      };
+      if (data.ok) return data.result as T;
+      lastDesc = data.description ?? `http ${res.status}`;
+      const retryAfter = data.parameters?.retry_after ??
+        (res.status === 429 ? Number(res.headers.get("retry-after") ?? 1) : 0);
+      if ((res.status === 429 || retryAfter > 0) && attempt < RETRY_LIMIT) {
+        await sleep(Math.min(retryAfter || 1, MAX_RETRY_AFTER_S) * 1000);
+        continue;
+      }
+      if (res.status >= 500 && attempt < RETRY_LIMIT) {
+        await sleep(500 * 2 ** attempt);
+        continue;
+      }
+      throw new TgError(method, data.error_code ?? res.status, lastDesc);
+    }
+    throw new TgError(method, 429, lastDesc);
+  }
+}
+
+/**
+ * Return a cached TelegramClient for the given bot slot (plan §1.2).
+ * The token is read from TWINOS_OPS_BOT_TOKEN once and cached per-process.
+ */
+export function getTgClient(name = "default"): TelegramClient {
+  const existing = tgClients.get(name);
+  if (existing) return existing;
   const t = Deno.env.get("TWINOS_OPS_BOT_TOKEN") ?? "";
   if (!t) throw new HttpError(503, "not_configured", "TWINOS_OPS_BOT_TOKEN is not set");
-  return t;
+  const client = new TelegramClient(t);
+  tgClients.set(name, client);
+  return client;
+}
+
+function token(): string {
+  return getTgClient().botToken;
 }
 
 /**
@@ -70,40 +139,12 @@ export async function deriveWebhookSecret(): Promise<string> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Post a JSON method call to the Bot API. Delegates to the cached TelegramClient. */
 export async function call<T = unknown>(
   method: string,
   params: Record<string, unknown> = {},
 ): Promise<T> {
-  const body = JSON.stringify(stripUndefined(params));
-  let lastDesc = "unknown";
-  for (let attempt = 0; attempt <= RETRY_LIMIT; attempt += 1) {
-    const res = await fetch(`https://api.telegram.org/bot${token()}/${method}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body,
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      ok?: boolean;
-      result?: T;
-      description?: string;
-      error_code?: number;
-      parameters?: { retry_after?: number; migrate_to_chat_id?: number };
-    };
-    if (data.ok) return data.result as T;
-    lastDesc = data.description ?? `http ${res.status}`;
-    const retryAfter = data.parameters?.retry_after ??
-      (res.status === 429 ? Number(res.headers.get("retry-after") ?? 1) : 0);
-    if ((res.status === 429 || retryAfter > 0) && attempt < RETRY_LIMIT) {
-      await sleep(Math.min(retryAfter || 1, MAX_RETRY_AFTER_S) * 1000);
-      continue;
-    }
-    if (res.status >= 500 && attempt < RETRY_LIMIT) {
-      await sleep(500 * 2 ** attempt);
-      continue;
-    }
-    throw new TgError(method, data.error_code ?? res.status, lastDesc);
-  }
-  throw new TgError(method, 429, lastDesc);
+  return await getTgClient().call<T>(method, params);
 }
 
 function stripUndefined(o: Record<string, unknown>): Record<string, unknown> {
@@ -364,7 +405,7 @@ export function shortCallback(verb: string, id: string): string {
  * and redraws (grammY menu pattern). All screens edit the same message
  * in place; the webhook keeps no memory between calls.
  */
-export const NAV_LAYOUT = "v1";
+export const NAV_LAYOUT = "v2";
 
 export type Callback =
   | { kind: "item"; verb: string; short: string; extra?: string }
@@ -385,8 +426,9 @@ export function nopButton(text: string): InlineButton {
   return { text, callback_data: "nop" };
 }
 
-export function isStaleFp(fp: string): boolean {
-  return fp !== NAV_LAYOUT;
+/** Compare a stored fingerprint against the current layout version (plan §1.3). */
+export function isStaleFp(stored: string, current = NAV_LAYOUT): boolean {
+  return stored !== current;
 }
 
 export function parseCallback(data: string): Callback | null {
@@ -593,4 +635,35 @@ export function pollSnapshot(poll: unknown): PollSnapshot | null {
     totalVoters: count(p.total_voter_count),
     closed: p.is_closed === true,
   };
+}
+
+/**
+ * Long-polling fallback for non-webhook environments (plan §1.4).
+ * Calls getUpdates with timeout: 30, tracks offset, yields updates in order.
+ * Only used when setting("use_polling") === true (development).
+ *
+ * Pass an AbortSignal to stop the loop cleanly from the caller.
+ */
+export interface PollOpts {
+  offset?: number;
+  limit?: number;
+  timeout?: number; // seconds; Telegram caps at 86400, we cap at 50 for edge fn safety
+  signal?: AbortSignal;
+}
+
+export async function* pollUpdates(opts?: PollOpts): AsyncGenerator<unknown> {
+  const timeout = Math.min(opts?.timeout ?? 30, 50);
+  const limit = opts?.limit ?? 100;
+  let offset = opts?.offset;
+  while (!opts?.signal?.aborted) {
+    const params: Record<string, unknown> = { timeout, limit };
+    if (offset !== undefined) params.offset = offset;
+    const updates = await getTgClient().call<unknown[]>("getUpdates", params);
+    for (const u of updates) {
+      if (u && typeof u === "object" && "update_id" in u) {
+        offset = Number((u as { update_id: number }).update_id) + 1;
+      }
+      yield u;
+    }
+  }
 }

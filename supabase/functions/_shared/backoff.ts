@@ -9,8 +9,7 @@
  *   permanent → fail the job and alert, no retry
  *   unknown   → try again, like throttled
  */
-import * as tg from "./tg.ts";
-import { classifyMeta, MetaError } from "./meta.ts";
+import { defaultMiddlewares } from "./classifyMiddleware.ts";
 
 export const MAX_ATTEMPTS = 4;
 export const BACKOFF_BASE_MS = 30_000;
@@ -18,22 +17,18 @@ export const BACKOFF_CAP_MS = 15 * 60_000;
 
 export type Kind = "success" | "throttled" | "permanent" | "unknown";
 
-/** Ported from the ops dashboard's classifyMetaError, adapted to Bot API codes. */
+/**
+ * Classify an error by running it through the middleware pipeline:
+ * TgError → MetaError → Transport → Generic. The first tier that claims the
+ * error wins; if no tier claims it (impossible: GenericMiddleware is a
+ * catch-all), defaults to `unknown`.
+ */
 export function classify(err: unknown): { kind: Kind; reason: string } {
-  if (err instanceof tg.TgError) {
-    if (err.code === 429) return { kind: "throttled", reason: err.message };
-    if (err.code >= 500) return { kind: "throttled", reason: err.message };
-    if (err.code === 401 || err.code === 403) return { kind: "permanent", reason: err.message };
-    if (/chat not found|message to reply not found|wrong file identifier|too long|can't parse/i.test(err.message)) {
-      return { kind: "permanent", reason: err.message };
-    }
-    return { kind: "permanent", reason: err.message };
+  for (const m of defaultMiddlewares) {
+    const r = m.classify(err);
+    if (r) return r;
   }
-  if (err instanceof MetaError) return classifyMeta(err);
-  const msg = err instanceof Error ? err.message : String(err);
-  if (/permanent:/.test(msg)) return { kind: "permanent", reason: msg };
-  if (/^capped:/.test(msg)) return { kind: "throttled", reason: msg };
-  return { kind: "unknown", reason: msg };
+  return { kind: "unknown", reason: String(err) };
 }
 
 /** 30 s, 60 s, 120 s, 240 s … capped at 15 min. `attempts` is 1-based. */

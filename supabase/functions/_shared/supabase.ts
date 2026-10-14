@@ -84,6 +84,7 @@ export const SETTING_TYPES: Record<string, SettingType> = {
   llm_angles: "number",
   llm_local_url: "text",
   platform_signatures: "text",
+  use_polling: "boolean",
 };
 
 /**
@@ -133,4 +134,5 @@ export const SETTING_KEYS = {
   llmVariantsEnabled: "llm_variants_enabled", // Wave 3 item 6: local-model variants, off by default
   llmAngles: "llm_angles", // Wave 3 item 6: angles per platform (default 3)
   llmLocalUrl: "llm_local_url", // Wave 3 item 6: loopback llama-server base URL
+  usePolling: "use_polling", // Phase 1 step 4: long-polling fallback when webhooks unavailable
 } as const;
