@@ -17,3 +17,21 @@ Deno.test("integrations: an empty string counts as missing, values are never ech
   assertEquals(st.find((i) => i.provider === "telegram")!.ready, false);
   for (const i of st) assert(!("value" in i), "secret values must never leave the function");
 });
+
+// The Keyring panel renders these, so a missing one is a broken setup screen
+// rather than a blank line.
+Deno.test("integrations: every provider carries the guidance the Keyring needs", () => {
+  for (const i of integrationStatus({})) {
+    assert(i.purpose.trim().length > 10, `${i.provider} needs a purpose`);
+    assert(/^https:\/\//.test(i.get_url), `${i.provider} get_url must be a real link`);
+    assert(i.set_command.includes("supabase secrets set"), `${i.provider} set_command must be the real command`);
+  }
+});
+
+Deno.test("integrations: the set command names the secret it actually sets", () => {
+  for (const p of PROVIDERS) {
+    const m = /set\s+([A-Z0-9_]+)=/.exec(p.set_command);
+    assert(m, `${p.provider}: set_command must be a supabase secrets set line`);
+    assert(p.secrets.includes(m![1]), `${p.provider}: ${m![1]} is not one of its own secrets`);
+  }
+});

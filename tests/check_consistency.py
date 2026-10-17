@@ -714,6 +714,13 @@ def research_upgrades() -> None:
         (ROOT / "docs/UPGRADE-IDEAS.md").exists() and "## 5." in read("docs/LOVABLE-WAVE4-PROMPTS.md"),
         "docs/UPGRADE-IDEAS.md + Lovable prompt 5 (insights view)",
     )
+    w5 = read("docs/LOVABLE-WAVE5-PROMPTS.md") if (ROOT / "docs/LOVABLE-WAVE5-PROMPTS.md").exists() else ""
+    check(
+        "docs: the dashboard wave cites the contracts that actually exist",
+        all(s in w5 for s in ("set_setting", "setting_text", "integrations", "GET /functions/v1/health/today")),
+        "Wave 5 must name set_setting, setting_text, integrations and health/today — "
+        "a prompt that invents a contract costs Lovable credits to build something that cannot work",
+    )
 
 
 # ---------------------------------------------------------------------------

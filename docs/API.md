@@ -144,8 +144,12 @@ same result twice. `cron` is the usual caller; `abdul`/`jack` may also drain.
 ```json
 { "ok": false, "summary": "stale: ezyai; 1 open alert(s)",
   "beats": { "ezyai": { "status": "ok", "at": "…", "stale": true, "stale_after_min": 30 }, "scheduler": {…} },
+  "integrations": [ { "provider": "telegram", "label": "Telegram ops bot", "purpose": "Reads the EzyMap Desk group…",
+                      "ready": false, "missing": ["TWINOS_OPS_BOT_TOKEN"],
+                      "get_url": "https://t.me/BotFather", "set_command": "supabase secrets set …", "live": true } ],
   "open_alerts": [ { "kind": "stale_beat", "severity": "high", "message": "…" } ], "failed_jobs": 0 }
 ```
+`integrations` carries secret **names** and where to get them. A value never leaves the function.
 `POST /health/check` (cron) → `{ "ok": true, "stale": ["ezyai"] }`.
 
 ## friday
@@ -153,6 +157,14 @@ same result twice. `cron` is the usual caller; `abdul`/`jack` may also drain.
 `POST /friday/manual` `{ "week_start": "2026-10-05", "source": "vantage", "metrics": { "ib_accounts_opened": 3, "first_time_depositors": 2, "active_funded_clients": 41, "rebates_usd": 180 } }` → `{ "ok": true, "missing_inputs": [] }`.
 `POST /friday/request-inputs` (cron Fri 09:00 MYT) → asks in the Desk group.
 `POST /friday/post` → scorecard draft to the Desk + `scorecard_image` job → `201 { "content_id": "…" }`.
+
+## settings (RPC, not a route)
+`supabase.rpc('set_setting', { p_key, p_value })` (jack only) → updates one `settings` row, clears
+`needs_confirm`, records the change in `action_log`. Refuses a key the seed does not define, so a typo
+cannot create a row nothing reads. `supabase.rpc('setting_text', { p_key, p_value })` is the same thing
+for a plain string — `settings.value` is `jsonb`, so a bare string is a syntax error. There is no route
+here on purpose: a policy would grant UPDATE on the whole table and let the caller decide what a valid
+value looks like.
 
 ## jobs  (PC worker)
 `POST /jobs/claim` `{ "worker": "jack-pc", "kinds": ["drop_folder_watch","backup"] }` → `{ "job": { "id": "…", "kind": "backup", "payload": {}, "attempts": 1 } | null }`.

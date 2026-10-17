@@ -698,5 +698,52 @@ begin
   raise notice 'ok: research upgrades';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- 26. settings can be written by Jack and by nobody else (20261018010000)
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  -- As Jack: the value lands, needs_confirm clears, and the change is logged.
+  perform public.set_setting('timezone', '"Asia/Kuala_Lumpur"'::jsonb);
+  assert (select value #>> '{}' from public.settings where key = 'timezone') = 'Asia/Kuala_Lumpur',
+    'set_setting stored the value';
+  assert (select updated_by from public.settings where key = 'timezone') = 'jack', 'the writer is recorded';
+  assert exists (
+    select 1 from public.action_log where target_table = 'settings' and target_id = 'timezone'
+  ), 'a settings change reaches action_log: it decides what gets published';
+
+  -- setting_text is the helper for a plain string: settings.value is jsonb, so
+  -- a bare string is a syntax error at the call site.
+  perform public.setting_text('channel_handle', 't.me/ezymap');
+  assert (select value #>> '{}' from public.settings where key = 'channel_handle') = 't.me/ezymap',
+    'setting_text stored the string';
+
+  -- A key nothing reads must not become a row nothing cleans up.
+  begin
+    perform public.set_setting('tmiezone', '"typo"'::jsonb);
+    raise exception 'an unknown key was accepted';
+  exception
+    when raise_exception then
+      if sqlerrm = 'an unknown key was accepted' then raise; end if;
+      assert sqlerrm like 'unknown setting:%', 'wrong refusal: ' || sqlerrm;
+  end;
+
+  -- Anyone who is not Jack: refused at the database, not in the dashboard.
+  perform set_config('request.jwt.claims', '{"twinos_role":"abdul","role":"authenticated"}', false);
+  begin
+    perform public.set_setting('timezone', '"UTC"'::jsonb);
+    raise exception 'a non-jack caller was allowed to change a setting';
+  exception
+    when raise_exception then
+      if sqlerrm = 'a non-jack caller was allowed to change a setting' then raise; end if;
+      assert sqlerrm = 'only Jack may change a setting', 'wrong refusal: ' || sqlerrm;
+  end;
+  perform set_config('request.jwt.claims', '{"twinos_role":"jack","role":"authenticated"}', false);
+  assert (select value #>> '{}' from public.settings where key = 'timezone') = 'Asia/Kuala_Lumpur',
+    'the refused call changed nothing';
+
+  raise notice 'ok: settings write is Jack-only, refuses unknown keys, logs the change';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
