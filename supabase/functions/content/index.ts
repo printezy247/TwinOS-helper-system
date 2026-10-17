@@ -26,7 +26,8 @@ import { fanoutFailure, fanoutSummary } from "_shared/platforms.ts";
 import { type PendingItem, pendingRows, type PendingVariant } from "_shared/inbox.ts";
 import { logAction } from "_shared/log.ts";
 import { sendMessage } from "_shared/tg.ts";
-import { startOfDayInTz } from "_shared/time.ts";
+import { startOfDayInTz, bucketByDay } from "_shared/time.ts";
+import { dayAndWeekStart } from "_shared/today.ts";
 import {
   cycleWeek, mondayOf, nextMonday, planBatch, runAtToInstant, slotToInstant, summaryLines, sweepPlan, topicTitle, type SweepItem,
 } from "_shared/batch.ts";
@@ -68,6 +69,52 @@ serve(async (req) => {
       variants = (vars ?? []) as PendingVariant[];
     }
     return json({ items: pendingRows((items ?? []) as PendingItem[], variants) });
+  }
+
+  // GET /content/calendar?week=YYYY-MM-DD — the week view (Wave 5 prompt 4).
+  // One read for the whole week instead of a join the dashboard cannot make:
+  // publish_jobs are the scheduling truth and content_items carries what each
+  // job is. `week` is a Monday in the channel timezone; absent means this week.
+  if (method === "GET" && tail.length === 1 && tail[0] === "calendar") {
+    requireRole(caller.role, "reports.read");
+    const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+    const { week } = dayAndWeekStart(tz);
+    const asked = new URL(req.url).searchParams.get("week") ?? "";
+    const monday = /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : week;
+    const from = startOfDayInTz(tz, new Date(`${monday}T12:00:00Z`));
+    const to = new Date(Date.parse(from) + 7 * 86_400_000).toISOString();
+
+    const db = admin();
+    const { data: jobs, error } = await db.from("publish_jobs")
+      .select("id, content_id, platform, run_at, status, attempts, last_error")
+      .gte("run_at", from).lt("run_at", to)
+      .order("run_at", { ascending: true })
+      .limit(500);
+    if (error) throw new HttpError(503, "upstream_failed", `publish_jobs: ${error.message}`);
+
+    const ids = [...new Set((jobs ?? []).map((j) => j.content_id).filter(Boolean))] as string[];
+    const { data: items, error: iErr } = ids.length
+      ? await db.from("content_items").select("id, post_type, lang, status, title, pillar").in("id", ids)
+      : { data: [], error: null };
+    if (iErr) throw new HttpError(503, "upstream_failed", `content_items: ${iErr.message}`);
+    const byId = new Map((items ?? []).map((i) => [i.id as string, i]));
+
+    // The dashboard renders by day, so the days are named here rather than
+    // grouped in the client: a post at 23:30 MYT belongs to the next day for
+    // anyone reading from another timezone.
+    const rows = (jobs ?? []).map((j) => ({
+      job_id: j.id,
+      content_id: j.content_id,
+      platform: j.platform,
+      run_at: j.run_at,
+      status: j.status,
+      last_error: j.last_error,
+      post_type: byId.get(j.content_id as string)?.post_type ?? null,
+      lang: byId.get(j.content_id as string)?.lang ?? null,
+      title: byId.get(j.content_id as string)?.title ?? null,
+    }));
+    const days = bucketByDay(tz, rows, { from, days: 7, at: (r) => r.run_at as string });
+    return json({ week_start: monday, tz, days });
   }
 
   if (method === "GET" && tail.length === 1) {
