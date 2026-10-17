@@ -161,19 +161,8 @@ change):
 
 ## What this wave does not do, and why
 
-Four upgrades from the review need the **backend** first, and none of them can
-be built from the dashboard without inventing tables:
-
-- **Templates keyed by `(post_type, platform, lang)`** — `templates.key` is
-  `post_type` as its primary key, so one post type has one template and no
-  per-platform caption. That is the choke point behind per-platform copy
-  control. It is a schema change and belongs in this repo first.
-- **Tagged, scored `feed_items`** — the table has no category, tag, language or
-  relevance column at all, so research cannot be sorted by anything.
-- **`{{cta}}` and `{{hook}}` render slots** — `ctas` and `hooks` rotate by
-  least-recently-used but `render()` has no placeholder that pulls from them.
-- **A calendar endpoint** — prompt 4 reads the tables directly because that is
-  honest for a week view; a `/content/calendar` route is worth it only once the
-  composer exists.
-
-Say which of those to build in the backend and they land as a Wave 6 of prompts.
+Four upgrades from the review needed the **backend** first, and none of them could be built from the
+dashboard without inventing tables. **All four are now built** and in `docs/LOVABLE-WAVE6-PROMPTS.md`
+— this wave does not use them, so run it first if you want the Keyring and Today in front of
+per-platform templates. Nothing here breaks: an empty `template_variants` and untagged `feed_items`
+behave exactly as they did before.

@@ -12,6 +12,7 @@
  *
  * Pure. research/index.ts does the fetching and the writing.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { bannedWords, detectClaims } from "./compliance.ts";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -316,3 +317,73 @@ const GENERIC = new Set((
   "stop loss losses profit profits win wins rate rates tp sl dd ai " +
   "zone today map size account"
 ).split(" "));
+
+// ---------------------------------------------------------------------------
+// Tagging on ingest (Wave 6, item 2)
+// ---------------------------------------------------------------------------
+
+export interface FreshFeedItem {
+  externalId: string;
+  title: string;
+  summary?: string | null;
+  publishedAt?: string | null;
+}
+
+/**
+ * Tag the items a fetch just stored, so the Research screen has something to
+ * sort and filter by. Until this, `feed_items` carried a title, a summary, a
+ * link and a date, and nothing else — every item was equal.
+ *
+ * The matching is `pickIdeas`, the same word matching the ideas list already
+ * uses, so the tag filter and the ranked list cannot disagree. Nothing here
+ * posts, drafts or ranks for Jack: it records which of his readers' own
+ * questions an item touches, and how many of their words it matched.
+ *
+ * Best persona wins, so an item carries one category rather than three. Rows
+ * nothing matched keep their defaults and sort to the bottom, which is where an
+ * item about nothing Jack's readers ask belongs.
+ */
+export async function tagFeedItems(
+  db: SupabaseClient,
+  fresh: FreshFeedItem[],
+  fallbackLang: string,
+): Promise<number> {
+  if (!fresh.length) return 0;
+  const { data: personas } = await db.from("personas")
+    .select("id, main_pillar, seed_questions").eq("active", true).order("id");
+  if (!personas?.length) return 0;
+
+  const compiled = (personas as Array<{ id: number; main_pillar: string | null; seed_questions: Record<string, unknown> | null }>)
+    .map((p) => ({
+      id: Number(p.id),
+      pillar: p.main_pillar ?? null,
+      terms: personaTerms(p.seed_questions),
+    }))
+    .filter((p) => p.terms.length);
+
+  // A generous window and a limit above the batch: fresh items are new by
+  // construction, and every match must survive rather than the top few.
+  const ideas = pickIdeas(
+    fresh.map((f) => ({ id: f.externalId, title: f.title, summary: f.summary ?? null, publishedAt: f.publishedAt ?? null })),
+    compiled,
+    { days: 3650, limit: fresh.length * compiled.length + 1 },
+  );
+  const byId = new Map(ideas.map((i) => [i.id, i]));
+
+  let tagged = 0;
+  for (const f of fresh) {
+    const hit = byId.get(f.externalId);
+    if (!hit) continue;
+    // One update per matched row: the values differ per row, so a single
+    // UPDATE ... IN could not carry them. Fifty rows every six hours is not a
+    // load worth batching around.
+    const { error } = await db.from("feed_items").update({
+      tags: [...hit.matched, ...(hit.pillar ? [hit.pillar] : [])],
+      category: hit.pillar,
+      match_score: hit.score,
+      lang: fallbackLang,
+    }).eq("external_id", f.externalId);
+    if (!error) tagged += 1;
+  }
+  return tagged;
+}

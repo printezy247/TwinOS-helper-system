@@ -29,7 +29,7 @@ import { getChatMemberCount, sendMessage } from "_shared/tg.ts";
 import { cycleWeek, nextMonday } from "_shared/batch.ts";
 import { similarity } from "_shared/moderation.ts";
 import { articleBrief } from "_shared/articles.ts";
-import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, personaTerms, pickIdeas, queryVariants, topicRisk } from "_shared/research.ts";
+import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, personaTerms, pickIdeas, queryVariants, tagFeedItems, topicRisk } from "_shared/research.ts";
 import { nextHook } from "_shared/hooks.ts";
 import { parseFeed, parseJsonFeed } from "_shared/feed.ts";
 import { tmeHandle } from "_shared/tme.ts";
@@ -131,6 +131,14 @@ serve(async (req) => {
             } else {
               added = fresh.length;
               items += added;
+              // Tag what just arrived, using the same word matching the ideas
+              // list uses so the two can never disagree about what an item is
+              // about. A failure here costs the filters, not the items.
+              try {
+                await tagFeedItems(db, fresh, feed.lang);
+              } catch (err) {
+                console.warn("[research] tagging failed", err);
+              }
             }
           }
         }

@@ -166,6 +166,16 @@ for a plain string — `settings.value` is `jsonb`, so a bare string is a syntax
 here on purpose: a policy would grant UPDATE on the whole table and let the caller decide what a valid
 value looks like.
 
+`GET /content/calendar?week=2026-10-05` → `{ "week_start": "2026-10-05", "tz": "Asia/Kuala_Lumpur", "days": [ { "key": "2026-10-05", "jobs": [ { "job_id": "…", "content_id": "…", "platform": "telegram", "run_at": "…", "status": "queued", "last_error": null, "post_type": "lesson", "lang": "en", "title": "…" } ] } ] }`.
+`week` is a Monday; absent means the current week. The seven days are named **server-side** in the channel timezone, so a 23:30 MYT post is not tomorrow for a reader in UTC. An item's variants are not in here — it is a schedule, not a preview.
+`POST /content/{id}/schedule` (below) creates the jobs this reads.
+
+## content — variants (table, read-only from the UI)
+
+`template_variants (post_type, platform, lang)` overrides a base `templates` row per platform and language. Only `body`, `fields_list`, `char_limit` and `hashtag` are overridable — deliberately not `approval_rule` or `requires_approval`, because a rule that changes with the platform is a rule nobody can remember. A null column inherits the base; no row at all means the base, so an empty table behaves exactly as it did before this table existed.
+
+`loadTemplate(post_type, lang, platform?)` applies it. `createDraft` passes the platform, so one post type can have a Telegram post and a TikTok caption.
+
 ## jobs  (PC worker)
 `POST /jobs/claim` `{ "worker": "jack-pc", "kinds": ["drop_folder_watch","backup"] }` → `{ "job": { "id": "…", "kind": "backup", "payload": {}, "attempts": 1 } | null }`.
 `POST /jobs/result` `{ "job_id": "…", "ok": true, "result": { "file": "twinos-20261002-1900.sql.gz" } }` → `{ "ok": true, "status": "done" }`.
@@ -215,6 +225,13 @@ read is the one listed here.
 | `telechurn_imports` | `week_start`, `link_name` (unique together), `joins`, `leaves`, `retained`, `raw`, `imported_by` |
 | `manual_metrics` | `week_start`, `source` (unique together with a non-null `metrics`), `metrics` jsonb, `entered_by`, `entered_at`; a trigger explodes the bag into the long `(week_start, kind, metric, value)` rows the views read |
 | `v_friday_scoreboard` | view with `week_start` + the §4.8 numbers |
+
+`feed_items` gained `tags text[]`, `category`, `lang` and `match_score`, filled on ingest by
+`tagFeedItems` using the **same** word matching `pickIdeas` uses, so the tag filter and the ranked
+ideas list can never disagree about what an item is about. `match_score` is the number of a persona's
+own terms the item matched — the same number the ideas list ranks by. An item nothing matched keeps
+its defaults and sorts to the bottom, which is where an item about none of Jack's readers' questions
+belongs. Nothing here posts or drafts.
 
 Storage bucket: `assets` (private).
 

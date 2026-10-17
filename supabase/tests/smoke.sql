@@ -745,5 +745,71 @@ begin
   raise notice 'ok: settings write is Jack-only, refuses unknown keys, logs the change';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- 27. Wave 6: a platform can have its own template, and feed items can be sorted (20261018020000)
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  assert (select count(*) from information_schema.columns
+    where table_name = 'template_variants' and column_name in
+      ('post_type', 'platform', 'lang', 'body', 'fields_list', 'char_limit', 'hashtag')) = 7,
+    'template_variants carries every overridable field';
+  assert (select count(*) from information_schema.key_column_usage
+    where table_name = 'template_variants' and constraint_name = 'template_variants_pkey') = 3,
+    'the key is (post_type, platform, lang), not one of the three alone';
+
+  assert (select count(*) from information_schema.columns
+    where table_name = 'feed_items' and column_name in
+      ('tags', 'category', 'lang', 'match_score')) = 4,
+    'feed_items has something to sort and filter by';
+
+  -- A variant row must not become a second approval rule: only the body-shaped
+  -- fields are overridable.
+  assert (select count(*) from information_schema.columns
+    where table_name = 'template_variants' and column_name in
+      ('approval_rule', 'requires_approval')) = 0,
+    'a rule that changes with the platform is a rule nobody can remember';
+
+  raise notice 'ok: wave 6 schema';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 28. A template variant is a Jack write, and the dashboard gets to read only (20261018020000)
+-- ---------------------------------------------------------------------------
+-- The policies are asserted from pg_policies rather than by attempting a row.
+-- The smoke test connects as a superuser and a superuser bypasses RLS, so an
+-- insert here would succeed whatever the policy says — section 12 can attempt
+-- the row because `only jack approves` is a trigger, and triggers fire for
+-- everyone. Asserting a policy that could never have failed is worse than
+-- asserting nothing.
+do $$
+begin
+  -- The policy names, commands and roles are what matter here; the `qual`
+  -- text is deliberately not compared, because Postgres normalises it on the
+  -- way into pg_policies (it drops the schema and rewrites an IN list as
+  -- ANY), so matching that string would be a test of the pretty-printer that
+  -- breaks on a version bump. The expression itself is three lines above.
+  assert exists (
+    select 1 from pg_policies
+    where tablename = 'template_variants' and policyname = 'jack_all'
+      and cmd = 'ALL' and roles = '{authenticated}'
+  ), 'Jack owns the writes on template_variants';
+
+  assert exists (
+    select 1 from pg_policies
+    where tablename = 'template_variants' and policyname = 'readers_select'
+      and cmd = 'SELECT' and roles = '{authenticated}'
+  ), 'everyone who reads the dashboard may read a variant';
+
+  -- No INSERT or UPDATE policy for a reader role: RLS is the default deny, so
+  -- a row with no matching policy is refused rather than allowed.
+  assert (select count(*) from pg_policies
+          where tablename = 'template_variants' and cmd in ('INSERT', 'UPDATE', 'DELETE')
+            and policyname <> 'jack_all') = 0,
+    'nobody but Jack may change a template variant';
+
+  raise notice 'ok: template variants are Jack-writes, everyone-reads';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;

@@ -33,3 +33,33 @@ export function weekStartMyt(now: Date = new Date()): Date {
   const localMidnight = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate());
   return new Date(localMidnight - daysSinceMonday * 86_400_000 - MYT);
 }
+
+/**
+ * Split rows into local-day buckets, for the calendar.
+ *
+ * The grouping happens here rather than in the dashboard because the browser's
+ * timezone is not the channel's: a post at 23:30 MYT belongs to the next day
+ * for anyone reading from UTC, and the same class of mistake cost the Friday
+ * scorecard its first eight hours of every Monday (see `weekStart` in friday).
+ */
+export function bucketByDay<T>(
+  tz: string,
+  rows: T[],
+  opts: { from: string | Date; days?: number; at: (row: T) => string | Date },
+): Array<{ key: string; rows: T[] }> {
+  const fromMs = Date.parse(typeof opts.from === "string" ? opts.from : opts.from.toISOString());
+  const n = opts.days ?? 7;
+  const keyOf = (v: string | Date): string =>
+    new Date(typeof v === "string" ? v : v.toISOString()).toLocaleDateString("en-CA", { timeZone: tz });
+  const buckets = Array.from({ length: n }, (_, i) => ({
+    key: keyOf(new Date(fromMs + i * 86_400_000)),
+    rows: [] as T[],
+  }));
+  for (const r of rows) {
+    const hit = buckets.find((b) => b.key === keyOf(opts.at(r)));
+    // A row outside the window is dropped rather than wedged into a day it is
+    // not in: an empty cell is honest, a wrong one is not.
+    if (hit) hit.rows.push(r);
+  }
+  return buckets;
+}

@@ -13,6 +13,7 @@ import { HttpError, notFound } from "./http.ts";
 import { approvalKeyboard, escapeHtml, sendMessage, sendPhoto } from "./tg.ts";
 import { logAction, logTimeSaved } from "./log.ts";
 import { isPublishableVariant } from "./platforms.ts";
+import { nextCta, nextHook } from "./hooks.ts";
 
 export const STATUSES = [
   "draft",
@@ -34,6 +35,7 @@ export interface TemplateRow {
   fields: string[]; // required field names
   required_lines: string[]; // appended if missing (risk line, disclosure)
   char_limit: number | null;
+  hashtag: string | null;
   approval_rule: "jack" | "abdul_ok" | "auto";
 }
 
@@ -77,27 +79,59 @@ export async function resolveRequiredLines(keys: string[], post_type: PostType, 
  * Load the active template for a post type, else 404. `templates.key` is the
  * post type and the primary key, so there is one row per type; `lang` is the
  * caller's language and the voice module localises the draft.
+ *
+ * `platform` is optional: when a `template_variants` row exists for
+ * (post_type, platform, lang) it replaces the fields it names and inherits the
+ * rest. No row means the base template, so a database with no variants behaves
+ * exactly as it did before that table existed. A null column inherits rather
+ * than blanking — an override that wants the base char limit does not have to
+ * repeat it.
  */
-export async function loadTemplate(post_type: PostType, lang: Lang): Promise<TemplateRow> {
-  const { data, error } = await admin()
+export async function loadTemplate(
+  post_type: PostType,
+  lang: Lang,
+  platform?: Platform,
+): Promise<TemplateRow> {
+  const db = admin();
+  const { data, error } = await db
     .from("templates")
-    .select("id, key, body, fields_list, required_lines, char_limit, approval_rule")
+    .select("id, key, body, fields_list, required_lines, char_limit, approval_rule, hashtag")
     .eq("key", post_type)
     .eq("active", true)
     .maybeSingle();
   if (error) throw new HttpError(503, "upstream_failed", `templates: ${error.message}`);
   if (!data) throw notFound(`template ${post_type}`);
-  if (!data.body) {
+
+  let body = data.body as string | null;
+  let fields = (data.fields_list ?? []) as string[];
+  let charLimit = data.char_limit as number | null;
+  let hashtag = data.hashtag as string | null;
+  if (platform) {
+    const { data: v, error: vErr } = await db
+      .from("template_variants")
+      .select("body, fields_list, char_limit, hashtag")
+      .match({ post_type, platform, lang })
+      .maybeSingle();
+    if (vErr) throw new HttpError(503, "upstream_failed", `template_variants: ${vErr.message}`);
+    if (v) {
+      body = v.body ?? body;
+      fields = v.fields_list ?? fields;
+      charLimit = v.char_limit ?? charLimit;
+      hashtag = v.hashtag ?? hashtag;
+    }
+  }
+  if (!body) {
     throw new HttpError(503, "not_configured", `the ${post_type} template has no body text yet (templates.body)`);
   }
   return {
     id: data.id,
     post_type: data.key as PostType,
     lang,
-    body: data.body,
-    fields: data.fields_list ?? [],
+    body,
+    fields,
     required_lines: await resolveRequiredLines(data.required_lines ?? [], data.key as PostType, lang),
-    char_limit: data.char_limit,
+    char_limit: charLimit,
+    hashtag,
     approval_rule: data.approval_rule,
   } as TemplateRow;
 }
@@ -166,15 +200,36 @@ export interface DraftResult {
 
 export async function createDraft(input: DraftInput): Promise<DraftResult> {
   const platform = input.platform ?? "telegram";
+  const db = admin();
   let body: string;
   let needed: string[] = [];
   let templateId: string | null = null;
+  let hookId: number | null = input.hook_id ?? null;
   if (input.body_override !== undefined) {
     body = input.body_override;
   } else {
-    const tpl = await loadTemplate(input.post_type, input.lang);
+    // The platform matters: a TikTok caption is not a Telegram post, and the
+    // override table is what lets one post type be both.
+    const tpl = await loadTemplate(input.post_type, input.lang, platform);
     templateId = tpl.id;
-    ({ body, needed } = render(tpl, input.fields));
+    // A template may place its hook and CTA with {{hook}} and {{cta}} instead of
+    // having them appended, which is what tg-webhook and fanOut do. Placed beats
+    // appended when the opening line has to come first. Both rotate
+    // least-recently-used out of Jack's own libraries, and a caller that already
+    // supplied the value wins: the bank is a default, never a decision.
+    const fields = { ...input.fields };
+    if (/\{\{\s*\??hook\s*\}\}/.test(tpl.body) && fields.hook === undefined) {
+      const h = await nextHook(db, { pillar: input.pillar ?? null, lang: input.lang });
+      if (h) {
+        fields.hook = h.text;
+        hookId = h.id; // v_hook_performance reads it: a placed hook is still evidence
+      }
+    }
+    if (/\{\{\s*\??cta\s*\}\}/.test(tpl.body) && fields.cta === undefined) {
+      const c = await nextCta(db, { platform, lang: input.lang });
+      if (c) fields.cta = c.text;
+    }
+    ({ body, needed } = render(tpl, fields));
   }
 
   const compliance = check({
@@ -187,7 +242,6 @@ export async function createDraft(input: DraftInput): Promise<DraftResult> {
     has_media: (input.media?.length ?? 0) > 0,
   });
 
-  const db = admin();
   const { data: item, error: e1 } = await db
     .from("content_items")
     .insert({
@@ -218,7 +272,7 @@ export async function createDraft(input: DraftInput): Promise<DraftResult> {
       lang: input.lang,
       body,
       media: input.media ?? [],
-      hook_id: input.hook_id ?? null,
+      hook_id: hookId,
       claim_flags: compliance.claim_flags,
       needed_fields: needed,
       compliance,

@@ -100,6 +100,23 @@ The server enforces it again (403), so the UI is not the guard, just honest.
 7. **Messages** (built as a placeholder; `/inbox`: `inbox_items` with suggested replies, no send buttons) —
    it fills when Phase 3 comment polling exists.
 
+## New this wave — the four the backend was blocking
+
+- **`GET /functions/v1/content/calendar?week=YYYY-MM-DD`** → `{ week_start, tz, days: [{ key, jobs: [...] }] }`.
+  The **seven day keys are computed server-side in the channel timezone** — render one column per
+  `days` entry and never re-derive a date in the browser. A 23:30 MYT post is tomorrow for a reader
+  in UTC, and that is not a rounding difference.
+- **`template_variants (post_type, platform, lang)`** — read-only from here, but it changes what a
+  draft looks like: a `lesson` can now be a Telegram post and a TikTok caption. The variant's
+  `char_limit` and `hashtag` come back on the template, so a composer can show the limit that
+  actually applies to the platform being composed, not the base one.
+- **`feed_items.tags` / `.category` / `.match_score`** — the Research screen can filter and sort on
+  these. `match_score` is a count of a persona's own terms, so show it as a number; a bar implies a
+  percentage that is not there.
+- **`{{hook}}` and `{{cta}}`** — a template body may carry these, and the backend fills them from
+  the rotating libraries. They are not placeholders the UI may write: if a body arrives with one
+  still unfilled it renders as `[NEEDED:hook]`, which blocks approval, and that is correct.
+
 Also a **Settings** page that reads `settings` and writes through the RPC
 `set_setting(p_key, p_value)`, **jack only**. It refuses an unknown key, so a
 typo cannot create a row nothing reads, and it clears `needs_confirm` on write —
