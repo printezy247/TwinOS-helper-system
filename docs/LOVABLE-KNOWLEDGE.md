@@ -46,6 +46,7 @@ and views (RLS allows it for a logged-in user) but **never** `insert`,
 | Result reply | `POST /functions/v1/results` `{signal_id, dry_run?}` (`dry_run: true` returns the text without posting) |
 | CSI reading | `POST /functions/v1/research/csi` `{topic, category?, metric?, value?, trend?, note?}` |
 | Article brief | `POST /functions/v1/research/article` `{cluster_id}` → `{text, titles, questions, keywords}` |
+| Change a setting | `supabase.rpc('set_setting', { p_key, p_value })` (jack only) |
 | Health | `GET /functions/v1/health` |
 | Friday numbers | `GET /functions/v1/friday?week=YYYY-MM-DD` |
 | Queue counts | `GET /functions/v1/jobs` |
@@ -99,7 +100,25 @@ The server enforces it again (403), so the UI is not the guard, just honest.
 7. **Messages** (built as a placeholder; `/inbox`: `inbox_items` with suggested replies, no send buttons) —
    it fills when Phase 3 comment polling exists.
 
-Also a thin **Settings** page that only reads `settings` (editing stays in SQL for now).
+Also a **Settings** page that reads `settings` and writes through the RPC
+`set_setting(p_key, p_value)`, **jack only**. It refuses an unknown key, so a
+typo cannot create a row nothing reads, and it clears `needs_confirm` on write —
+setting the value is the confirmation the row was waiting for. `settings.value`
+is `jsonb`, so a plain string must go through `setting_text(p_key, p_value)`
+or be passed as `'\"a string\"'`; a bare `"a string"` is a syntax error. The RPC
+also refuses a **nonexistent key**, so show the message rather than an empty
+form. Never display a function secret from here: `settings` holds no secrets,
+and a secret's *presence* comes from `GET /health`'s `integrations`, never its value.
+
+### The Keyring panel
+
+`GET /health` returns `integrations`: one row per provider with `purpose`,
+`ready`, `missing` (secret names only), `get_url` and `set_command`. Build the
+Keyring screen from it — one card per provider: the purpose line, a green or red
+state, and for a missing one the `get_url` to open and the `set_command` to run,
+each with a copy button. A Verify button re-calls `GET /health` and re-reads the
+row. **The function never returns a secret value and the UI must never ask for
+one.**
 
 Two more read-only screens are specified as prompts 6 and 7 in
 `docs/LOVABLE-WAVE4-PROMPTS.md` and may be built when you get to them, in the
