@@ -63,6 +63,9 @@ serve(async (req) => {
   const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
   const runAtInstant = run_at ? runAtToInstant(run_at, tz) : null;
   if (run_at && !runAtInstant) throw bad("run_at must be an ISO timestamp");
+  // Reschedule has nowhere to go without a time, so it is refused here — above
+  // the approvals insert, which must not leave a row behind for a 400.
+  if (decision === "reschedule" && !runAtInstant) throw bad("reschedule needs run_at");
 
   const idem = await idemFrom(req, body, `approve:${content_id}:${decision}`);
   const hit = await replay(idem);
@@ -122,7 +125,6 @@ serve(async (req) => {
   } else if (decision === "reject") {
     await setStatus(content_id, "rejected", caller.actor, { reject_note: note });
   } else {
-    if (!runAtInstant) throw bad("reschedule needs run_at");
     await setStatus(content_id, item.status === "scheduled" ? "scheduled" : "pending_approval", caller.actor, {
       scheduled_at: runAtInstant,
     });

@@ -716,8 +716,95 @@ def research_upgrades() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# 2b. What the MCP sends must be what the route reads.
+# ---------------------------------------------------------------------------
+# Five ABDUL tools were broken by exactly this drift and every suite stayed
+# green: twinos_draft sent {template, input} while content/draft reads
+# {post_type, fields}, so every draft call 400'd. No single file was wrong, and
+# no single file could have caught it. This runs the real tool_call, records the
+# body it builds, and checks each key against the names the target route reads.
+def mcp_request_shapes() -> None:
+    sample = {
+        "twinos_draft": {"template": "lesson", "input": {"topic": "spread"}},
+        "twinos_batch": {},
+        "twinos_request_approval": {"content_id": "c1"},
+        "twinos_schedule": {"content_id": "c1", "when": "2026-10-19T08:00:00+08:00"},
+        "twinos_result_reply": {"signal_id": "1"},
+        "twinos_link": {"name": "tt-live-2610", "source": "tt", "campaign": "live"},
+        "twinos_manual_metrics": {"source": "tiktok", "week": "2026-10-12", "values": {"followers": 1}},
+        "twinos_research": {"what": "feeds"},
+        "twinos_ideas": {},
+        "twinos_channels": {},
+        "twinos_clip": {},
+    }
+    sys.path.insert(0, str(ROOT / "apps/mcp"))
+    import twinos_mcp as tm
+
+    sent: dict[str, set] = {}
+
+    def record(_name, body, _idem=None):
+        sent["route"] = set(body or {})
+        return {}
+
+    tm.fn, tm.user_token = record, lambda: None
+    for tool, args in sample.items():
+        sent.clear()
+        try:
+            tm.tool_call(tool, args)
+        except Exception:
+            pass  # a body we failed to assemble still has a shape to check
+        body = sent.get("route")
+        if body is None:
+            check(f"shapes: {tool} builds a request body", False, "tool_call never called fn")
+            continue
+        route = tm.ENDPOINTS[tool][1].partition("/")[0]
+        src = read(f"supabase/functions/{route}/index.ts")
+        reads = set(re.findall(r'req(?:String|Number)\(\s*body\s*,\s*"(\w+)"', src))
+        reads |= set(re.findall(r'opt(?:String|Number)\(\s*body\s*,\s*"(\w+)"', src))
+        reads |= set(re.findall(r'oneOf\(\s*body\s*,\s*"(\w+)"', src))
+        reads |= set(re.findall(r'\bbody\.(\w+)', src))
+        unknown = sorted(body - reads)
+        check(
+            f"shapes: {tool} only sends fields {route} reads",
+            not unknown,
+            f"sends {unknown}; {route}/index.ts reads {sorted(reads)}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# 2c. Three vocabularies that exist in two languages and cannot import each other.
+# ---------------------------------------------------------------------------
+def twin_vocabularies() -> None:
+    jobs_ts = read("supabase/functions/jobs/index.ts")
+    worker = read("workers/pc/twinos_worker.py")
+
+    server = set(re.search(r"JOB_KINDS = \[(.*?)\] as const;", jobs_ts, re.S).group(1).replace("\n", " ").split(","))
+    server = {s.strip().strip('"') for s in server if s.strip().strip('"')}
+    worker_kinds = set(re.search(r'^KINDS = \[(.*?)\]$', worker, re.M | re.S).group(1).split(","))
+    worker_kinds = {s.strip().strip('"') for s in worker_kinds if s.strip().strip('"')}
+    check(
+        "jobs: every worker kind can be enqueued",
+        worker_kinds <= server,
+        f"worker handles {sorted(worker_kinds - server)} but JOB_KINDS does not allow it",
+    )
+    check(
+        "jobs: every server kind has a handler",
+        server <= worker_kinds | {"result_reply", "fanout_platform"},
+        f"enqueueable with nothing to run it: {sorted(server - worker_kinds - {'result_reply', 'fanout_platform'})}",
+    )
+
+    py = re.search(r'^LINK_NAME_RE = re\.compile\(r"([^"]+)"\)', read("apps/mcp/twinos_mcp.py"), re.M)
+    ts = re.search(r'^export const LINK_NAME_RE = /(.+)/;', read("supabase/functions/_shared/links.ts"), re.M)
+    check(
+        "links: the name convention is the same pattern in both languages",
+        py is not None and ts is not None and py.group(1) == ts.group(1),
+        f"python {py.group(1) if py else None!r} vs typescript {ts.group(1) if ts else None!r}",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes, research_upgrades):
+    for fn in (settings_keys, mcp_routes, mcp_request_shapes, twin_vocabularies, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes, research_upgrades):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()

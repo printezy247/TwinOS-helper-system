@@ -69,6 +69,11 @@ RETRY_ON = {429, 500, 502, 503, 504}
 FORBIDDEN_PATH = re.compile(r"/approve(?:/|$|\?)|/approvals?/[^/]+/(?:accept|grant|decide)|/publish-now", re.I)
 FORBIDDEN_TOOL = re.compile(r"approv|publish_now|force", re.I)
 ALLOWED_ASK = "twinos_request_approval"   # the one name with "approv" in it: it asks, it never decides
+# Mirror of LINK_NAME_RE in supabase/functions/_shared/links.ts and the
+# invite_links_name_convention check in the DB: src-campaign-yymm, two dashes.
+# Python cannot import the TypeScript, so check_consistency.py asserts the two
+# patterns stay the same.
+LINK_NAME_RE = re.compile(r"^[a-z0-9]+-[a-z0-9]+-[0-9]{4}$")
 
 # --------------------------------------------------------------------------- endpoints (plan §11)
 # kind: "fn" = POST /functions/v1/<path>  (writes, with Idempotency-Key)
@@ -118,9 +123,10 @@ ANALYTICS_VIEWS = ("v_results_board", "v_funnel", "v_quarter_targets", "v_stop_i
 # --------------------------------------------------------------------------- tools (plan §11 list + three reads)
 # (name, description, {arg: type}, required args)
 TOOLS = [
-    ("twinos_draft", "Draft one post from a template (gold_map, signal_card, result_reply, lesson, start_safe, channel_audit, "
-                     "monday_poll, saturday_offer, outlook, scorecard...). Returns the draft with its compliance flags and [NEEDED] fields. "
-                     "Nothing is posted.",
+    ("twinos_draft", "Draft one post from a template. Templates: gold_map, macro_card, signal_card, result_reply, lesson, channel_audit, "
+                     "scorecard, outlook, offer, poll, evening_wrap, news_alert, member_result, holiday, start_here, faq, live_recap. "
+                     "A Start-Safe post is lesson, not a type of its own. 'input' = the fields the template names (a number, a line, or a "
+                     "block of raw notes). Returns the draft with its compliance flags and [NEEDED] fields. Nothing is posted.",
      {"template": "string", "input": "object", "lang": "string", "platform": "string"}, ["template"]),
     ("twinos_batch", "Run the Wednesday batch: 7 lessons (5 skill + 2 Start Safe), Channel Audit, Monday poll, Saturday offer, numbered with "
                      "suggested times, into the Desk group for Jack. 'for' = ISO date of the Monday the batch is for (default: next week).",
@@ -133,12 +139,14 @@ TOOLS = [
     ("twinos_result_reply", "Post the result reply (TP1, TP2, BE, SL) under the original signal. Wording and numbers come from the board row; "
                             "ABDUL supplies only the signal id. A result that is not on the board is refused.",
      {"signal_id": "string"}, ["signal_id"]),
-    ("twinos_link", "Make a named invite link or bot link: name follows src-campaign-yymm (e.g. swap-macronews-2611). "
-                    "kind = invite | bot. partner and cost are optional.",
-     {"name": "string", "source": "string", "campaign": "string", "kind": "string", "partner": "string", "cost": "number"}, ["name", "source"]),
-    ("twinos_manual_metrics", "Record the weekly numbers that have no API: source = vantage | tiktok | telechurn, week = ISO Monday, "
-                              "values = {metric: number}.",
-     {"source": "string", "week": "string", "values": "object"}, ["source", "values"]),
+    ("twinos_link", "Make a named invite link: name follows src-campaign-yymm (e.g. swap-macronews-2611, exactly two dashes). "
+                    "source = tt | ig | fb | yt | threads | x | swap | ad | referral | bio | bot. partner and cost are optional.",
+     {"name": "string", "source": "string", "campaign": "string", "partner": "string", "cost": "number"}, ["name", "source", "campaign"]),
+    ("twinos_manual_metrics", "Record the weekly numbers that have no API: source = vantage | tiktok | telechurn | ads, week = ISO Monday, "
+                              "values = {metric: number}. vantage takes ib_accounts_opened, first_time_depositors, active_funded_clients, "
+                              "rebates_usd; tiktok takes followers, profile_views, watch_time_min, pct_watched_full; telechurn takes joins, "
+                              "leaves, retention_7d_pct; ads takes ad_spend_usd.",
+     {"source": "string", "week": "string", "values": "object"}, ["source", "week", "values"]),
     ("twinos_friday", "The Friday scoreboard: members, net joins, view rate, TikTok, bot starts, IB numbers, revenue, signals vs results, "
                       "strict win rate. Latest week unless 'week' (ISO Monday) is given.",
      {"week": "string"}, []),
@@ -388,55 +396,72 @@ def tool_call(name, a, idem=None):
     kind, target = ENDPOINTS[name]
 
     if name == "twinos_draft":
-        body = _clean(a, ("template", "input", "lang", "platform"))
-        if isinstance(body.get("input"), str):
+        # The route reads post_type/fields; ABDUL says template/input. This tool
+        # is the translator between the two vocabularies, so the mapping lives
+        # here and the tests assert the shape the server actually accepts.
+        fields = a.get("input")
+        if isinstance(fields, str):
             try:
-                body["input"] = json.loads(body["input"])
+                fields = json.loads(fields)
             except ValueError:
-                body["input"] = {"text": body["input"]}
-        return fn(target, dict(body, actor=ACTOR), idem)
+                fields = {"text": fields}
+        if isinstance(fields, dict) and fields and not (set(fields) - {"lines", "text"}):
+            # ABDUL hands over "Jack's raw lines"; the templates that take notes
+            # call the field raw_notes, and a template without one still says so
+            # as [NEEDED:...] rather than silently posting an empty body.
+            raw = fields.get("lines") if isinstance(fields.get("lines"), list) else fields.get("text")
+            fields = {"raw_notes": "\n".join(str(x) for x in raw) if isinstance(raw, list) else str(raw)}
+        return fn(target, dict(_clean(a, ("lang", "platform")),
+                                post_type=str(a["template"]), fields=fields or {}), idem)
     if name == "twinos_batch":
-        return fn(target, dict(_clean(a, ("for", "only")), actor=ACTOR), idem)
+        return fn(target, dict(_clean(a, ("for", "only"))), idem)
     if name == "twinos_request_approval":
         # POST /content/{id}/request-approval — the id is in the path, not the body
         cid = urllib.parse.quote(str(a["content_id"]))
         return fn("%s/%s/request-approval" % (target, cid),
-                  dict(_clean(a, ("note",)), actor=ACTOR), idem)
+                  dict(_clean(a, ("note",))), idem)
     if name == "twinos_schedule":
         # POST /content/{id}/schedule { run_at }. No "when" means publish on the
         # item's own schedule, which is what the function does with run_at absent
         # (the Desk flow is "OK, and it goes out").
         cid = urllib.parse.quote(str(a["content_id"]))
-        body = {"actor": ACTOR}
+        body: dict = {}
         if a.get("when"):
             body["run_at"] = str(a["when"])
         return fn("%s/%s/schedule" % (target, cid), body, idem)
     if name == "twinos_result_reply":
         # only the id crosses: wording and numbers are the board's, never ABDUL's (plan item 24)
-        return fn(target, {"signal_id": str(a["signal_id"]), "actor": ACTOR}, idem)
+        return fn(target, {"signal_id": str(a["signal_id"])}, idem)
     if name == "twinos_link":
-        body = _clean(a, ("name", "source", "campaign", "kind", "partner", "cost"))
-        body["name"] = re.sub(r"[^a-z0-9-]", "-", str(body["name"]).strip().lower()).strip("-")
-        if not re.match(r"^[a-z0-9]+-[a-z0-9-]+-\d{4}$", body["name"]):
-            raise ValueError("link name must be src-campaign-yymm, e.g. swap-macronews-2611 (got %s)" % body["name"])
-        body.setdefault("kind", "invite")
-        return fn(target, dict(body, actor=ACTOR), idem)
+        # The route builds the invite link itself through createChatInviteLink
+        # and reads cost_usd. There is no bot-link kind for it to honour, so
+        # none is asked for.
+        body = _clean(a, ("name", "source", "campaign", "partner"))
+        if a.get("cost") is not None:
+            body["cost_usd"] = a["cost"]
+        if body.get("name"):
+            body["name"] = re.sub(r"[^a-z0-9-]", "-", str(body["name"]).strip().lower()).strip("-")
+        if not LINK_NAME_RE.match(body.get("name", "")):
+            raise ValueError("link name must be src-campaign-yymm with exactly two dashes, e.g. swap-macronews-2611 (got %s)" % body.get("name"))
+        return fn(target, body, idem)
     if name == "twinos_manual_metrics":
-        if str(a["source"]).lower() not in ("vantage", "tiktok", "telechurn"):
-            raise ValueError("source must be vantage, tiktok or telechurn")
+        # The route reads week_start and metrics; ABDUL says week and values.
+        source = str(a["source"]).lower()
+        if source not in ("vantage", "tiktok", "telechurn", "ads"):
+            raise ValueError("source must be vantage, tiktok, telechurn or ads")
         vals = a["values"]
         if isinstance(vals, str):
             vals = json.loads(vals)
-        return fn(target, dict(_clean(a, ("week",)), source=str(a["source"]).lower(), values=vals, actor=ACTOR), idem)
+        return fn(target, {"week_start": str(a["week"]), "source": source, "metrics": vals}, idem)
     if name == "twinos_csi_log":
-        return fn(target, dict(_clean(a, ("topic", "popularity", "trend", "gap", "icp", "note")), actor=ACTOR), idem)
+        return fn(target, dict(_clean(a, ("topic", "popularity", "trend", "gap", "icp", "note"))), idem)
     if name == "twinos_research":
         # One tool, two routes: ENDPOINTS holds the base and the arg picks it,
         # the way the {id} content routes build their path per call.
         what = str(a.get("what") or "expand").strip().lower()
         if what not in ("expand", "feeds"):
             raise ValueError("what must be expand (demand crawl) or feeds (poll the feeds)")
-        return fn("%s/%s" % (target, what), {"actor": ACTOR}, idem)
+        return fn("%s/%s" % (target, what), {}, idem)
     if name == "twinos_feeds":
         # The feed name lives in feeds, not on the item; one cheap lookup joins
         # it so the answer says where a headline came from.
@@ -472,7 +497,7 @@ def tool_call(name, a, idem=None):
     if name == "twinos_ideas":
         # Window and size only: the ranking is the server's, worked out from
         # Jack's personas, so ABDUL cannot ask for a different one.
-        body = {"actor": ACTOR}
+        body: dict = {}
         for key in ("days", "limit"):
             if a.get(key) is None:
                 continue
@@ -487,7 +512,7 @@ def tool_call(name, a, idem=None):
     if name == "twinos_channels":
         # refresh=false must survive the trip: false and absent mean different
         # things here, one reads the rows and the other goes and asks Telegram.
-        return fn(target, {"actor": ACTOR, "refresh": a.get("refresh") is not False}, idem)
+        return fn(target, {"refresh": a.get("refresh") is not False}, idem)
     if name == "twinos_clip":
         # jobs/enqueue stores body.payload and ignores every other field, so the options go inside it.
         payload = _clean(a, ("source", "date", "max_clips", "layout", "face_box", "end_text", "path"))
@@ -500,7 +525,7 @@ def tool_call(name, a, idem=None):
             raise ValueError("face_box must be [x, y, width, height]: four whole numbers, width and height above zero")
         if "end_text" in payload:
             payload["end_text"] = str(payload["end_text"])[:200]
-        return fn(target, {"kind": "clip", "payload": payload, "actor": ACTOR}, idem)
+        return fn(target, {"kind": "clip", "payload": payload}, idem)
 
     if name == "twinos_friday":
         q = ("week_start=eq.%s" % urllib.parse.quote(str(a["week"]), safe="")) if a.get("week") else "order=week_start.desc"
@@ -525,7 +550,9 @@ def tool_call(name, a, idem=None):
         rows = _rows(rest(target, "order=created_at.desc", 1))
         return rows[0] if rows else {"text": "No brief yet. Monday's research hasn't run."}
     if name == "twinos_inbox":
-        return _rows(rest(target, "status=eq.open&order=created_at.desc", a.get("limit") or 20))
+        # "open" is not a status. The column is new|suggested|replied|ignored|flagged
+        # and idx_inbox_open defines open as the first two, so that is the filter.
+        return _rows(rest(target, "status=in.(new,suggested)&order=created_at.desc", a.get("limit") or 20))
     if name == "twinos_analytics":
         view = str(a["view"]).strip()
         if view not in ANALYTICS_VIEWS:

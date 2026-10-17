@@ -136,19 +136,35 @@ class TestRequestShapes(Base):
     def test_draft(self):
         tm.tool_call("twinos_draft", {"template": "gold_map", "input": {"lines": ["XAU 2410 support"]}, "lang": "en"})
         r = self.last()
+        # The route reads post_type/fields, so that is what must go over the wire.
         self.assertEqual((r["method"], r["path"]), ("POST", "/functions/v1/content/draft"))
-        self.assertEqual(r["body"]["template"], "gold_map")
-        self.assertEqual(r["body"]["input"]["lines"], ["XAU 2410 support"])
-        self.assertEqual(r["body"]["actor"], "abdul")
+        self.assertEqual(r["body"]["post_type"], "gold_map")
+        self.assertEqual(r["body"]["fields"], {"raw_notes": "XAU 2410 support"})
+        self.assertNotIn("template", r["body"])
+        self.assertNotIn("input", r["body"])
+        # The server derives the actor from the credential (x-twinos-actor for
+        # cron, the key or JWT otherwise), so no body may claim one.
+        self.assertNotIn("actor", r["body"])
+        self.assertEqual(r["body"]["lang"], "en")
         self.assertEqual(r["headers"]["content-type"], "application/json")
         # The gateway only admits JWTs: the public anon key gets the call in, the abdul key says who it is.
         self.assertEqual(r["headers"]["authorization"], "Bearer " + FAKE_ANON)
         self.assertEqual(r["headers"]["apikey"], FAKE_ANON)
         self.assertEqual(r["headers"]["x-twinos-key"], FAKE_KEY)
 
+    def test_draft_named_fields_pass_through_untouched(self):
+        # A template that wants {topic} is not second-guessed: only a bare
+        # "raw lines" payload is folded into raw_notes.
+        tm.tool_call("twinos_draft", {"template": "lesson", "input": {"topic": "spread"}})
+        self.assertEqual(self.last()["body"]["fields"], {"topic": "spread"})
+
     def test_draft_input_as_json_string_from_cli(self):
         tm.tool_call("twinos_draft", {"template": "lesson", "input": '{"topic": "spread"}'})
-        self.assertEqual(self.last()["body"]["input"], {"topic": "spread"})
+        self.assertEqual(self.last()["body"]["fields"], {"topic": "spread"})
+
+    def test_draft_body_text_becomes_raw_notes(self):
+        tm.tool_call("twinos_draft", {"template": "evening_wrap", "input": "S1 held, 4046 next"})
+        self.assertEqual(self.last()["body"]["fields"], {"raw_notes": "S1 held, 4046 next"})
 
     def test_draft_needs_template(self):
         with self.assertRaises(ValueError):
@@ -158,45 +174,68 @@ class TestRequestShapes(Base):
         tm.tool_call("twinos_batch", {"for": "2026-10-05"})
         r = self.last()
         self.assertEqual(r["path"], "/functions/v1/content/batch")
-        self.assertEqual(r["body"], {"for": "2026-10-05", "actor": "abdul"})
+        self.assertEqual(r["body"], {"for": "2026-10-05"})
 
     def test_request_approval(self):
         tm.tool_call("twinos_request_approval", {"content_id": "c42", "note": "map for Thursday"})
         r = self.last()
         # the id is in the path, as the deployed route expects
         self.assertEqual(r["path"], "/functions/v1/content/c42/request-approval")
-        self.assertEqual(r["body"], {"note": "map for Thursday", "actor": "abdul"})
+        self.assertEqual(r["body"], {"note": "map for Thursday"})
 
     def test_schedule(self):
         tm.tool_call("twinos_schedule", {"content_id": "c42", "when": "2026-10-06T07:50:00+08:00", "platforms": ["telegram"]})
         r = self.last()
         self.assertEqual(r["path"], "/functions/v1/content/c42/schedule")
-        self.assertEqual(r["body"], {"run_at": "2026-10-06T07:50:00+08:00", "actor": "abdul"})
+        self.assertEqual(r["body"], {"run_at": "2026-10-06T07:50:00+08:00"})
         self.assertNotIn("platforms", r["body"], "platforms is not part of the deployed contract")
 
     def test_result_reply_sends_only_the_id(self):
         tm.tool_call("twinos_result_reply", {"signal_id": "3", "status": "TP1", "pips": 40})
         r = self.last()
         self.assertEqual(r["path"], "/functions/v1/results")
-        self.assertEqual(r["body"], {"signal_id": "3", "actor": "abdul"})   # numbers never come from ABDUL
+        self.assertEqual(r["body"], {"signal_id": "3"})   # numbers never come from ABDUL
 
     def test_link_name_convention(self):
         tm.tool_call("twinos_link", {"name": "Swap MacroNews 2611", "source": "swap", "campaign": "macronews", "partner": "@macronews"})
         r = self.last()
         self.assertEqual(r["path"], "/functions/v1/links")
         self.assertEqual(r["body"]["name"], "swap-macronews-2611")
-        self.assertEqual(r["body"]["kind"], "invite")
+        self.assertEqual(r["body"]["partner"], "@macronews")
+        # The route has no bot-link kind, so one must never be sent.
+        self.assertNotIn("kind", r["body"])
+        self.assertNotIn("cost", r["body"])
+
+    def test_link_cost_lands_on_the_field_the_route_reads(self):
+        tm.tool_call("twinos_link", {"name": "tt-live-2610", "source": "tt", "campaign": "live", "cost": 12})
+        self.assertEqual(self.last()["body"]["cost_usd"], 12)
+        self.assertNotIn("cost", self.last()["body"])
+
+    def test_link_name_needs_exactly_two_dashes(self):
         with self.assertRaises(ValueError):
-            tm.tool_call("twinos_link", {"name": "macronews", "source": "swap"})
+            tm.tool_call("twinos_link", {"name": "macronews", "source": "swap", "campaign": "macronews"})
+        # swap-macro-news-2611 has three: the DB check refuses it, so this must too.
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_link", {"name": "swap-macro-news-2611", "source": "swap", "campaign": "macro"})
 
     def test_manual_metrics(self):
         tm.tool_call("twinos_manual_metrics", {"source": "Vantage", "week": "2026-10-05", "values": {"ftd": 3, "active": 12}})
         r = self.last()
+        # The route reads week_start and metrics.
         self.assertEqual(r["path"], "/functions/v1/friday/manual")
+        self.assertEqual(r["body"]["week_start"], "2026-10-05")
         self.assertEqual(r["body"]["source"], "vantage")
-        self.assertEqual(r["body"]["values"]["ftd"], 3)
+        self.assertEqual(r["body"]["metrics"]["ftd"], 3)
+        self.assertNotIn("week", r["body"])
+        self.assertNotIn("values", r["body"])
+
+    def test_manual_metrics_needs_week(self):
         with self.assertRaises(ValueError):
-            tm.tool_call("twinos_manual_metrics", {"source": "stripe", "values": {}})
+            tm.tool_call("twinos_manual_metrics", {"source": "tiktok", "values": {"followers": 1}})
+
+    def test_manual_metrics_accepts_the_ad_spend_source(self):
+        tm.tool_call("twinos_manual_metrics", {"source": "ads", "week": "2026-10-05", "values": {"ad_spend_usd": 40}})
+        self.assertEqual(self.last()["body"]["source"], "ads")
 
     def test_csi_log(self):
         tm.tool_call("twinos_csi_log", {"topic": "gold news today", "popularity": 82, "trend": "up", "gap": True, "icp": "beginner"})
@@ -286,7 +325,8 @@ class TestRequestShapes(Base):
         tm.tool_call("twinos_brief", {})
         self.assertTrue(self.last()["path"].startswith("/rest/v1/briefs?"))
         tm.tool_call("twinos_inbox", {"limit": 5})
-        self.assertIn("status=eq.open", self.last()["path"])
+        # "open" is not a status; the open statuses are new and suggested.
+        self.assertIn("status=in.(new,suggested)", self.last()["path"])
         self.assertIn("limit=5", self.last()["path"])
         tm.tool_call("twinos_analytics", {"view": "v_stop_if", "filter": "week=eq.2026-10-05", "limit": 10})
         self.assertIn("/rest/v1/v_stop_if?", self.last()["path"])
@@ -371,7 +411,8 @@ class TestResilience(Base):
     def test_idempotency_header_on_every_write(self):
         writes = [("twinos_draft", {"template": "lesson"}), ("twinos_batch", {}), ("twinos_request_approval", {"content_id": "c"}),
                   ("twinos_schedule", {"content_id": "c"}), ("twinos_result_reply", {"signal_id": "1"}),
-                  ("twinos_link", {"name": "tt-live-2610", "source": "tt"}), ("twinos_manual_metrics", {"source": "tiktok", "values": {"f": 1}}),
+                  ("twinos_link", {"name": "tt-live-2610", "source": "tt", "campaign": "live"}),
+                  ("twinos_manual_metrics", {"source": "tiktok", "week": "2026-10-05", "values": {"f": 1}}),
                   ("twinos_csi_log", {"topic": "x"}), ("twinos_clip", {})]
         seen = set()
         for name, args in writes:
@@ -460,7 +501,7 @@ class TestCLI(Base):
         self.assertEqual(rc, 0)
         r = self.last()
         self.assertEqual(r["path"], "/functions/v1/content/draft")
-        self.assertEqual(r["body"]["input"], {"lines": ["2410 holds"]})
+        self.assertEqual(r["body"]["fields"], {"raw_notes": "2410 holds"})
         FakeTwinOS.state["bodies"]["/rest/v1/v_friday_scoreboard"] = [{"week": "2026-09-28"}]
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -477,7 +518,7 @@ class TestCLI(Base):
     def test_cli_input_json_merges_for_non_draft_tools(self):
         import contextlib
         with contextlib.redirect_stdout(io.StringIO()):
-            rc = tm.cli(["link", "--input", '{"name": "ig-bio-2610", "source": "ig"}'])
+            rc = tm.cli(["link", "--input", '{"name": "ig-bio-2610", "source": "ig", "campaign": "bio"}'])
         self.assertEqual(rc, 0)
         self.assertEqual(self.last()["body"]["name"], "ig-bio-2610")
 
@@ -510,7 +551,7 @@ class TestAbdulVerbs(Base):
         self.assertIn("on Jack's phone now", out)
         paths = [r["path"] for r in self.reqs]
         self.assertEqual(paths, ["/functions/v1/content/draft", "/functions/v1/content/c77/request-approval"])
-        self.assertEqual(self.reqs[0]["body"]["input"], {"text": "2410 held, buyers back above 2425"})
+        self.assertEqual(self.reqs[0]["body"]["fields"], {"raw_notes": "2410 held, buyers back above 2425"})
         self.assertEqual(paths[1], "/functions/v1/content/c77/request-approval")  # id in the path
 
     def test_draft_batch(self):
@@ -531,7 +572,7 @@ class TestAbdulVerbs(Base):
     def test_result_sends_only_the_id(self):
         FakeTwinOS.state["bodies"]["/functions/v1/results"] = {"ok": True, "status": "TP1"}
         out = tv.twinos_action("twinos_result", "signal 3", {})
-        self.assertEqual(self.last()["body"], {"signal_id": "3", "actor": "abdul"})
+        self.assertEqual(self.last()["body"], {"signal_id": "3"})
         self.assertEqual(out, "result reply posted under signal 3: TP1")
         FakeTwinOS.state["status_once"] = (404, {"error": "no outcome on the board"})
         self.assertIn("The board decides", tv.twinos_action("twinos_result", "9", {}))
@@ -608,7 +649,7 @@ class TestResearchReads(Base):
             r = self.last()
             self.assertEqual(r["path"], "/functions/v1/research/ideas")
             self.assertEqual(r["method"], "POST")
-            self.assertEqual(r["body"], {"days": 7, "limit": 5, "actor": tm.ACTOR})
+            self.assertEqual(r["body"], {"days": 7, "limit": 5})
             self.assertEqual(out["ideas"][0]["matched"], ["gold"])
         finally:
             FakeTwinOS.state["bodies"].pop("/functions/v1/research/ideas", None)

@@ -22,9 +22,10 @@ import { logAction } from "_shared/log.ts";
 
 serve(async (req) => {
   const caller = await authenticate(req);
-  requireRole(caller.role, "links.create");
   const db = admin();
 
+  // A read does not need the permission that guards creation, so the list
+  // stays available to whoever may read reports (the dashboard, the Mini App).
   if (req.method === "GET") {
     const url = new URL(req.url);
     let q = db.from("invite_links").select("*").order("created_at", { ascending: false }).limit(200);
@@ -38,6 +39,7 @@ serve(async (req) => {
     return json({ links: data ?? [] });
   }
   if (req.method !== "POST") throw bad("POST only");
+  requireRole(caller.role, "links.create");
 
   const body = await readJson(req);
   const source = oneOf(body, "source", LINK_SOURCES);
