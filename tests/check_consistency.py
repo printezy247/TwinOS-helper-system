@@ -721,6 +721,14 @@ def research_upgrades() -> None:
         "Wave 5 must name set_setting, setting_text, integrations and health/today — "
         "a prompt that invents a contract costs Lovable credits to build something that cannot work",
     )
+    w6 = read("docs/LOVABLE-WAVE6-PROMPTS.md") if (ROOT / "docs/LOVABLE-WAVE6-PROMPTS.md").exists() else ""
+    content_ts = read("supabase/functions/content/index.ts")
+    check(
+        "docs: the copy-control wave cites the contracts that actually exist",
+        all(s in w6 for s in ("template_variants", "content/calendar", "match_score"))
+        and "content/calendar" in content_ts and "template_variants" in read("supabase/functions/_shared/content.ts"),
+        "Wave 6 must name template_variants, content/calendar and match_score, and the code must serve them",
+    )
 
 
 # ---------------------------------------------------------------------------
