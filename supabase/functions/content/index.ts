@@ -13,7 +13,7 @@
  *
  * Who: jack, abdul, cron, ops_bot (plan §11). Idempotency-Key honoured on POSTs.
  */
-import { serve, json, readJson, routeOf, reqString, optString, oneOf, bad, HttpError, notFound } from "_shared/http.ts";
+import { serve, json, readJson, routeOf, optString, oneOf, bad, HttpError, notFound } from "_shared/http.ts";
 import { deskAlert } from "_shared/alerts.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
@@ -432,8 +432,10 @@ serve(async (req) => {
     }
 
     if (tail[1] === "schedule") {
-      const run_at = reqString(body, "run_at");
-      if (Number.isNaN(Date.parse(run_at))) throw bad("run_at must be an ISO timestamp");
+      // run_at is optional: absent means the item's own schedule, and not that
+      // either means now — the same default approve uses.
+      const run_at = optString(body, "run_at", 64);
+      if (run_at && Number.isNaN(Date.parse(run_at))) throw bad("run_at must be an ISO timestamp");
       // Calendar scheduler (Wave 4 item 2): an optional first comment, posted
       // as a reply under the channel message after a delay (default 30 min).
       const firstComment = optString(body, "first_comment", 1000);
@@ -453,24 +455,26 @@ serve(async (req) => {
       requireRole(caller.role, hasClaim ? "content.schedule_claim" : "content.schedule");
       if (item.status !== "approved") throw bad(`only approved items can be scheduled (status ${item.status})`);
       if (blockedVariant?.compliance && blockedVariant.compliance.ok === false) throw bad("compliance findings block scheduling");
-      // Saved only after every gate. Comment text never passes Jack's approval
-      // tap, so only a caller who may schedule claim posts (Jack) may set it;
-      // publish still runs checkComment on it before it goes out.
+      // The first comment never passes Jack's approval tap, so only a caller
+      // who may schedule claim posts (Jack) may set it; publish still runs
+      // checkComment on it before it goes out.
       if (firstComment !== undefined) requireRole(caller.role, "content.schedule_claim");
-      if (firstComment !== undefined || delayRaw !== undefined) {
-        await admin().from("content_items").update({
-          ...(firstComment !== undefined ? { first_comment: firstComment } : {}),
-          first_comment_delay_min: delayMin,
-        }).eq("id", id);
-      }
       const idem = await idemFrom(req, body, `content.schedule:${id}`);
       const hit = await replay(idem);
       if (hit) return hit;
       // A naive run_at is wall-clock in the channel timezone (ABDUL's "07:50"
       // means Kuala Lumpur), not the server's UTC.
       const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
-      const instant = runAtToInstant(run_at, tz);
+      const instant = runAtToInstant(run_at ?? item.scheduled_at ?? new Date().toISOString(), tz);
       if (!instant) throw bad("run_at must be an ISO timestamp");
+      // Saved only after every gate, including the idempotency replay: a replayed
+      // key returns what the first call did and writes nothing new.
+      if (firstComment !== undefined || delayRaw !== undefined) {
+        await admin().from("content_items").update({
+          ...(firstComment !== undefined ? { first_comment: firstComment } : {}),
+          first_comment_delay_min: delayMin,
+        }).eq("id", id);
+      }
       const jobs = await enqueuePublish(id, instant, caller.actor);
       return remember(idem, 200, { ok: true, content_id: id, jobs, run_at: instant });
     }

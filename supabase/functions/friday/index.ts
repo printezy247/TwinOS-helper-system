@@ -19,11 +19,12 @@ import { CORS_HEADERS, serve, json, readJson, routeOf, reqString, oneOf, bad } f
 import { toCsv } from "_shared/csv.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
-import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
+import { admin, setting, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, pushToDesk } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
 import { fanoutLine, hoursCutLine } from "_shared/hours.ts";
 import { campaignRows } from "_shared/campaign.ts";
+import { dayAndWeekStart } from "_shared/today.ts";
 import { sendMessage } from "_shared/tg.ts";
 
 const MANUAL_SOURCES = ["vantage", "tiktok", "telechurn"] as const;
@@ -35,10 +36,14 @@ export const MANUAL_FIELDS: Record<ManualSource, string[]> = {
   telechurn: ["joins", "leaves", "retention_7d_pct"],
 };
 
-function weekStart(d = new Date()): string {
-  const x = new Date(d); x.setUTCHours(0, 0, 0, 0);
-  x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7)); // Monday
-  return x.toISOString().slice(0, 10);
+/**
+ * This week's Monday, in the channel timezone. Every view computes the week
+ * with local_week_start(), which is Kuala Lumpur — doing it in UTC here meant
+ * that from Monday 00:00 to 08:00 MYT the scorecard read the previous week.
+ */
+async function weekStart(d = new Date()): Promise<string> {
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  return dayAndWeekStart(tz, d).week.slice(0, 10);
 }
 
 async function missingInputs(week: string): Promise<ManualSource[]> {
@@ -71,7 +76,7 @@ serve(async (req) => {
 
   if (method === "GET") {
     requireRole(caller.role, "reports.read");
-    const week = new URL(req.url).searchParams.get("week") ?? weekStart();
+    const week = new URL(req.url).searchParams.get("week") ?? await weekStart();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw bad("week must be YYYY-MM-DD (a Monday)");
     const { data, error } = await db.from("v_friday_scoreboard").select("*").eq("week_start", week).maybeSingle();
     if (error) throw bad(`v_friday_scoreboard: ${error.message}`);
@@ -82,7 +87,7 @@ serve(async (req) => {
 
   if (tail[0] === "request-inputs") {
     requireRole(caller.role, "content.draft");
-    const week = weekStart();
+    const week = await weekStart();
     const missing = await missingInputs(week);
     const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
     if (missing.length) {
@@ -140,7 +145,7 @@ serve(async (req) => {
 
   if (tail[0] === "post") {
     requireRole(caller.role, "content.draft");
-    const week = weekStart();
+    const week = await weekStart();
     const missing = await missingInputs(week);
     const { data: sb } = await db.from("v_friday_scoreboard").select("*").eq("week_start", week).maybeSingle();
     if (!sb) throw bad("no scoreboard row for this week yet");

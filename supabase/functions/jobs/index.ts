@@ -11,10 +11,11 @@
  *   GET  /jobs              → queue counts per kind/status
  *
  * Claiming is an atomic UPDATE … WHERE status='queued'; a claimed job that
- * reports nothing for 30 min is requeued by the next claim call. Kinds the
- * Phase 1 worker understands: drop_folder_watch, telechurn_import, backup,
- * clip, research_batch, rewrite, result_reply (handled by cron, not the PC),
- * scorecard_image, llm_variants (local model only, off by default).
+ * reports nothing for 30 min is requeued by the next claim call. The kinds the
+ * worker understands are listed in workers/pc/twinos_worker.py (KINDS) and must
+ * stay a subset of this list — a kind the worker handles but this list omits
+ * can never be enqueued. `result_reply` and `fanout_platform` are drained by
+ * cron, not the PC worker.
  */
 import { serve, json, readJson, routeOf, reqString, bad, notFound, conflict, optString } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
@@ -33,7 +34,8 @@ import * as tg from "_shared/tg.ts";
 
 export const JOB_KINDS = [
   "drop_folder_watch", "telechurn_import", "backup", "clip", "research_batch",
-  "rewrite", "result_reply", "scorecard_image", "thumbnail", "llm_variants", "clip_candidates", "fanout_platform",
+  "rewrite", "result_reply", "scorecard_image", "llm_variants", "clip_candidates",
+  "fanout_platform", "voiceover",
 ] as const;
 const ASSETS_BUCKET = "assets";
 const STALE_CLAIM_MIN = 30;
