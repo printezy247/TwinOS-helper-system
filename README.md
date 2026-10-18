@@ -8,106 +8,162 @@
 </p>
 
 <p align="center">
-  🤖 AI-Powered Telegram Channel Automation for Gold Trading
-  
-  <a href="https://github.com/printezy247/TwinOS-helper-system/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/printezy247/TwinOS-helper-system/ci.yml?branch=main&style=for-the-badge&logo=github&logoColor=white&label=CI" alt="Build Status"></a>
-  <a href="https://supabase.com/dashboard/project/cdnyybrfoclexjlroqcf"><img src="https://img.shields.io/badge/Supabase-Connected-3ecf8e?style=for-the-badge&logo=supabase&logoColor=white&labelColor=0f172a" alt="Supabase"></a>
+  <strong>🤖 AI-Powered Telegram Channel Automation for Gold Trading</strong><br>
+  <em>Orchestrate content, compliance, publishing & analytics—so Jack can focus on maps, TikTok & community</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/printezy247/TwinOS-helper-system/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/printezy247/TwinOS-helper-system/ci.yml?branch=main&style=for-the-badge&logo=github&logoColor=white&label=CI&color=3b82f6" alt="Build Status"></a>
+  <a href="https://supabase.com/dashboard/project/cdnyybrfoclexjlroqcf"><img src="https://img.shields.io/badge/Supabase-Connected-3ecf8e?style=for-the-badge&logo=supabase&logoColor=white&labelColor=0f172a&logoSize=auto" alt="Supabase"></a>
+  <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5.6-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="https://www.python.org"><img src="https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
   <a href="https://github.com/printezy247/TwinOS-helper-system/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge&logo=openopensource&logoColor=white&labelColor=1e293b" alt="License"></a>
   <a href="https://github.com/printezy247/TwinOS-helper-system/releases"><img src="https://img.shields.io/github/v/release/printezy247/TwinOS-helper-system?style=for-the-badge&logo=github&logoColor=white&labelColor=0f172a&color=3b82f6" alt="Latest Release"></a>
 </p>
 
----
-
 <div align="center">
 
-**Status:** 🟡 **Phase 0** (Plan & Mind) | October 2026
+**Status:** 🟡 **Phase 1** (Desk Loop) | October 2026
 
+[🚀 Quick Start](#-quick-start) • 
 [📖 Documentation](#-documentation) • 
 [🏗️ Architecture](#-architecture-overview) • 
-[⚙️ Setup](docs/SETUP.md) • 
+[⚙️ Setup Guide](docs/SETUP.md) • 
 [🎯 Roadmap](docs/PHASES.md) • 
-[💫 Upgrade Ideas](docs/UPGRADE-IDEAS.md)
+[💡 Upgrade Ideas](docs/UPGRADE-IDEAS.md)
 
 </div>
 
 ---
 
-## 🌟 Overview
+## 🎯 What TwinOS Does
 
-TwinOS orchestrates the **EzyMap gold-trading Telegram channel**, automating content creation, compliance checking, scheduled publishing, and analytics—so Jack can focus on maps, TikTok, and community.
+<div align="center">
+<table>
+<tr>
+<td align="center">
+<strong>📝 Smart Drafting</strong><br/>
+<em>Auto-generate posts from templates</em>
+</td>
+<td align="center">
+<strong>✅ Compliance Check</strong><br/>
+<em>Validate against trading rules</em>
+</td>
+<td align="center">
+<strong>🎯 One-Tap Publish</strong><br/>
+<em>Jack approves, system schedules</em>
+</td>
+</tr>
+<tr>
+<td align="center">
+<strong>📊 Signal Tracking</strong><br/>
+<em>Auto-reply under signal posts</em>
+</td>
+<td align="center">
+<strong>👥 Member Analytics</strong><br/>
+<em>Track growth & retention</em>
+</td>
+<td align="center">
+<strong>🏆 Friday Scoreboard</strong><br/>
+<em>Weekly performance reports</em>
+</td>
+</tr>
+</table>
+</div>
+
+---
+
+## 🏗️ Architecture Overview
+
+### System Flow Diagram
 
 ```mermaid
 graph TB
-    subgraph "User Layer"
-        A[👤 Jack: Telegram Desk]
-        B[📊 Dashboard UI]
-        C[🤖 ABDUL Assistant]
+    subgraph UserLayer["👤 User Layer"]
+        A[Jack<br/>Telegram Desk]
+        B[Dashboard UI<br/>Lovable]
+        C[ABDUL<br/>AI Assistant]
     end
     
-    subgraph "TwinOS Core"
-        D[⚡ Supabase]
-        D -->|Postgres+| E[("💾 Database")]
-        D -->|Edge Functions| F[🔌 Serverless APIs]
-        D -->|pg_cron| G[⏰ Scheduled Jobs]
+    subgraph TwinOS["⚡ TwinOS Core"]
+        D[Supabase Platform]
+        D --> E[("💾 Postgres DB<br/>The Mind")]
+        D --> F[🔌 Edge Functions<br/>The Rules]
+        D --> G[⏰ pg_cron Jobs<br/>The Clock]
     end
     
-    subgraph "Integrations"
-        H[📈 EzyAi / TradingView]
-        I[🤖 @EzyOps Bot]
-        J[📝 printezy]
-        K[💻 PC Worker]
+    subgraph Integrations["🔗 Integrations"]
+        H[EzyAi / TradingView<br/>Signal Source]
+        I[@EzyOps Bot<br/>Telegram]
+        J[printezy<br/>Board]
+        K[PC Worker<br/>Local GPU]
     end
     
     A & B & C -->|One API| D
     H & I & J & K --> D
     
     style D fill:#3ecf8e,stroke:#047857,stroke-width:3px,color:#fff
+    style E fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
+    style F fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
+    style G fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
     style A fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
     style B fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
     style C fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
 ```
 
-### ✨ Key Features
+### The Eleven Edge Functions
 
-| Feature | Status | Description |
-|---------|--------|-------------|
-| 📝 **Smart Drafting** | Phase 0 | Pull from Posting Kit templates automatically |
-| ✅ **Compliance Check** | Phase 0 | Validate posts against strict checklist |
-| 🎯 **One-Tap Publish** | Phase 0 | Jack approves, system schedules |
-| 📊 **Signal Tracking** | Phase 0 | Auto-reply under signal posts |
-| 👥 **Member Analytics** | Phase 0 | Track growth via allowed methods only |
-| 🏆 **Friday Scoreboard** | Phase 0 | Automated weekly performance reports |
+| Function | Trigger | Purpose | Status |
+|----------|---------|---------|--------|
+| `content` | Dashboard, ABDUL, cron | Draft from template, request approval | ✅ Phase 0 |
+| `approve` | Jack (JWT/Telegram) | **The publish gate** — Jack only | ✅ Phase 0 |
+| `publish` | pg_cron (every min) | Schedule & send posts with backoff | ✅ Phase 0 |
+| `tg-webhook` | Telegram Bot API | Desk input, buttons, member events | ✅ Phase 0 |
+| `tv-webhook` | TradingView alerts | Signal card drafts (COUNTER-TREND line kept) | 🟡 Phase 1 |
+| `signals-ingest` | Signal bot | Idempotent batch ingestion | ✅ Phase 0 |
+| `results` | ABDUL, cron | Result replies under signals | 🟡 Phase 1 |
+| `health` | Everyone (beats) | System health checks | ✅ Phase 0 |
+| `friday` | cron, Jack, ABDUL | Weekly scoreboard | 🟡 Phase 1 |
+| `jobs` | PC worker | Asset upload, Telechurn import | ✅ Phase 0 |
+| `links` | Jack, ABDUL | Named invite links | ✅ Phase 0 |
 
 ---
 
 ## 📁 Project Structure
 
+<details>
+<summary><strong>📂 Click to expand full repository layout</strong></summary>
+
 ```bash
 TwinOS-helper-system/
 ├── supabase/
-│   ├── migrations/          # Schema, RLS, triggers, mint_api_key() ──► [migrations agent]
-│   ├── seed.sql             # Settings, products, brand facts, templates ──► [seed agent]
+│   ├── migrations/          # Schema, RLS, triggers, mint_api_key()
+│   ├── seed.sql             # Settings, products, templates, brand facts
 │   ├── functions/
-│   │   ├── _shared/         # Auth, roles, idempotency, Telegram client, compliance ──► [scaffold]
-│   │   ├── content/         # Draft generation
-│   │   ├── approve/         # Approval workflow
-│   │   ├── publish/         # Scheduled publishing
+│   │   ├── _shared/         # Auth, roles, compliance, Telegram client
+│   │   ├── content/         # Draft generation & template variants
+│   │   ├── approve/         # Approval workflow (Jack only)
+│   │   ├── publish/         # Scheduled publishing with backoff
 │   │   ├── tg-webhook/      # Telegram inbound events
-│   │   ├── tv-webhook/      # TradingWeb notifications
+│   │   ├── tv-webhook/      # TradingView alerts
 │   │   ├── signals-ingest/  # Signal data extraction
-│   │   ├── results/         # Performance tracking
+│   │   ├── results/         # Performance tracking & replies
 │   │   ├── health/          # System health checks
 │   │   ├── friday/          # Weekly scoreboard
-│   │   ├── jobs/            # Cron job runner
-│   │   └── links/           # Link management
+│   │   ├── jobs/            # PC worker claim/result
+│   │   └── links/           # Invite link management
 │   └── config.toml          # Supabase configuration
 ├── workers/
-│   └── pc/                  # Python worker: drop folder, CSV backup, clips ──► [scaffold]
+│   └── pc/
+│       ├── twinos_worker.py # Local Python worker (no exposed ports)
+│       ├── test_worker.py   # Worker test suite
+│       └── studio/          # Clipping, transcription, thumbnails
 ├── bots/
-│   └── ops/                 # @EzyOps_bot setup & webhook flow ──► [scaffold]
+│   └── ops/
+│       └── README.md        # @EzyOps_bot setup guide
 ├── apps/
-│   └── dashboard/           # Lovable-generated dashboard (GitHub sync) ──► [Lovable]
-├── apps/mcp/                # TwinOS MCP server for ABDUL ──► [mcp agent, Phase 2]
+│   ├── dashboard/           # Lovable-generated UI
+│   └── mcp/                 # TwinOS MCP server for ABDUL
 ├── docs/                    # Runbooks, contracts, specifications
 ├── tests/                   # Unit & integration tests
 ├── scripts/                 # Deployment & utility scripts
@@ -115,7 +171,9 @@ TwinOS-helper-system/
 └── LICENSE                  # MIT License
 ```
 
-### 🗂️ Repository Layout Table
+</details>
+
+### Repository Layout Table
 
 | Path | Purpose | Owner |
 |------|---------|-------|
@@ -124,9 +182,8 @@ TwinOS-helper-system/
 | `supabase/functions/_shared/` | Core utilities (auth, compliance, Telegram) | Scaffold |
 | `supabase/functions/<fn>/` | Individual Edge Function endpoints | Scaffold |
 | `workers/pc/twinos_worker.py` | Local PC Python worker (no exposed ports) | Scaffold |
-| `workers/pc/test_worker.py` | Worker test suite | Scaffold |
 | `bots/ops/` | @EzyOps_bot configuration & deployment | Scaffold |
-| `apps/dashboard/` | User-facing dashboard (generated by Lovable) | Lovable |
+| `apps/dashboard/` | User-facing dashboard (Lovable) | Lovable |
 | `apps/mcp/` | MCP protocol integration for ABDUL | MCP Agent |
 | `tests/` | Comprehensive test coverage | — |
 | `scripts/*.sh` | Automation scripts (deploy, keys, desk-tour) | — |
@@ -138,17 +195,17 @@ TwinOS-helper-system/
 
 <div align="center">
 
-| Document | Description |
-|----------|-------------|
-| [`SETUP.md`](docs/SETUP.md) | Phased setup guide (Jack-only commands) |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System shape + 11 Edge Functions |
-| [`API.md`](docs/API.md) | Endpoints with request/response examples |
-| [`PHASES.md`](docs/PHASES.md) | Phase-by-phase implementation checklist |
-| [`UPGRADE-IDEAS.md`](docs/UPGRADE-IDEAS.md) | Research-driven enhancements (Wave 5) |
-| [`LOVABLE-KNOWLEDGE.md`](docs/LOVABLE-KNOWLEDGE.md) | Lovable project knowledge base |
-| [`UPGRADE-PLAN.md`](UPGRADE-PLAN.md) | Full development roadmap (v3.1) |
-| [`bots/ops/README.md`](bots/ops/README.md) | @EzyOps_bot operational guide |
-| [`workers/pc/README.md`](workers/pc/README.md) | PC worker documentation |
+| Document | Description | Phase |
+|----------|-------------|-------|
+| [`SETUP.md`](docs/SETUP.md) | Phased setup guide (Jack-only commands) | All |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System shape + 11 Edge Functions | Plan |
+| [`API.md`](docs/API.md) | Endpoints with request/response examples | Plan |
+| [`PHASES.md`](docs/PHASES.md) | Phase-by-phase implementation checklist | All |
+| [`UPGRADE-IDEAS.md`](docs/UPGRADE-IDEAS.md) | Research-driven enhancements (Wave 5+) | Future |
+| [`LOVABLE-KNOWLEDGE.md`](docs/LOVABLE-KNOWLEDGE.md) | Lovable project knowledge base | Dashboard |
+| [`UPGRADE-PLAN.md`](UPGRADE-PLAN.md) | Full development roadmap (v3.1) | Plan |
+| [`bots/ops/README.md`](bots/ops/README.md) | @EzyOps_bot operational guide | Phase 0 |
+| [`workers/pc/README.md`](workers/pc/README.md) | PC worker documentation | Phase 1 |
 
 </div>
 
@@ -160,13 +217,13 @@ These rules are non-negotiable and govern all TwinOS operations:
 
 <div align="center">
 
-| Rule | Enforcement |
-|------|-------------|
-| 🔒 **Approve is Jack only** | Dashboard requires his login or Desk group Telegram ID; ABDUL cannot approve |
-| 🗄️ **Schema first** | Lovable never creates tables; UI always calls functions |
-| 🔐 **No secrets in files** | Tokens → Supabase function secrets; machine keys hashed in `api_keys`; Jack's copies in keyring (`secret-tool`) |
-| ✅ **Allowed methods only** | Bot API, official APIs, Telechurn reports, manual entry — no personal automation, scraping, or group text AI |
-| 🎭 **Demo/shadow signals private** | Never reach public posts |
+| Rule | Enforcement | Why |
+|------|-------------|-----|
+| 🔒 **Approve is Jack only** | Dashboard requires his login or Desk group Telegram ID; ABDUL cannot approve | Human judgment gate |
+| 🗄️ **Schema first** | Lovable never creates tables; UI always calls functions | Backend ownership |
+| 🔐 **No secrets in files** | Tokens → Supabase function secrets; machine keys hashed in `api_keys`; Jack's copies in keyring (`secret-tool`) | Security boundary |
+| ✅ **Allowed methods only** | Bot API, official APIs, Telechurn reports, manual entry — no scraping or group text AI | Platform compliance |
+| 🎭 **Demo/shadow signals private** | Never reach public posts | Privacy preservation |
 
 </div>
 
@@ -203,11 +260,11 @@ python3 -m pytest tests/test_desk_report.py -v
 
 ```mermaid
 flowchart LR
-    subgraph "Protected Branches"
+    subgraph Protected["🔒 Protected Branches"]
         MAIN((main))
     end
     
-    subgraph "Development Flow"
+    subgraph DevFlow["🔄 Development Flow"]
         DEV(develop)
         FEAT[feature/*]
         FIX[hotfix/*]
@@ -215,10 +272,10 @@ flowchart LR
     
     FEAT & FIX -.->|PR Review| DEV
     DEV -.->|Merge via PR| MAIN
-    MAIN -.->|Auto-deploy| PRODUCTION((production))
+    MAIN -.->|Auto-deploy| PROD((production))
     
     style MAIN fill:#ef4444,stroke:#b91c1c,color:#fff,stroke-width:3px
-    style PRODUCTION fill:#10b981,stroke:#047857,color:#fff
+    style PROD fill:#10b981,stroke:#047857,color:#fff
 ```
 
 ### PR Guidelines
@@ -237,14 +294,14 @@ flowchart LR
 
 ## 🛠️ Tooling Stack
 
-| Category | Tools |
-|----------|-------|
-| **Backend** | Supabase Postgres, Edge Functions (Deno), pg_cron |
-| **Frontend** | Lovable (TypeScript + Tailwind + shadcn/ui) |
-| **Automation** | Python workers, Telechurn API, Telegram Bot API |
-| **Testing** | Deno Test, Python unittest, Pytest |
-| **CI/CD** | GitHub Actions, Supabase CLI |
-| **Monitoring** | Action logs, Error tracking, Health checks |
+| Category | Tools | Purpose |
+|----------|-------|---------|
+| **Backend** | Supabase Postgres, Edge Functions (Deno), pg_cron | Serverless APIs, scheduled jobs |
+| **Frontend** | Lovable (TypeScript + Tailwind + shadcn/ui) | Dashboard UI |
+| **Automation** | Python workers, Telechurn API, Telegram Bot API | Local processing, integrations |
+| **Testing** | Deno Test, Python unittest, Pytest | Unit & integration tests |
+| **CI/CD** | GitHub Actions, Supabase CLI | Continuous integration & deployment |
+| **Monitoring** | Action logs, Error tracking, Health checks | System observability |
 
 ---
 
@@ -255,10 +312,11 @@ flowchart LR
 | Metric | Value |
 |--------|-------|
 | **Languages** | TypeScript, Python, SQL |
-| **Framework** | Supabase, Lovable |
+| **Frameworks** | Supabase, Lovable, Deno |
 | **Primary** | Backend (Python + Deno) |
 | **Tests** | Unit + Integration |
 | **License** | MIT |
+| **Status** | Phase 1 (Desk Loop) |
 
 </div>
 
@@ -268,10 +326,10 @@ flowchart LR
 
 ### Prerequisites
 
-- Supabase account (Jack's project: `cdnyybrfoclexjlroqcf`)
-- Node.js v22+ (for Deno edge functions)
-- Python 3.12+ (for PC worker)
-- GitHub account (for TwinOS repo access)
+- ✅ Supabase account (Jack's project: `cdnyybrfoclexjlroqcf`)
+- ✅ Node.js v22+ (for Deno edge functions)
+- ✅ Python 3.12+ (for PC worker)
+- ✅ GitHub account (for TwinOS repo access)
 
 ### Installation Steps
 
@@ -293,7 +351,7 @@ supabase link --project-ref cdnyybrfoclexjlroqcf
 # Start local services
 supabase start
 
-# Run tests
+# Run all tests
 ./scripts/run-all-tests.sh
 ```
 
@@ -320,12 +378,14 @@ MIT License — see [`LICENSE`](LICENSE) for details.
 
 <div align="center">
 
-Made with ❤️ by Jack for EzyMap trading operations
+### Made with ❤️ by Jack for EzyMap trading operations
 
 **Powered by** [Supabase](https://supabase.com) · [Lovable](https://lovable.dev) · [GitHub Actions](https://github.com/features/actions)
 
 [![Star this repo](https://img.shields.io/github/stars/printezy247/TwinOS-helper-system?style=social&label=⭐)](https://github.com/printezy247/TwinOS-helper-system/stargazers)
 [![Watch this repo](https://img.shields.io/github/watchers/printezy247/TwinOS-helper-system?style=social)](https://github.com/printezy247/TwinOS-helper-system/watchers)
 [![Fork this repo](https://img.shields.io/github/forks/printezy247/TwinOS-helper-system?style=social)](https://github.com/printezy247/TwinOS-helper-system/fork)
+
+[📖 Full Documentation](#-documentation) • [⚙️ Setup Guide](docs/SETUP.md) • [🎯 Roadmap](docs/PHASES.md)
 
 </div>
