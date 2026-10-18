@@ -131,6 +131,8 @@ Inter; Malay is `ms`; times in `Asia/Kuala_Lumpur`; 390 px throughout.
   already rotates and `v_hook_performance` already reads `hook_id`, so the
   evidence loop works; what is missing is the schema to ask for N variants of
   one draft at once.
-- **No re-tagging of old feed items.** `tagFeedItems` runs on ingest, so items
-  collected before the migration keep empty tags. Say the word and it becomes a
-  `research/retag` route plus a one-off job.
+- **No re-tagging of old feed items — one line, not a prompt.** `tagFeedItems` runs on ingest, so items
+  collected before the migration start untagged. `POST /functions/v1/research/retag { limit? }` drains
+  the backlog oldest-first and bounded, so calling it again works the next batch; `twinos_research
+  what=retag` is the same route through ABDUL. Run it once, or leave it — the untagged rows still show,
+  they just sort last.

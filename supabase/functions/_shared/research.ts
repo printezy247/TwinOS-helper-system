@@ -371,8 +371,10 @@ export async function tagFeedItems(
   const byId = new Map(ideas.map((i) => [i.id, i]));
 
   let tagged = 0;
+  const checked: string[] = [];
   for (const f of fresh) {
     const hit = byId.get(f.externalId);
+    checked.push(f.externalId);
     if (!hit) continue;
     // One update per matched row: the values differ per row, so a single
     // UPDATE ... IN could not carry them. Fifty rows every six hours is not a
@@ -384,6 +386,14 @@ export async function tagFeedItems(
       lang: fallbackLang,
     }).eq("external_id", f.externalId);
     if (!error) tagged += 1;
+  }
+  // An item that was checked and matched nothing is marked 0, not left null.
+  // Null means "never matched against anything", so a retag pass over the
+  // history would pick the same non-matching items up first, forever, and
+  // never reach the ones behind them.
+  const unmatched = checked.filter((id) => !byId.has(id));
+  if (unmatched.length) {
+    await db.from("feed_items").update({ match_score: 0 }).in("external_id", unmatched);
   }
   return tagged;
 }
