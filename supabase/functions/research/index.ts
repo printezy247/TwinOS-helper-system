@@ -192,6 +192,54 @@ serve(async (req) => {
     return json({ ok: true, days, ideas });
   }
 
+  // POST /research/retag — tag what was collected before the columns existed.
+  // tagFeedItems runs on ingest, so every item stored before the Wave 6
+  // migration has empty tags and the Research screen cannot sort it.
+  //
+  // Bounded and oldest-first: each call works the next batch of history, so
+  // repeating it drains the backlog instead of re-reading the newest rows.
+  // `match_score is null` is the whole backlog — an item that was checked and
+  // matched nothing is stored as 0, which is what makes this a queue.
+  if (tail[0] === "retag") {
+    requireRole(caller.role, "research.run");
+    const limit = Math.min(Math.max(Number(body.limit ?? 500) || 500, 1), 1000);
+    const { data: rows, error } = await db.from("feed_items")
+      .select("external_id, title, summary, published_at, feed_id, feeds(lang)")
+      .is("match_score", null)
+      .order("created_at", { ascending: true })
+      .limit(limit);
+    if (error) throw bad(`feed_items: ${error.message}`);
+
+    const fresh = (rows ?? []).map((r) => ({
+      externalId: String(r.external_id),
+      title: String(r.title),
+      summary: (r.summary as string | null) ?? null,
+      publishedAt: (r.published_at as string | null) ?? null,
+    }));
+    const { count: left, error: leftErr } = await db.from("feed_items")
+      .select("id", { count: "exact", head: true }).is("match_score", null);
+    if (leftErr) throw bad(`feed_items: ${leftErr.message}`);
+
+    // Each item carries its own feed's language, so a batch spanning several
+    // feeds does not stamp one language across all of them.
+    const langOf = new Map<string, string>(
+      (rows ?? []).map((r) => [String(r.external_id), (r as { feeds?: { lang?: string } | null }).feeds?.lang ?? "en"]),
+    );
+    const byLang = new Map<string, typeof fresh>();
+    for (const f of fresh) {
+      const lang = langOf.get(f.externalId) ?? "en";
+      const group = byLang.get(lang) ?? [];
+      group.push(f);
+      byLang.set(lang, group);
+    }
+    let tagged = 0;
+    for (const [lang, group] of byLang) {
+      tagged += await tagFeedItems(db, group, lang);
+    }
+    await logAction({ actor: caller.actor, action: "research.retag", payload: { seen: fresh.length, tagged } });
+    return json({ ok: true, seen: fresh.length, tagged, left });
+  }
+
   // POST /research/channels — the reference-channel table, refreshed. The member
   // count comes from the Bot API, which only answers for channels the bot is in;
   // everywhere else the row still stands on the notes Jack entered by hand, and

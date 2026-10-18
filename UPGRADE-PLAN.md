@@ -63,7 +63,7 @@
 
 **In scope:** everything the Posting Kit's desk does, the FYP plan's repurposing, the Growth Plan's automation table (§09) and scoreboard (§14), community moderation, research for content and ICPs.
 
-**Out of scope:** Sambang Gold, Aish Capital, 20 Pips Lab, Sam, EzyViralAI (the Growth Plan says park them). No multi-tenant design.
+**Out of scope:** Jack's other trading brands and a video product — the Growth Plan names them and says park them. No multi-tenant design.
 
 **Non-goals:**
 - Rewriting the signal bot's engine or the EzyMap indicator.
@@ -332,7 +332,7 @@ Either way, Lovable's GitHub sync points at this repo, so all generated code lan
 ### E. Channel publisher
 30. Queue: `content_items` → `content_variants` (platform, language) → `publish_jobs`. **[R]** (AI-OS app `contentStore.ts`)
 31. Status flow `draft → pending_approval → approved → scheduled → publishing → published | failed`.
-32. Scheduler runs every minute with pacing and backoff. **[R]** (ops dashboard `outboundQueue.js`)
+32. Scheduler runs every minute with pacing and backoff. **[R]** (from the API service's outbound queue)
 33. Telegram provider: text, photo, video, album, inline buttons, pin, edit in place, reply-to. **[R]** (sales bot `channel_posts`, `build_keyboard`)
 34. Pinned **Start here** post managed as a template; disclosure and pledge lines locked word for word. **[PDF]**
 35. Hashtag index and a pinned table of contents updated automatically. **[PDF]**
@@ -526,7 +526,7 @@ ABDUL tools mirror these: `twinos_draft`, `twinos_batch`, `twinos_request_approv
 ## 14. Reuse list (ranked)
 
 1. printezy migrations and attribution chain (`supabase/migrations/*`, `lib/analytics.ts`, telegram `webhook.ts`, `bot/meta.server.ts`).
-2. Ops dashboard `outboundQueue.js`, `classifyMetaError`, `messageLog.claimWebhookEvent`.
+2. From the API service: the outbound queue, its Meta error classifier, and its webhook-event claim.
 3. Approval kit: sales bot `handlers/decision.py`, ops dashboard `approvalService` + `telegramAdminBot`, printezy `ebook:approve`, FAQ bot `submissionStore.js`, AI-OS app `contentStore.ts`.
 4. Posting Kit prompts, rules and checklist (the PDF) as the voice and compliance base.
 5. Copy tools `prompts/copy.ts` (humaniser, banned words, platform tone), `formats.ts`, `bulk.ts`.
@@ -575,7 +575,7 @@ All ten questions from v3 were answered on 2026-10-01 (decisions 10–19). Remai
 
 **Why:** Phases 0–8 are built as far as the repo allows and the Desk loop passed live (`scripts/desk-tour.sh`, 2 Oct). What Jack touches every day is still rough: the Desk bot is typed commands with no menu, and the dashboard is flat text links with "Loading…" states. v4 makes both fast to drive with buttons, and adds the function upgrades found in Jack's other repos.
 
-**Sources (read 2026-10-02):** Jack's repos ASAP-TeleBot (bot menus), tg_ezy_ai_os (dashboard flow, channel status), sambangold-products (visual style and motion), wsapi-dashboard (secrets and integrations), webcopy/viralai (prompt generator). Open source: grammY menu (stateless menus with stale-tap detection), aiogram-dialog (screen router, paging), shadcn-admin and cmdk (sidebar, command palette), Postiz (scheduler UX; AGPL, ideas only), OpenShorts (clip pipeline), pgmq / Supabase Queues and Realtime, tma.js (Telegram Mini Apps).
+**Sources (read 2026-10-02):** Jack's own projects, named by role rather than by slug because this repo is public (§3): the sales bot (bot menus), the FAQ bot (dashboard flow, channel status), a sibling project's front end (visual style and motion), the API service's dashboard (secrets and integrations), and the prompt generator (copy variants). Open source: grammY menu (stateless menus with stale-tap detection), aiogram-dialog (screen router, paging), shadcn-admin and cmdk (sidebar, command palette), Postiz (scheduler UX; AGPL, ideas only), OpenShorts (clip pipeline), pgmq / Supabase Queues and Realtime, tma.js (Telegram Mini Apps).
 
 **Defaults until Jack says otherwise:** order is Wave 0 → 1 → 2 → 3 → 4. AI stays off by default and runs only on Jack's local model (NeuraOS / llama-server) through the PC worker; no cloud AI. The Mini App waits for Wave 4. Wave 2 is about 9 Lovable prompts, one per item, checked between prompts.
 
@@ -607,18 +607,18 @@ Rules: frontend only; the anon key and the session JWT are the only credentials;
 3. Skeletons, empty states, and errors with Retry (an error never reads as "nothing pending").
 4. Approval Inbox: inline approve/reject with optimistic removal, shadcn Dialog on desktop and Drawer on mobile, keys J/K/A/R/S/Esc and a `?` cheat sheet.
 5. ⌘K command palette (existing `command.tsx`): pages, pending items, Refresh.
-6. Motion and surface tokens from sambangold, recoloured green: card lift and sheen, 3px focus ring, pressed state, a 200–320 ms page fade.
+6. Motion and surface tokens taken from a sibling project's front end and recoloured green: card lift and sheen, 3px focus ring, pressed state, a 200–320 ms page fade.
 7. Supabase Realtime instead of 60 s / 30 s polling: live pending badge, "new draft" toast, last-refresh dot.
 8. Health as integration cards with "Check now"; a Settings / Integrations page that shows only "set / not set" and setup steps; never a secret, never reveal or copy.
 9. Stat tiles on Friday and Signals, status tabs with counts on the Inbox, specific toasts ("Approved, posts 14:00 KL"), filter chips on Calendar and Research.
 
 ### Wave 3: functions
-1. Integration status in `health`: required secret names per provider, `ready` / `needs-credentials`, names never values (tg_ezy `channels.ts`).
-2. Live provider checks (Telegram `getMe`, Meta token debug), stored, alerting only on a change or a recovery (wsapi `accountHealth.js`).
-3. Error alerts to the Desk with a cooldown per error and a repeat count (wsapi `systemAlert.js`).
-4. Unknown-outcome guard in publish / fan-out: after a timeout, hold the retry and check before posting again (wsapi `outboundQueue.js`).
+1. Integration status in `health`: required secret names per provider, `ready` / `needs-credentials`, names never values (from the FAQ bot's own channel list).
+2. Live provider checks (Telegram `getMe`, Meta token debug), stored, alerting only on a change or a recovery (from the API service's account-health check).
+3. Error alerts to the Desk with a cooldown per error and a repeat count (from the API service's alert cooldown).
+4. Unknown-outcome guard in publish / fan-out: after a timeout, hold the retry and check before posting again (from the API service's outbound queue).
 5. Hook and CTA library per pillar, platform and language, rotated least-recently-used, no AI.
-6. Optional AI variants as a PC-worker job (`llm_variants`, off by default, local model only): 3 angles per platform as strict JSON (webcopy `copy.ts`), every variant through `compliance`, a blocking number guard (no price or percent that is not in Jack's raw lines), Jack picks on the Desk.
+6. Optional AI variants as a PC-worker job (`llm_variants`, off by default, local model only): 3 angles per platform as strict JSON (from the prompt generator), every variant through `compliance`, a blocking number guard (no price or percent that is not in Jack's raw lines), Jack picks on the Desk.
 7. On top of 6: an Adjust button, TikTok / YouTube script kits with the risk line spoken, a grounded Monday brief writer.
 8. Banned words and humanizer rules (EN + BM) in `compliance` as warnings, apart from the blocking financial-claim checks.
 
@@ -630,6 +630,6 @@ Rules: frontend only; the anon key and the session JWT are the only credentials;
 5. Voiceover in Jack's cloned voice (EN + BM) as a `voiceover` PC-worker job. Payload `{script, lang, voice_profile_id, clip_path, content_id}`; reference clips (5–15 s each) in `~/TwinOS-data/voice/jack/{en,ms}/`, never in the repo. Engine: Confucius4-TTS (Apache-2.0, EN + BM), run alone or through VoiceStudio bound to 127.0.0.1 only (not its `dev-backend.mjs`, which binds 0.0.0.0); never OmniVoice (CC-BY-NC weights, about 6 GB VRAM, thin Malay). The risk line is appended in code, and a faster-whisper transcript must contain it or the job fails; ffmpeg lays the track on the clip; the result goes to the Desk for approval, labelled as AI voice for TikTok / YouTube. Gate first: a 20 s BM bake-off on the GTX 1050 Ti (sm_61) or CPU (about 10 min per 30 s clip is fine for a background job). VoiceStudio is AGPL: call it as a separate service, never copy its code.
 
 ### Never
-No secret in the browser, the repo or chat. No auto-approve or bulk approve. No AI market commentary (tg_ezy `/watch`, `/autopilot`). No reference-channel text fed to any model. No copying AGPL code (Postiz). Nothing posted to @ezymap by tests.
+No secret in the browser, the repo or chat. No auto-approve or bulk approve. No AI market commentary (the FAQ bot's `/watch` and `/autopilot` are out of bounds). No reference-channel text fed to any model. No copying AGPL code (Postiz). Nothing posted to @ezymap by tests.
 
 Checklist: `docs/PHASES.md` Phase 9 (Waves 0–4). Builder prompt: `docs/AI-CODER-PROMPT.md`.

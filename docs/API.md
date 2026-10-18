@@ -158,6 +158,13 @@ same result twice. `cron` is the usual caller; `abdul`/`jack` may also drain.
 `POST /friday/request-inputs` (cron Fri 09:00 MYT) → asks in the Desk group.
 `POST /friday/post` → scorecard draft to the Desk + `scorecard_image` job → `201 { "content_id": "…" }`.
 
+## research  (cron + ad hoc)
+`POST /research/retag { "limit": 500 }` → `{ "ok": true, "seen": 500, "tagged": 213, "left": 4182 }`.
+Tags feed items collected before the Wave 6 columns existed, oldest first and bounded per call, so
+repeating it drains the backlog rather than re-reading the newest rows. `match_score is null` *is* the
+backlog: an item that was checked and matched nothing is stored as `0`, which is what makes this a
+queue. `twinos_research what=retag` reaches the same route through ABDUL.
+
 ## settings (RPC, not a route)
 `supabase.rpc('set_setting', { p_key, p_value })` (jack only) → updates one `settings` row, clears
 `needs_confirm`, records the change in `action_log`. Refuses a key the seed does not define, so a typo

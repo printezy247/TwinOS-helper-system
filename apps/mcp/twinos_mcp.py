@@ -99,7 +99,7 @@ ENDPOINTS = {
     "twinos_link":             ("fn", "links"),                      # phase 2
     "twinos_manual_metrics":   ("fn", "friday/manual"),
     "twinos_csi_log":          ("fn", "research/csi"),               # phase 5
-    "twinos_research":         ("fn", "research"),                   # expand | feeds, route built per call
+    "twinos_research":         ("fn", "research"),                   # expand | feeds | retag, route built per call
     "twinos_feeds":            ("rest", "feed_items"),
     "twinos_clip":             ("fn", "jobs/enqueue"),               # kind=clip
     "twinos_friday":           ("rest", "v_friday_scoreboard"),
@@ -156,8 +156,10 @@ TOOLS = [
                        "content gap, and which ICP it fits.",
      {"topic": "string", "popularity": "number", "trend": "string", "gap": "boolean", "icp": "string", "note": "string"}, ["topic"]),
     ("twinos_research", "Run the research now instead of waiting for the weekly cron. what = expand (every persona's seed questions "
-                        "through Google autocomplete, scored into topics) | feeds (poll every RSS/Atom feed once). Safe to repeat: "
-                        "expand is keyed to today, feeds only stores items it has not seen.",
+                        "through Google autocomplete, scored into topics) | feeds (poll every RSS/Atom feed once) | retag (tag the "
+                        "feed items collected before tagging existed; oldest first, bounded each call, so repeat it to drain the "
+                        "backlog). Safe to repeat: expand is keyed to today, feeds only stores items it has not seen, retag works "
+                        "a queue.",
      {"what": "string"}, []),
     ("twinos_feeds", "What is new in the research feeds (macro news, YouTube channels): newest first, each item with the feed it came "
                      "from. since = ISO date to start from; limit caps rows (default 20).",
@@ -459,8 +461,8 @@ def tool_call(name, a, idem=None):
         # One tool, two routes: ENDPOINTS holds the base and the arg picks it,
         # the way the {id} content routes build their path per call.
         what = str(a.get("what") or "expand").strip().lower()
-        if what not in ("expand", "feeds"):
-            raise ValueError("what must be expand (demand crawl) or feeds (poll the feeds)")
+        if what not in ("expand", "feeds", "retag"):
+            raise ValueError("what must be expand (demand crawl), feeds (poll the feeds) or retag (tag the backlog)")
         return fn("%s/%s" % (target, what), {}, idem)
     if name == "twinos_feeds":
         # The feed name lives in feeds, not on the item; one cheap lookup joins
