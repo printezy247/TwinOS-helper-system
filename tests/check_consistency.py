@@ -821,8 +821,47 @@ def twin_vocabularies() -> None:
     )
 
 
+def realtime_coverage() -> None:
+    """Realtime only streams tables in the supabase_realtime publication, and a
+    subscription to a table outside it is accepted and then silent forever — no
+    error, no warning, just an update that never arrives.
+
+    The dashboard subscribes to eleven tables. 0033_realtime put four of them
+    into the publication, so Signals, Feeds, Research, CSI captures, briefs,
+    topic clusters and platform accounts never updated live while the approval
+    badge and the draft toast did, which read as "realtime is on".
+
+    Supabase grants no read through the publication that a direct query would
+    not already grant — it applies each table's own RLS policies per
+    subscriber — so this is coverage, not exposure.
+
+    The set below is copied from twin-approval-hub's subscriptions, because
+    that repo is not in this workspace and CI cannot read it. If the dashboard
+    starts subscribing to a twelfth table this check will still pass until the
+    name is added here — it catches removal, not addition.
+    """
+    subs = {
+        "alerts", "briefs", "content_items", "content_variants", "csi_captures",
+        "feed_items", "platform_accounts", "publish_jobs", "signal_posts",
+        "signals", "topic_clusters",
+    }
+    covered: set[str] = set()
+    for p in sorted((ROOT / "supabase/migrations").glob("*.sql")):
+        sql = p.read_text(encoding="utf-8")
+        if "supabase_realtime" not in sql:
+            continue
+        for arr in re.findall(r"array\s*\[(.*?)\]", sql, re.S):
+            covered.update(re.findall(r"'([a-z_]+)'", arr))
+    missing = sorted(subs - covered)
+    check(
+        "realtime: the publication covers every table the dashboard subscribes to",
+        not missing,
+        f"subscribed but never streamed: {missing}",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, mcp_request_shapes, twin_vocabularies, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes, research_upgrades):
+    for fn in (settings_keys, mcp_routes, mcp_request_shapes, twin_vocabularies, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes, research_upgrades, realtime_coverage):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
