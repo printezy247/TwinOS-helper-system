@@ -725,9 +725,12 @@ def research_upgrades() -> None:
     content_ts = read("supabase/functions/content/index.ts")
     check(
         "docs: the copy-control wave cites the contracts that actually exist",
-        all(s in w6 for s in ("template_variants", "content/calendar", "match_score"))
-        and "content/calendar" in content_ts and "template_variants" in read("supabase/functions/_shared/content.ts"),
-        "Wave 6 must name template_variants, content/calendar and match_score, and the code must serve them",
+        all(s in w6 for s in ("template_variants", "content/calendar", "match_score", "template-variant"))
+        and "content/calendar" in content_ts and "template_variants" in read("supabase/functions/_shared/content.ts")
+        and "template-variant" in content_ts
+        and '"content.template_variant": ["jack"]' in read("supabase/functions/_shared/roles.ts"),
+        "Wave 6 must name template_variants, content/calendar, match_score and template-variant; "
+        "the editor is a Jack-only write and the permission must say so",
     )
 
 

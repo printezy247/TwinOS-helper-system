@@ -29,6 +29,7 @@ export type Action =
   | "metrics.poll"
   | "content.schedule"
   | "content.schedule_claim" // schedule a post that carries a claim flag
+  | "content.template_variant" // give one platform its own wording for a post type
   | "content.fanout_drain" // cron works the fan-out retry queue
   | "publish.run"
   | "signals.ingest"
@@ -72,6 +73,11 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "content.schedule": ["jack", "abdul", "cron"],
   "content.fanout_drain": ["cron", "jack"],
   "content.schedule_claim": ["jack"],
+  // Jack only, and not a subset of content.draft: a template variant is a
+  // *default*, so every later draft from that post type on that platform
+  // inherits whatever is written here. Drafting is per-draft and reversible;
+  // this is not.
+  "content.template_variant": ["jack"],
   "publish.run": ["cron", "jack"],
   "signals.ingest": ["ezyai"],
   "tv.alert": ["tradingview"],
