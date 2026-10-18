@@ -104,29 +104,50 @@ Inter; Malay is `ms`; times in `Asia/Kuala_Lumpur`; 390 px throughout.
 >
 > Nothing on this screen approves, publishes, reschedules or deletes.
 
-## 4. Template variants — a Jack-only editor, or nothing
+## 4. The template-variant editor — Jack only, and the gate is already there
 
-> Read `template_variants` and show, on the composer, a small **"This platform
-> uses its own wording"** panel listing the overrides that exist for the current
-> (post_type, platform, lang): which of `body`, `fields_list`, `char_limit`,
-> `hashtag` differ from the base template.
+> Add a **Template variants** panel to the composer, reachable from the platform
+> selector, and let Jack write a platform's own wording for a post type.
 >
-> Show it as a read-only list. **Do not build an editor for it yet.** Writing
-> `template_variants` is Jack's, the RLS allows only him, and a form that writes
-> a body without a compliance check in front of it is a worse version of the
-> Desk. When there is a decision to build that editor, it gets its own prompt
-> with the compliance gate designed into it.
+> It calls `POST /functions/v1/content/template-variant` with
+> `{ post_type, platform, lang, body?, fields_list?, char_limit?, hashtag? }`.
+> **Jack only** — hide the whole panel for anyone else, and expect a 403 from
+> the server if the role check is ever bypassed. Show the server's message and
+> never a generic one: it says things like "a banned word in a template is a
+> banned word in every draft made from it", which is the useful half of the
+> answer.
 >
-> If every field is inherited, the panel does not render at all — silence is
-> accurate here, a panel saying "using the default" is noise.
+> The panel has four fields: the body (a monospace textarea, because it holds
+> `{{placeholders}}`), `fields_list` as a comma-separated input, `char_limit`
+> as a number, and `hashtag` as a textarea. Leave a field blank to inherit the
+> base template, and say so under the box — "blank means the base template".
+> A **Preview** button renders the body with the sample fields the composer
+> already has, so `{{title}}` shows as a real value rather than a placeholder;
+> the preview is client-side and read-only, and never sends anything.
+>
+> Above the form, show which fields currently differ from the base, so opening
+> the panel on an existing variant reads as an edit rather than a blank form.
+> Below it, a **Clear this override** action that sends the field as an empty
+> string, with a confirm — and, once cleared, the panel falls back to showing
+> the base template.
+>
+> **The compliance gate is not in the UI and must not be added there.** The
+> server refuses a banned word, a literal `[NEEDED]` and any `{{placeholder}}`
+> that is not declared in `fields_list`, and the real check still runs on every
+> rendered draft afterwards. Show what the server returns. Do not build a local
+> banned-word list, a duplicate compliance pass, or an auto-approve: a variant
+> is a *default* for every later draft from that post type on that platform,
+> which is why it is Jack's alone and why the server, not the browser, decides.
 
 ---
 
 ## What Wave 6 still does not do
 
-- **No template-variant editor.** Deliberate — see prompt 4. It needs a
-  compliance check in front of any body write, and that is a design decision,
-  not a form.
+- **No duplicate compliance check in the browser.** The server refuses a banned
+  word, a literal `[NEEDED]` and any `{{placeholder}}` not declared in
+  `fields_list`; the deep check still runs on every rendered draft. Building a
+  second one in the UI would let the two disagree, and the UI would be the one
+  that was wrong.
 - **No A/B variant fan-out** (`ab_variants` on a template). The `hooks` bank
   already rotates and `v_hook_performance` already reads `hook_id`, so the
   evidence loop works; what is missing is the schema to ask for N variants of

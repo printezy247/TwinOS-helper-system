@@ -47,6 +47,7 @@ and views (RLS allows it for a logged-in user) but **never** `insert`,
 | CSI reading | `POST /functions/v1/research/csi` `{topic, category?, metric?, value?, trend?, note?}` |
 | Article brief | `POST /functions/v1/research/article` `{cluster_id}` → `{text, titles, questions, keywords}` |
 | Change a setting | `supabase.rpc('set_setting', { p_key, p_value })` (jack only) |
+| Give a platform its own wording | `POST /functions/v1/content/template-variant` `{post_type, platform, lang, body?, fields_list?, char_limit?, hashtag?}` (**jack only** — a variant is a default for every later draft from that post type, not one draft) |
 | Health | `GET /functions/v1/health` |
 | Friday numbers | `GET /functions/v1/friday?week=YYYY-MM-DD` |
 | Queue counts | `GET /functions/v1/jobs` |

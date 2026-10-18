@@ -240,6 +240,18 @@ own terms the item matched — the same number the ideas list ranks by. An item 
 its defaults and sorts to the bottom, which is where an item about none of Jack's readers' questions
 belongs. Nothing here posts or drafts.
 
+`POST /functions/v1/content/template-variant` `{ post_type, platform, lang, body?, fields_list?, char_limit?, hashtag? }`
+→ `201 { "ok": true, "variant": { … } }`. **Jack only** (`content.template_variant`, not a subset of
+`content.draft` — a variant is a *default* for every later draft from that post type on that
+platform, so it is not the same permission as drafting one). Upserts on the `(post_type, platform,
+lang)` key; a field sent as blank means "inherit the base".
+
+The gate is the one that makes sense for a **template**. The deep compliance check runs downstream on
+every rendered variant, so it is not repeated here on a body full of `{{placeholders}}` — an
+unresolved placeholder is not a claim. Refused instead: a banned word (a banned word in a template is
+a banned word in every draft made from it), a literal `[NEEDED]` (render only fills `{{…}}`, so it can
+never resolve), a `{{placeholder}}` not declared in `fields_list`, and a `char_limit` outside 50–20000.
+
 Storage bucket: `assets` (private).
 
 **Two vocabularies worth knowing.** `post_type` is one enum with the Posting Kit

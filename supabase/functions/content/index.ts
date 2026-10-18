@@ -31,7 +31,7 @@ import { dayAndWeekStart } from "_shared/today.ts";
 import {
   cycleWeek, mondayOf, nextMonday, planBatch, runAtToInstant, slotToInstant, summaryLines, sweepPlan, topicTitle, type SweepItem,
 } from "_shared/batch.ts";
-import { LANGS, PLATFORMS, POST_TYPES, type PostType } from "_shared/compliance.ts";
+import { LANGS, PLATFORMS, POST_TYPES, bannedWords, neededPlaceholders, type PostType } from "_shared/compliance.ts";
 
 const REMINDERS: Record<string, { post_type: PostType; text: string }> = {
   "remind-map": {
@@ -355,6 +355,78 @@ serve(async (req) => {
       desk = await pushToDesk(draft, { heading: post_type.replace("_", " "), actor: caller.actor });
     }
     return remember(idem, 201, { ...draft, desk });
+  }
+
+  // POST /content/template-variant — one platform's own wording for a post type.
+  //
+  // Jack only, and the gate here is the one that makes sense for a *template*.
+  // The deep compliance check runs downstream on every rendered variant
+  // (createDraft → compliance → a blocking finding refuses approval), so running
+  // it here on a body full of {{placeholders}} would be checking the wrong
+  // thing: an unresolved placeholder is not a claim. What only a template can
+  // get wrong, and what every later draft from it would inherit, is checked
+  // here — and it is checked because a variant is a default, not a draft.
+  if (tail[0] === "template-variant") {
+    requireRole(caller.role, "content.template_variant");
+    const post_type = oneOf(body, "post_type", POST_TYPES);
+    const platform = oneOf(body, "platform", PLATFORMS);
+    const lang = oneOf(body, "lang", LANGS, "en");
+    // optString answers null, not undefined: normalise once so every check
+    // below is a plain undefined test.
+    const text = optString(body, "body", 20000) ?? undefined;
+    const charLimit = body.char_limit === undefined || body.char_limit === null
+      ? undefined : Number(body.char_limit);
+    if (charLimit !== undefined && (!Number.isInteger(charLimit) || charLimit < 50 || charLimit > 20000)) {
+      throw bad("char_limit must be a whole number between 50 and 20000");
+    }
+    const hashtag = optString(body, "hashtag", 2000) ?? undefined;
+    const fieldsRaw = Array.isArray(body.fields_list) ? body.fields_list.map(String) : undefined;
+    if (fieldsRaw) {
+      const badField = fieldsRaw.find((f) => !/^[A-Za-z0-9_.]+$/.test(f));
+      if (badField) throw bad(`fields_list entries are names, not sentences: '${badField}'`);
+    }
+    if (text === undefined && !fieldsRaw && charLimit === undefined && hashtag === undefined) {
+      throw bad("nothing to override: send body, fields_list, char_limit or hashtag");
+    }
+
+    if (text !== undefined) {
+      const banned = bannedWords(text);
+      if (banned.length) {
+        throw new HttpError(409, "conflict", "a banned word in a template is a banned word in every draft made from it", {
+          findings: banned,
+        });
+      }
+      const literal = neededPlaceholders(text);
+      if (literal.length) {
+        throw bad("a literal [NEEDED] can never resolve: render only fills {{placeholders}}", { findings: literal });
+      }
+      // Declared against the fields this variant will actually have, not the
+      // base template's: overriding body without overriding fields_list keeps
+      // the base fields, and those are the ones that must cover the body.
+      const { data: base } = await admin().from("templates")
+        .select("fields_list").eq("key", post_type).maybeSingle();
+      const declared = new Set(fieldsRaw ?? ((base?.fields_list ?? []) as string[]));
+      // hook and cta are filled from the rotating libraries, not by the caller.
+      const used = [...new Set([...text.matchAll(/\{\{\s*\??([A-Za-z0-9_.]+)\s*\}\}/g)].map((m) => m[1]))]
+        .filter((f) => f !== "hook" && f !== "cta");
+      const undeclared = used.filter((f) => !declared.has(f));
+      if (undeclared.length) {
+        throw bad(`these placeholders are not in fields_list: ${undeclared.join(", ")}`, { findings: undeclared });
+      }
+    }
+
+    const db = admin();
+    const row = {
+      post_type, platform, lang,
+      ...(text !== undefined ? { body: text } : {}),
+      ...(fieldsRaw ? { fields_list: fieldsRaw } : {}),
+      ...(charLimit !== undefined ? { char_limit: charLimit } : {}),
+      ...(hashtag !== undefined ? { hashtag } : {}),
+    };
+    const { data: saved, error } = await db.from("template_variants").upsert(row).select("*").single();
+    if (error) throw new HttpError(503, "upstream_failed", `template_variants: ${error.message}`);
+    await logAction({ actor: caller.actor, action: "content.template_variant", target: `${post_type}/${platform}/${lang}`, payload: row });
+    return json({ ok: true, variant: saved }, 201);
   }
 
   // POST /content/fanout-drain — cron works the fan-out retry queue (Wave 4
