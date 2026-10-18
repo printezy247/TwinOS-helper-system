@@ -371,19 +371,21 @@ serve(async (req) => {
     const post_type = oneOf(body, "post_type", POST_TYPES);
     const platform = oneOf(body, "platform", PLATFORMS);
     const lang = oneOf(body, "lang", LANGS, "en");
-    const text = optString(body, "body", 20000);
+    // optString answers null, not undefined: normalise once so every check
+    // below is a plain undefined test.
+    const text = optString(body, "body", 20000) ?? undefined;
     const charLimit = body.char_limit === undefined || body.char_limit === null
-      ? null : Number(body.char_limit);
-    if (charLimit !== null && (!Number.isInteger(charLimit) || charLimit < 50 || charLimit > 20000)) {
+      ? undefined : Number(body.char_limit);
+    if (charLimit !== undefined && (!Number.isInteger(charLimit) || charLimit < 50 || charLimit > 20000)) {
       throw bad("char_limit must be a whole number between 50 and 20000");
     }
-    const hashtag = optString(body, "hashtag", 2000);
-    const fieldsRaw = Array.isArray(body.fields_list) ? body.fields_list.map(String) : null;
+    const hashtag = optString(body, "hashtag", 2000) ?? undefined;
+    const fieldsRaw = Array.isArray(body.fields_list) ? body.fields_list.map(String) : undefined;
     if (fieldsRaw) {
       const badField = fieldsRaw.find((f) => !/^[A-Za-z0-9_.]+$/.test(f));
       if (badField) throw bad(`fields_list entries are names, not sentences: '${badField}'`);
     }
-    if (text === undefined && !fieldsRaw && charLimit === null && hashtag === undefined) {
+    if (text === undefined && !fieldsRaw && charLimit === undefined && hashtag === undefined) {
       throw bad("nothing to override: send body, fields_list, char_limit or hashtag");
     }
 
@@ -418,7 +420,7 @@ serve(async (req) => {
       post_type, platform, lang,
       ...(text !== undefined ? { body: text } : {}),
       ...(fieldsRaw ? { fields_list: fieldsRaw } : {}),
-      ...(charLimit !== null ? { char_limit: charLimit } : {}),
+      ...(charLimit !== undefined ? { char_limit: charLimit } : {}),
       ...(hashtag !== undefined ? { hashtag } : {}),
     };
     const { data: saved, error } = await db.from("template_variants").upsert(row).select("*").single();
