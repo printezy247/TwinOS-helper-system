@@ -64,6 +64,18 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('tiktok_hashtag_rule', '{"min": 3, "max": 5, "pattern": ["one market tag (#xauusd)", "one broad niche tag (#forex or #trading)", "one local tag (#forexmalaysia)", "one topic tag (#riskmanagement)", "at most one trending tag if it fits"]}', 'FYP §05 caption and hashtag pattern.', false),
   ('live_follower_threshold', '1000', 'TikTok LIVE needs about 1,000 followers; until then lives run as Telegram video chats (decision 8).', false),
   ('double_down_window_hours', '48', 'A video well above average gets a part 2 within 48 hours (FYP §04).', false),
+  -- Health staleness, in MINUTES (health/index.ts multiplies by 60_000). These
+  -- were read from settings by health_stale_<source> and seeded nowhere, so the
+  -- value always fell back to the hardcoded STALE_DEFAULT_MIN and the roadmap's
+  -- 'decide the stale threshold' was not decidable from any UI. Seeding them
+  -- makes them real rows, which is what set_setting allowlists against.
+  ('health_stale_scheduler', '5', 'Minutes before the scheduler counts as stale. Tightest of the set: a missed cycle here means posts did not go out.', false),
+  ('health_stale_ezyai', '30', 'Minutes before EzyAI counts as stale.', false),
+  ('health_stale_poller', '30', 'Minutes before the feed poller counts as stale.', false),
+  ('health_stale_pc_worker', '20', 'Minutes before the PC worker counts as stale.', false),
+  ('health_stale_ops_bot', '1440', 'Minutes before the ops bot counts as stale (24 h).', false),
+  ('health_stale_abdul', '1440', 'Minutes before ABDUL counts as stale (24 h).', false),
+  ('health_stale_sales_bot', '1440', 'Minutes before the sales bot counts as stale (24 h).', false),
   ('platform_daily_limits', '{"instagram": 100, "facebook": 30, "threads": 250}', 'Official API posting limits per 24 h (§9.F).', false),
   ('media_max_mb', '45', 'Storage: media ≤ 45 MB (§7).', false),
   ('snapshot_offsets', '["1h", "24h", "7d"]', 'Post view snapshot schedule (§9.H.66).', false),
