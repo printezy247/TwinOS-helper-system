@@ -254,6 +254,18 @@ never resolve), a `{{placeholder}}` not declared in `fields_list`, and a `char_l
 
 Storage bucket: `assets` (private).
 
+## content/cancel
+`POST /content/cancel { "variant_id": "<id or short>" }` → `{ "ok": true, "cancelled_jobs": 2, "status": "draft" }`.
+**Jack only.** Unschedules a post: the queued `publish_jobs` for that variant go to `cancelled` and the variant walks back to `draft`, losing its approver. Nothing is deleted — the usual reason to cancel is "wrong time", not "wrong post".
+
+Idempotent on purpose (a double-tap on a cancel button is a hand, not an error), and it **refuses an already-published post** with a 409 rather than silently doing nothing. Cancelling one platform of a multi-platform post leaves the item scheduled while any sibling is still going out.
+
+## content/edit
+`POST /content/edit { "variant_id": "<id or short>", "body": "…" }` → `{ "ok": true, "status": "draft", "needs_approval": true, "findings": [...] }`.
+**Jack only.** Changes a variant's copy after it exists. The compliance engine runs on the new body first; a blocking finding is a 409 and nothing is stored.
+
+Editing is **not** a way around approval: the variant returns to `draft` and loses `approved_by`/`approved_at`, so edited copy has to be approved again. Without that rule a tap on Edit would put unreviewed copy onto a schedule that is already live. A published post is a 409 — editing it here would not change what went out.
+
 **Two vocabularies worth knowing.** `post_type` is one enum with the Posting Kit
 names (`signal_card`, `result_reply`, `channel_audit`, `holiday`), because the
 functions are what write it. `signal_posts.kind` and `signals` columns each keep

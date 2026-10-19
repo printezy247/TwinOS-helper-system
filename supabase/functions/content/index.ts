@@ -13,13 +13,13 @@
  *
  * Who: jack, abdul, cron, ops_bot (plan §11). Idempotency-Key honoured on POSTs.
  */
-import { serve, json, readJson, routeOf, optString, oneOf, bad, HttpError, notFound } from "_shared/http.ts";
+import { serve, json, readJson, routeOf, reqString, optString, oneOf, bad, HttpError, notFound } from "_shared/http.ts";
 import { deskAlert } from "_shared/alerts.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
-import { createDraft, enqueuePublish, loadContent, pushToDesk } from "_shared/content.ts";
+import { createDraft, enqueuePublish, loadContent, pushToDesk, resolveVariantShort } from "_shared/content.ts";
 import { fanOut, isStuckQueue } from "_shared/fanout.ts";
 import { annualOffers, offerText, type ProductRow } from "_shared/offers.ts";
 import { fanoutFailure, fanoutSummary } from "_shared/platforms.ts";
@@ -31,7 +31,7 @@ import { dayAndWeekStart } from "_shared/today.ts";
 import {
   cycleWeek, mondayOf, nextMonday, planBatch, runAtToInstant, slotToInstant, summaryLines, sweepPlan, topicTitle, type SweepItem,
 } from "_shared/batch.ts";
-import { LANGS, PLATFORMS, POST_TYPES, bannedWords, neededPlaceholders, type PostType } from "_shared/compliance.ts";
+import { LANGS, PLATFORMS, POST_TYPES, bannedWords, check, neededPlaceholders, type Platform, type PostType } from "_shared/compliance.ts";
 
 const REMINDERS: Record<string, { post_type: PostType; text: string }> = {
   "remind-map": {
@@ -597,6 +597,94 @@ serve(async (req) => {
       const jobs = await enqueuePublish(id, instant, caller.actor);
       return remember(idem, 200, { ok: true, content_id: id, jobs, run_at: instant });
     }
+  }
+
+  // POST /content/cancel — unschedule a post. Jack only.
+  //
+  // There was no way to undo a schedule from anywhere but SQL. The calendar's
+  // scheduled card carried a cancel affordance the backend could not answer,
+  // which is the worst shape for a button: it looks like it works.
+  //
+  // It cancels the queued jobs and walks the variant back to draft. Nothing is
+  // deleted — the usual reason to cancel is "wrong time", not "wrong post", and
+  // taking the copy with it would turn a mistimed tap into a lost afternoon.
+  if (tail[0] === "cancel") {
+    requireRole(caller.role, "content.cancel");
+    const id = await resolveVariantShort(reqString(body, "variant_id", { max: 64 }));
+    const db = admin();
+    const { data: v, error: vErr } = await db.from("content_variants")
+      .select("id, status, item_id").eq("id", id).maybeSingle();
+    if (vErr) throw new HttpError(503, "upstream_failed", `content_variants: ${vErr.message}`);
+    if (!v) throw notFound("variant");
+    // Already gone is a success, not an error: a double-tap on a cancel button
+    // is a normal thing a hand does.
+    if (v.status === "published") {
+      throw new HttpError(409, "conflict", "already published — cancel stops what has not gone out, it does not unpublish");
+    }
+    const { data: jobs, error: jErr } = await db.from("publish_jobs")
+      .update({ status: "cancelled" }).eq("variant_id", id).eq("status", "queued")
+      .select("id");
+    if (jErr) throw new HttpError(503, "upstream_failed", `publish_jobs: ${jErr.message}`);
+    await db.from("content_variants").update({ status: "draft", approved_by: null, approved_at: null }).eq("id", id);
+    // The item only goes back to draft when no sibling variant is still going
+    // out. One platform cancelled on a three-platform post is not a cancelled
+    // post.
+    const { data: siblings } = await db.from("content_variants")
+      .select("id, status").eq("item_id", v.item_id).neq("id", id);
+    const stillGoing = (siblings ?? []).some((s) => ["approved", "scheduled", "publishing"].includes(s.status as string));
+    if (!stillGoing) {
+      await db.from("content_items").update({ status: "draft" }).eq("id", v.item_id).in("status", ["scheduled", "approved"]);
+    }
+    await logAction({ actor: caller.actor, action: "content.cancel", target: id, payload: { cancelled_jobs: jobs?.length ?? 0 } });
+    return json({ ok: true, cancelled_jobs: jobs?.length ?? 0, status: "draft" });
+  }
+
+  // POST /content/edit — change a variant's copy after it exists. Jack only.
+  //
+  // The compliance gate runs here, on the new body, before anything is stored.
+  // Editing is not a way around approval: a variant that had been approved goes
+  // back to draft and loses its approver, so edited copy has to be approved
+  // again. Without that rule a tap on Edit would put unreviewed copy onto a
+  // schedule that is already live, which is the one thing the approval gate
+  // exists to prevent.
+  if (tail[0] === "edit") {
+    requireRole(caller.role, "content.edit");
+    const id = await resolveVariantShort(reqString(body, "variant_id", { max: 64 }));
+    const next = reqString(body, "body", { max: 20000 });
+    const db = admin();
+    const { data: v, error: vErr } = await db.from("content_variants")
+      .select("id, status, platform, lang, item_id, claim_flags, content_items(post_type, icp, source)")
+      .eq("id", id).maybeSingle();
+    if (vErr) throw new HttpError(503, "upstream_failed", `content_variants: ${vErr.message}`);
+    if (!v) throw notFound("variant");
+    if (v.status === "published") throw new HttpError(409, "conflict", "already published — editing it here would not change what went out");
+    const item = v.content_items as unknown as { post_type: string; source: Record<string, unknown> } | null;
+    const src = (item?.source ?? {}) as { allowed_numbers?: number[] };
+    const result = check({
+      post_type: item!.post_type as PostType,
+      platform: v.platform as Platform,
+      lang: v.lang as "en" | "ms",
+      body: next,
+      allowed_numbers: src.allowed_numbers,
+      long_form: ["lesson", "start_here", "channel_audit"].includes(item!.post_type),
+      has_media: false,
+    });
+    if (!result.ok) {
+      throw new HttpError(409, "conflict", "compliance blocked this edit", {
+        findings: result.findings.filter((f) => f.severity === "blocking"),
+      });
+    }
+    await db.from("content_variants").update({
+      body: next,
+      status: "draft",
+      approved_by: null,
+      approved_at: null,
+      compliance: result,
+      updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    await db.from("content_items").update({ status: "draft" }).eq("id", v.item_id ?? "").in("status", ["approved", "scheduled"]);
+    await logAction({ actor: caller.actor, action: "content.edit", target: id, payload: { blocked: result.findings.filter((f) => f.severity === "blocking").length } });
+    return json({ ok: true, variant_id: id, status: "draft", needs_approval: true, findings: result.findings });
   }
 
   await logAction({ actor: caller.actor, action: "content.bad_route", payload: { tail } });

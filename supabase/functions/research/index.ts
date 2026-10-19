@@ -160,7 +160,11 @@ serve(async (req) => {
   // personas.seed_questions, no model, nothing written: the answer is a ranked
   // list for him to pick from.
   if (tail[0] === "ideas") {
-    requireRole(caller.role, "research.run");
+    // research.read, not research.run: this is a select over what the feed poll
+    // already collected. research.run fires the pollers and drains the retag
+    // backlog, and a dashboard-role login had neither — so the Ideas page 403'd
+    // for anyone signed in as `dashboard` while working for Jack.
+    requireRole(caller.role, "research.read");
     const days = Math.min(Math.max(Number(body.days ?? 14) || 14, 1), 60);
     const limit = Math.min(Math.max(Number(body.limit ?? 10) || 10, 1), 50);
     const since = new Date(Date.now() - days * 86_400_000).toISOString();

@@ -24,6 +24,8 @@ export type Action =
   | "content.draft"
   | "content.request_approval"
   | "content.approve"
+  | "content.cancel" // unschedule; the inverse of scheduling, so same people
+  | "content.edit" // change a variant's copy after it exists
   | "content.remind"
   | "content.batch"
   | "metrics.poll"
@@ -43,6 +45,7 @@ export type Action =
   | "health.beat"
   | "research.csi"
   | "research.brief"
+  | "research.read" // read-only research pages (Ideas); not the triggers below
   | "research.run"
   | "jobs.claim"
   | "jobs.result"
@@ -67,6 +70,13 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "content.draft": ["jack", "abdul", "cron", "ops_bot"],
   "content.request_approval": ["jack", "abdul", "cron", "ops_bot"],
   "content.approve": ["jack"],
+  // Jack only, and not because cancel and edit are "just" undo. Both reach a
+  // post that is already on its way out: cancelling pulls work out of the
+  // publish queue, and editing replaces copy that may have been approved. The
+  // approval gate is the whole point of the system, so the two ways around it
+  // belong to the same single person as the gate itself.
+  "content.cancel": ["jack"],
+  "content.edit": ["jack"],
   "content.remind": ["jack", "abdul", "cron", "ops_bot"],
   "content.batch": ["jack", "abdul", "cron"],
   "metrics.poll": ["jack", "abdul", "cron"],
@@ -93,6 +103,11 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "health.beat": ["ezyai", "sales_bot", "ops_bot", "pc_worker", "cron", "abdul", "jack"],
   "research.csi": ["jack", "abdul"],
   "research.brief": ["jack", "abdul", "pc_worker"],
+  // Read-only research pages. Separate from research.run, which polls feeds and
+  // drains the retag backlog — those are triggers that cost work, and the
+  // dashboard has no business firing them. Ideas is a select, so it gets the
+  // read permission and every role can see it.
+  "research.read": ALL,
   "research.run": ["jack", "abdul", "cron"],
   "jobs.claim": ["pc_worker"],
   "jobs.result": ["pc_worker"],

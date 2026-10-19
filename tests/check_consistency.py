@@ -860,8 +860,39 @@ def realtime_coverage() -> None:
     )
 
 
+def cancel_edit_guards() -> None:
+    """content/cancel and content/edit are the two ways around the approval
+    gate: one pulls work out of the publish queue, the other replaces copy that
+    may already be approved. Both must stay jack-only, and both must exist — a
+    button in the dashboard with no route behind it is the bug the calendar's
+    cancel affordance already was.
+    """
+    roles = read("supabase/functions/_shared/roles.ts")
+    content_ts = read("supabase/functions/content/index.ts")
+    for name in ("cancel", "edit"):
+        check(
+            f"content/{name} is served and jack-only",
+            f'"content.{name}": ["jack"]' in roles and f'tail[0] === "{name}"' in content_ts,
+            "the permission must be exactly ['jack'] and the route must exist",
+        )
+    # The edit path must re-run compliance and must drop the approval. Without
+    # the second half, editing is a way to change approved copy in place.
+    check(
+        "content/edit re-runs compliance and un-approves what it changes",
+        "compliance blocked this edit" in content_ts
+        and content_ts.count('status: "draft",\n      approved_by: null') >= 1,
+        "an edited variant has to lose its approval, not keep it",
+    )
+    # Cancel must refuse to touch a published post rather than silently no-op.
+    check(
+        "content/cancel refuses an already-published post",
+        "already published" in content_ts,
+        "cancel stops what has not gone out; pretending otherwise hides a real mistake",
+    )
+
+
 def main() -> int:
-    for fn in (settings_keys, mcp_routes, mcp_request_shapes, twin_vocabularies, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes, research_upgrades, realtime_coverage):
+    for fn in (settings_keys, mcp_routes, mcp_request_shapes, twin_vocabularies, post_types, docs_match_code, approval_gate, auth_paths, compliance_evidence, desk_state_wave0, wave3_health, wave3_guard, wave3_library, wave3_finale, wave4_miniapp, wave4_calendar, wave4_clips, wave4_fanout, next_fixes, research_upgrades, realtime_coverage, cancel_edit_guards):
         print(f"\n-- {fn.__name__.replace('_', ' ')}")
         try:
             fn()
