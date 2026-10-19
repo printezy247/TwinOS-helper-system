@@ -94,7 +94,7 @@ graph TB
     
     subgraph Integrations["🔗 Integrations"]
         H[EzyAi / TradingView<br/>Signal Source]
-        I[@EzyOps Bot<br/>Telegram]
+        I["@EzyOps Bot<br/>Telegram"]
         J[printezy<br/>Board]
         K[PC Worker<br/>Local GPU]
     end
