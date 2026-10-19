@@ -100,6 +100,31 @@ The server enforces it again (403), so the UI is not the guard, just honest.
    `briefs`, `topic_clusters`, `csi_captures`.
 7. **Messages** (built as a placeholder; `/inbox`: `inbox_items` with suggested replies, no send buttons) —
    it fills when Phase 3 comment polling exists.
+8. **Links** (built; `/links`) — create and list short links. Creating a name that already exists
+   shows the server's message; the UI never picks a new name for the user.
+9. **Activity** (built; `/activity`) — `action_log`, newest first, with filters. `action_log` is not in
+   the realtime publication, so it refreshes on window focus and with the Refresh button.
+10. **Edit** (built; Approval Inbox detail, jack only) — `content/edit`. A 409 means a compliance finding
+    (for example a banned word); keep the returned findings on screen and let the user fix the text.
+11. **Cancel** (built; Calendar, jack only) — `content/cancel` on a job's `variant_id`. A 409 on an
+    already-published post is shown as is; never retried.
+12. **Send to Desk** (built; jack only) — `requestApproval`, which asks for approval and never approves.
+13. **Health threshold editor** (built; `/health`) — inline editor for the seven `health_stale_<source>`
+    settings (minutes), written through `set_setting`, with a Reset to seeded value button.
+
+## The shared query layer
+
+All server reads go through `src/lib/queries.ts`. Do not add `useState` + `useEffect` loaders.
+
+- `qk` holds every query key; use it, never an inline array.
+- `makeQueryClient`: reads retry twice, **mutations never retry**.
+- `TABLE_KEYS` maps a table to the query keys it invalidates, and `useRealtimeInvalidation()` listens
+  for realtime events and invalidates those keys. A new table-backed page adds its table here.
+- Hooks: `useHealth` / `getHealth(qc, fresh)`, `usePending`, `useJobs`, `useNavBadges`, plus
+  `healthSummaryText` for the Copy summary button.
+- Writes live in `src/lib/content-actions.ts` (`editVariant`, `cancelVariant`, `requestApproval`,
+  `variantIdForJob`) and are disabled while offline (`src/lib/use-online.ts`).
+- Keep each page's loading, empty and error states when moving it onto these hooks.
 
 ## New this wave — the four the backend was blocking
 
