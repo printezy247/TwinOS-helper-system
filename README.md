@@ -25,9 +25,9 @@
 
 **Status:** 🟡 **Phase 1** (Desk Loop) | October 2026
 
-[🚀 Quick Start](#quick-start) • 
-[📖 Documentation](#documentation) • 
-[🏗️ Architecture](#architecture-overview) • 
+[🚀 Quick Start](#-quick-start) • 
+[📖 Documentation](#-documentation) • 
+[🏗️ Architecture](#️-architecture-overview) • 
 [⚙️ Setup Guide](docs/SETUP.md) • 
 [🎯 Roadmap](docs/PHASES.md) • 
 [💡 Upgrade Ideas](docs/UPGRADE-IDEAS.md)
@@ -266,13 +266,11 @@ flowchart LR
     end
     
     subgraph DevFlow["🔄 Development Flow"]
-        DEV(develop)
-        FEAT[feature/*]
-        FIX[hotfix/*]
+        FEAT[feat/*]
+        FIX[fix/*]
     end
     
-    FEAT & FIX -.->|PR Review| DEV
-    DEV -.->|Merge via PR| MAIN
+    FEAT & FIX -.->|PR Review| MAIN
     MAIN -.->|Auto-deploy| PROD((production))
     
     style MAIN fill:#ef4444,stroke:#b91c1c,color:#fff,stroke-width:3px
@@ -281,15 +279,15 @@ flowchart LR
 
 ### PR Guidelines
 
-1. **Create feature branch** from `develop`
+1. **Create feature branch** from `main`
 2. **Implement changes** with test coverage
 3. **Run local checks** (see above)
-4. **Open Pull Request** targeting `develop`
+4. **Open Pull Request** targeting `main`
 5. **Await review** from designated reviewers
-6. **Merge to develop** after approval
+6. **Merge to main** after approval
 7. **Deploy via script**: `./scripts/deploy.sh`
 
-> ⚠️ **Warning:** Direct push to `main` requires sandbox bypass. Always use PR workflow.
+> ⚠️ **Warning:** Direct pushes to `main` skip review. Always use the PR workflow.
 
 ---
 
@@ -388,6 +386,6 @@ MIT License — see [`LICENSE`](LICENSE) for details.
 [![Watch this repo](https://img.shields.io/github/watchers/printezy247/TwinOS-helper-system?style=social)](https://github.com/printezy247/TwinOS-helper-system/watchers)
 [![Fork this repo](https://img.shields.io/github/forks/printezy247/TwinOS-helper-system?style=social)](https://github.com/printezy247/TwinOS-helper-system/fork)
 
-[📖 Full Documentation](#documentation • [⚙️ Setup Guide](docs/SETUP.md) • [🎯 Roadmap](docs/PHASES.md)
+[📖 Full Documentation](#-documentation) • [⚙️ Setup Guide](docs/SETUP.md) • [🎯 Roadmap](docs/PHASES.md)
 
 </div>
