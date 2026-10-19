@@ -242,3 +242,15 @@ deno.lock
 # Lovable / node
 node_modules/
 apps/dashboard/dist/
+
+# Personal home-directory settings that sit in this folder; never project files
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.gitmodules
+/.idea/
+/.profile
+/.ripgreprc
+/.vscode/
+/.zprofile
+/.zshrc
