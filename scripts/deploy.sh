@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy the Edge Functions to the hosted project and check they answer.
 #
-#   ./scripts/deploy.sh            deploy all ten functions
+#   ./scripts/deploy.sh            deploy all eleven functions
 #   ./scripts/deploy.sh --check    only run the checks and probe the live functions
 #
 # Needs the Supabase CLI logged in (`supabase login`) and linked once

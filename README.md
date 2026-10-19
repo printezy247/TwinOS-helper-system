@@ -25,9 +25,9 @@
 
 **Status:** 🟡 **Phase 1** (Desk Loop) | October 2026
 
-[🚀 Quick Start](#-quick-start) • 
-[📖 Documentation](#-documentation) • 
-[🏗️ Architecture](#-architecture-overview) • 
+[🚀 Quick Start](#quick-start • 
+[📖 Documentation](#documentation • 
+[🏗️ Architecture](#architecture-overview • 
 [⚙️ Setup Guide](docs/SETUP.md) • 
 [🎯 Roadmap](docs/PHASES.md) • 
 [💡 Upgrade Ideas](docs/UPGRADE-IDEAS.md)
@@ -386,6 +386,6 @@ MIT License — see [`LICENSE`](LICENSE) for details.
 [![Watch this repo](https://img.shields.io/github/watchers/printezy247/TwinOS-helper-system?style=social)](https://github.com/printezy247/TwinOS-helper-system/watchers)
 [![Fork this repo](https://img.shields.io/github/forks/printezy247/TwinOS-helper-system?style=social)](https://github.com/printezy247/TwinOS-helper-system/fork)
 
-[📖 Full Documentation](#-documentation) • [⚙️ Setup Guide](docs/SETUP.md) • [🎯 Roadmap](docs/PHASES.md)
+[📖 Full Documentation](#documentation • [⚙️ Setup Guide](docs/SETUP.md) • [🎯 Roadmap](docs/PHASES.md)
 
 </div>
