@@ -24,11 +24,16 @@ live in `docs/LOVABLE-KNOWLEDGE.md`:
 - times are shown in `Asia/Kuala_Lumpur`;
 - everything works at 390 px.
 
-**Build on what exists; do not rebuild it.** Waves 2 and 5 already shipped the
-app shell, the grouped sidebar with bottom nav, the ⌘K palette, the J/K/A/R/S
-shortcuts with a `?` sheet, realtime, the Today page and the Keyring. Each prompt
-below extends one of those. If a piece it names is missing, say so and stop
-instead of inventing a second copy.
+**Build on what exists; do not rebuild it.** The app (TanStack Start + TanStack
+Router) already has: the `_shell` layout with `useRole()`, `AppNav.tsx` (grouped
+sidebar, a bottom nav of Today / Inbox / Calendar / Signals / More, and the More
+drawer), `CommandPalette.tsx` with `JumpKeys` (`g` + letter, checked for
+collisions by `checkShortcuts`) and the `?` sheet, one realtime channel in
+`_shell.tsx` that fans out through `emitChanged` / `useLiveReload`,
+`OfflineBanner`, `PageErrorBoundary`, a skip link, breadcrumbs, the "Updated
+HH:MM" stamp, and `callFn` in `src/lib/fn.ts`. The approval inbox is `/approve`.
+`/inbox` is Messages. Each prompt below extends those pieces. If a piece it names
+is missing, say so and stop instead of inventing a second copy.
 
 **Contracts this wave uses, all already deployed:**
 - `POST /functions/v1/content/cancel { variant_id }` — jack only. Queued jobs go
@@ -37,6 +42,8 @@ instead of inventing a second copy.
 - `POST /functions/v1/content/edit { variant_id, body }` — jack only. Compliance
   runs first: a blocking finding answers 409 with `findings` and nothing is
   stored. A successful edit **un-approves** the variant.
+- `GET /functions/v1/content/calendar` jobs now carry **`variant_id`**, which is
+  what cancel and edit take.
 - `GET /functions/v1/links?source=&campaign=&active=1` (every logged-in role) and
   `POST /functions/v1/links { source, campaign, yymm, creates_join_request?, member_limit? }`
   (jack only from the dashboard).
@@ -47,101 +54,108 @@ instead of inventing a second copy.
 
 ---
 
-## 1. Speed and reliability — one data layer under every screen
+## 1. Speed and reliability — one cache under every screen
 
-> Put every server read behind one shared cache so screens open instantly on a
-> second visit and never disagree with each other.
+> Move the pages' reads onto TanStack Query so a screen opens instantly on a
+> second visit, and two screens never show different numbers for the same thing.
 >
-> Use TanStack Query (`@tanstack/react-query`; it ships with the Lovable
-> scaffold, so check `package.json` before adding it). Do this:
+> `@tanstack/react-query` is already installed, and `src/router.tsx` already
+> creates a `QueryClient`. Today each page loads with its own `useState` +
+> `useEffect`, and several pages call `fetchHealth()` on their own. Change that,
+> one page at a time, keeping each page's look and states:
 >
-> - **One query key per resource**, in one `src/lib/queries.ts`: `['health']`,
->   `['jobs']`, `['inbox']`, `['calendar', week]`, `['friday', week]`,
->   `['signals']`, `['links']`, `['activity']`, `['settings']`. Pages call hooks
->   from that file and never call `supabase` directly.
-> - **`staleTime` 30 s and `gcTime` 10 min.** Refetch on window focus and on
->   reconnect.
-> - **Realtime invalidates; it does not fetch.** The existing realtime channels
->   call `queryClient.invalidateQueries` on the matching key, so a change refetches
->   once per resource, however many components read it. Keep the cleanup that
->   removes each channel.
-> - **Health is polled once for the whole app**: every 60 s, paused while the tab
->   is hidden. The sidebar, the status pill (prompt 2) and the Health page share
->   that one query.
-> - **Retry reads only.** A GET retries twice with backoff (1 s, then 3 s) and
->   times out at 15 s with a message that says so. **A write is never retried
->   automatically.** Approve, reject, cancel, edit, schedule, links and settings
->   run once, and the button stays disabled with a spinner until the server
->   answers. That is the double-tap guard.
-> - **Lazy-load every route** with `React.lazy` and one `Suspense` fallback
->   inside the shell. Inbox stays in the main bundle because it is the screen
->   Jack opens from his phone.
-> - **An error boundary per route**, showing the error, a Retry button and a link
->   back to Today. A crash on one page never blanks the shell.
-> - **An offline banner** from `navigator.onLine` plus a failed health poll:
->   "Offline — showing what loaded at 14:02". Cached data stays on screen. Every
->   write button is disabled while offline, with the reason as its tooltip.
-> - **"Updated 12 s ago"** in each page header, from the query's `dataUpdatedAt`,
->   next to the existing Refresh button. Refresh refetches that page's keys only.
-> - **Skeletons keep the final layout's size** and carry `aria-busy`, so nothing
->   shifts when data lands. A response under 300 ms shows no spinner at all.
-> - **Virtualize any list that can pass 100 rows**: Research feed items, Activity,
->   Links. Use `@tanstack/react-virtual`.
+> - **Configure the client.** Give the existing `QueryClient` defaults:
+>   `staleTime` 30 s, `gcTime` 10 min, refetch on focus and on reconnect, and a
+>   query retry of 2 with 1 s / 3 s backoff. Mutations get `retry: 0`. Wrap the
+>   app in `QueryClientProvider` if it is not already.
+> - **One file of query hooks.** Put them in `src/lib/queries.ts`, one key per
+>   resource: `['health']`, `['jobs']`, `['approve']`, `['calendar', week]`,
+>   `['friday', week]`, `['signals']`, `['links']`, `['activity', filters]`,
+>   `['settings']`, `['pending']`. Pages use these hooks instead of calling
+>   `supabase` or `callFn` for reads.
+> - **Realtime invalidates; it does not fetch.** Map each `emitChanged(table)`
+>   to `queryClient.invalidateQueries` on the keys that read that table, so one
+>   change refetches once per resource, however many components show it. Keep the
+>   shell's single channel and its reconnect backoff exactly as they are.
+>   `useLiveReload` can become a thin wrapper over that, or be retired once no
+>   page uses it.
+> - **Health once for the whole app.** `['health']` refetches every 60 s, paused
+>   while the tab is hidden. The pending badge (`['pending']`, replacing
+>   `loadCount`), the status pill from prompt 2, Today, Channels, Settings and
+>   Health all read that one query.
+> - **Preload on intent.** Set the router's `defaultPreload: 'intent'`, and give
+>   the main routes a `loader` that calls `queryClient.ensureQueryData`, so
+>   hovering or touching a nav link starts the fetch. Check that the router plugin
+>   has `autoCodeSplitting` on. Do **not** add `React.lazy`: the router already
+>   splits each file route.
+> - **A 15 s timeout on reads**, with an error that says it timed out rather
+>   than a generic failure.
+> - **Writes run once.** Approve, reject, cancel, edit, schedule, links and
+>   settings are `useMutation` calls with no retry. The button is disabled with a
+>   spinner until the server answers, which is the double-tap guard. On success,
+>   invalidate the affected keys. Never retry a write automatically.
+> - **Offline extends the existing `OfflineBanner`.** While offline, every write
+>   button is disabled with "You're offline" as its tooltip, and cached data
+>   stays on screen.
+> - **The "Updated HH:MM" stamp** reads the page query's `dataUpdatedAt`, so it
+>   is true per page.
+> - **Skeletons keep the final layout's size** and carry `aria-busy`. Cached
+>   data shows straight away while it refreshes in the background, with no
+>   spinner over it.
+> - **Virtualize any list that can pass 100 rows** — Research and Feeds items,
+>   Activity, Links — with `@tanstack/react-virtual`.
 >
 > Nothing here changes what any screen shows. It changes how fast it shows it and
-> what happens when the network is bad.
+> what happens when the network is bad. Keep the existing tests passing, and add
+> one that proves a realtime event invalidates the right key.
 
 ## 2. Navigation — know what needs you without opening anything
 
-> Extend the existing sidebar, bottom nav and ⌘K palette. Do not replace them.
+> Extend `AppNav.tsx`, `CommandPalette.tsx` and the shell. Do not replace them.
 >
-> - **Live badges on every nav entry that can need Jack**, from the shared
->   queries:
->   - Inbox: pending approvals.
+> - **Live badges beyond the Approval Inbox**, from the prompt 1 queries, using
+>   the existing `Badge` and `SidebarMenuBadge`:
 >   - Calendar: failed jobs this week.
 >   - Health: open alerts plus stale beats.
 >   - Signals: closed signals with no result reply.
 >   - Friday: missing inputs, Friday to Sunday only.
+>   - Clips: open candidates, jack only.
 >
->   Red for a failure, gold for something waiting. A badge has an `aria-label`
->   such as "3 pending approvals", never just "3". Show a zero as no badge.
-> - **A global status pill in the header**, from `GET /health`'s `summary`:
->   green "All systems OK", gold "1 stale source", red "2 open alerts". Tapping it
->   opens Health. On a phone it shrinks to a coloured dot that keeps a 44 px tap
->   target.
-> - **Bottom nav stays at five entries**: Today, Inbox, Calendar, Signals, More.
->   **More** opens a Drawer with the rest (Friday, Research, Links, Activity,
->   Health, Settings), each with its badge. A badge inside More also lights a dot
->   on More.
-> - **A "New draft" quick action**: a primary button in the desktop header, and a
->   floating button on phones above the bottom nav, inside the safe area. It opens
->   the existing composer.
-> - **The ⌘K palette gains actions**, each run through the same functions as its
->   button:
->   - New draft.
->   - Go to any page.
->   - Open an inbox item by title.
->   - Jump to week (this, next, last).
+>   Red for a failure, gold for something waiting. Every badge has an
+>   `aria-label` such as "3 pending approvals", never a bare number. A zero shows
+>   no badge.
+> - **The More drawer shows the same badges** next to each item. When anything
+>   inside More has a badge, a small dot appears on the More tab.
+> - **A status pill in `TopBar`**, from `['health']`'s `summary`: green "All
+>   systems OK", gold "1 stale source", red "2 open alerts". It sits next to the
+>   existing Live dot and opens `/health`. On a phone it shrinks to a coloured dot
+>   inside a 44 px tap target.
+> - **A visible "New post" action.** `n` already opens `/compose`. Add a primary
+>   button in `TopBar` on desktop, and a floating button on phones placed above
+>   the bottom nav and inside the safe area.
+> - **The palette gains actions**, each running the same code as its button:
+>   - New post.
+>   - Jump to calendar week (this, next, last).
 >   - Copy Health summary.
->   - Create invite link.
->   - Refresh this page.
+>   - New invite link (prompt 6).
+>   - Open an approval item by title.
 >
 >   Jack-only actions are left out of the palette for every other role, not shown
->   disabled. **The palette never approves.** Approval stays a deliberate action
->   on the item itself.
-> - **Deep links**: every filter, tab, selected week and open item is in the URL
->   (`/calendar?week=2026-10-19`, `/inbox?item=…&status=pending_approval`), so
->   Back works and a link Jack pastes to himself opens the same view.
-> - **Two-key shortcuts** (G then I = Inbox, G C = Calendar, G H = Health, G S =
->   Signals, G L = Links, N = New draft), added to the existing `?` sheet. They
->   ignore keys typed into input, textarea and contenteditable, as the others do.
-> - **A "Skip to content" link** as the first focusable element in the shell.
+>   disabled. **The palette never approves, rejects or cancels.** Those stay
+>   deliberate actions on the item itself.
+> - **Deep links**: filters, tabs, the selected week and the open item go in the
+>   URL as TanStack Router search params (`/calendar?week=2026-10-19`,
+>   `/approve?item=…&status=pending_approval`), validated with each route's
+>   `validateSearch`, so Back works and a pasted link opens the same view.
+> - **Jump keys for the two new pages from prompt 6**: Links `g k`, Activity
+>   `g y`. Add them to `JUMP` so `checkShortcuts` covers them. Do not move any
+>   existing key.
 
-## 3. Inbox and Calendar — edit, cancel and find, without the Desk group
+## 3. Approval Inbox and Calendar — edit, cancel and find, without the Desk group
 
-> Give the Inbox and the Calendar the controls the backend now answers.
+> Give `/approve` and `/calendar` the controls the backend now answers.
 >
-> **Inbox**
+> **Approval Inbox (`/approve`)**
 > - **A filter bar** above the list, stored in the URL: status tabs (already
 >   there), plus post type (read from `templates`), language, platform, "has a
 >   blocking finding", and a search over the title and body. There is a "Clear
@@ -160,7 +174,7 @@ instead of inventing a second copy.
 > **Calendar**
 > - **Each queued card gets a menu**, jack only: **Cancel** and **Open item**.
 >   Cancel shows a confirm naming the post and its time, then calls
->   `content/cancel`. Remove the card from the week straight away and put it back
+>   `content/cancel` with the job's `variant_id`. Remove the card from the week straight away and put it back
 >   with the server's message if the call fails. On a 409 ("already published")
 >   the card is not removed and the message is shown. If any old "cancel"
 >   affordance has nothing behind it, replace it with this one.
@@ -194,8 +208,8 @@ instead of inventing a second copy.
 > - **A search box** over keys and descriptions, plus a "Recently changed"
 >   section listing the last ten `action_log` rows where
 >   `target_table = 'settings'`: who changed what, and when, in KL time.
-> - Keep the existing grouped editor. Add a **Health** group holding the seven
->   `health_stale_*` keys, and a **Reset to seeded value** button that shows the
+> - Keep the existing grouped editor. Add a **Health** group in
+>   `src/lib/settings-groups.ts` holding the seven `health_stale_*` keys, and a **Reset to seeded value** button that shows the
 >   value it will write before it writes it.
 
 ## 5. Signals, Friday and Research — the small things that save the most minutes
@@ -224,13 +238,14 @@ instead of inventing a second copy.
 >   topic in the title field only. Drafting still runs through `content/draft`
 >   on the server.
 > - **"Copy brief"** on the article brief result.
-> - The feed list is virtualized (prompt 1). The Wave 6 category and tag
+> - The Research and Feeds lists are virtualized (prompt 1). The Wave 6 category and tag
 >   filters are kept.
 
 ## 6. Two new screens — Links and Activity
 
-> Add two pages under a **Channel** group in the sidebar (and inside **More** on
-> phones).
+> Add two pages: **Links** in the Grow group, after Channels, and **Activity**
+> in the Run group. On phones both appear in the More drawer automatically,
+> because it is built from `GROUPS`.
 >
 > **Links** (`/links`)
 > - **A table from `GET /links`**: name, source, campaign, active, member limit,
