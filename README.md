@@ -1,15 +1,11 @@
 <!-- @dsCard group="TwinOS" -->
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/TwinOS-EzyMap's%20Operating%20System-10b981?style=for-the-badge&logo=linux&logoColor=white&labelColor=0f172a&color=059669">
-    <source media="(prefers-color-scheme: light)" srcset="https://img.shields.io/badge/TwinOS-EzyMap's%20Operating%20System-10b981?style=for-the-badge&logo=linux&logoColor=black&labelColor=f0fdf4&color=047857">
-    <img alt="TwinOS Banner" src="https://img.shields.io/badge/TwinOS-EzyMap's%20Operating%20System-10b981?style=for-the-badge&logo=linux&logoColor=black&labelColor=f0fdf4&color=047857" height="80">
-  </picture>
+  <img src="assets/twinos-hero.svg" alt="TwinOS — EzyMap's Operating System" width="100%">
 </p>
 
 <p align="center">
   <strong>🤖 AI-Powered Telegram Channel Automation for Gold Trading</strong><br>
-  <em>Orchestrate content, compliance, publishing & analytics—so Jack can focus on maps, TikTok & community</em>
+  <em>Orchestrate content, compliance, publishing &amp; analytics — so Jack can focus on maps, TikTok &amp; community</em>
 </p>
 
 <p align="center">
@@ -21,18 +17,29 @@
   <a href="https://github.com/printezy247/TwinOS-helper-system/releases"><img src="https://img.shields.io/github/v/release/printezy247/TwinOS-helper-system?style=for-the-badge&logo=github&logoColor=white&labelColor=0f172a&color=3b82f6" alt="Latest Release"></a>
 </p>
 
-<div align="center">
+<p align="center">
+  <a href="#-what-twinos-does"><img src="https://img.shields.io/badge/What%20it%20does-10b981?style=flat-square" alt="What it does"></a>
+  <a href="#-architecture-overview"><img src="https://img.shields.io/badge/Architecture-0f172a?style=flat-square&logo=diagramsdotnet&logoColor=white" alt="Architecture"></a>
+  <a href="#-quick-start"><img src="https://img.shields.io/badge/Quick%20Start-059669?style=flat-square" alt="Quick start"></a>
+  <a href="#-immutable-rules"><img src="https://img.shields.io/badge/Rules-ef4444?style=flat-square" alt="Rules"></a>
+</p>
 
-**Status:** 🟡 **Phase 1** (Desk Loop) | October 2026
+---
 
-[🚀 Quick Start](#-quick-start) • 
-[📖 Documentation](#-documentation) • 
-[🏗️ Architecture](#️-architecture-overview) • 
-[⚙️ Setup Guide](docs/SETUP.md) • 
-[🎯 Roadmap](docs/PHASES.md) • 
-[💡 Upgrade Ideas](docs/UPGRADE-IDEAS.md)
+## 📑 Table of Contents
 
-</div>
+- [🎯 What TwinOS Does](#-what-twinos-does)
+- [🏗️ Architecture Overview](#-architecture-overview)
+- [📁 Project Structure](#-project-structure)
+- [📚 Documentation](#-documentation)
+- [⚖️ Immutable Rules](#-immutable-rules)
+- [🧪 Local Verification](#-local-verification)
+- [🔄 Development Workflow](#-development-workflow)
+- [🛠️ Tooling Stack](#-tooling-stack)
+- [📊 Project Metrics](#-project-metrics)
+- [🚀 Quick Start](#-quick-start)
+- [💡 Contributing](#-contributing)
+- [📄 License](#-license)
 
 ---
 
@@ -41,32 +48,14 @@
 <div align="center">
 <table>
 <tr>
-<td align="center">
-<strong>📝 Smart Drafting</strong><br/>
-<em>Auto-generate posts from templates</em>
-</td>
-<td align="center">
-<strong>✅ Compliance Check</strong><br/>
-<em>Validate against trading rules</em>
-</td>
-<td align="center">
-<strong>🎯 One-Tap Publish</strong><br/>
-<em>Jack approves, system schedules</em>
-</td>
+<td align="center" width="33%"><strong>📝 Smart Drafting</strong><br><em>Auto-generate posts from templates</em></td>
+<td align="center" width="33%"><strong>✅ Compliance Check</strong><br><em>Validate against trading rules</em></td>
+<td align="center" width="33%"><strong>🎯 One-Tap Publish</strong><br><em>Jack approves, system schedules</em></td>
 </tr>
 <tr>
-<td align="center">
-<strong>📊 Signal Tracking</strong><br/>
-<em>Auto-reply under signal posts</em>
-</td>
-<td align="center">
-<strong>👥 Member Analytics</strong><br/>
-<em>Track growth & retention</em>
-</td>
-<td align="center">
-<strong>🏆 Friday Scoreboard</strong><br/>
-<em>Weekly performance reports</em>
-</td>
+<td align="center"><strong>📊 Signal Tracking</strong><br><em>Auto-reply under signal posts</em></td>
+<td align="center"><strong>👥 Member Analytics</strong><br><em>Track growth &amp; retention</em></td>
+<td align="center"><strong>🏆 Friday Scoreboard</strong><br><em>Weekly performance reports</em></td>
 </tr>
 </table>
 </div>
@@ -75,7 +64,7 @@
 
 ## 🏗️ Architecture Overview
 
-### System Flow Diagram
+### System Flow
 
 ```mermaid
 graph TB
@@ -84,24 +73,24 @@ graph TB
         B[Dashboard UI<br/>Lovable]
         C[ABDUL<br/>AI Assistant]
     end
-    
+
     subgraph TwinOS["⚡ TwinOS Core"]
         D[Supabase Platform]
         D --> E[("💾 Postgres DB<br/>The Mind")]
         D --> F[🔌 Edge Functions<br/>The Rules]
         D --> G[⏰ pg_cron Jobs<br/>The Clock]
     end
-    
+
     subgraph Integrations["🔗 Integrations"]
         H[EzyAi / TradingView<br/>Signal Source]
         I["@EzyOps Bot<br/>Telegram"]
         J[printezy<br/>Board]
         K[PC Worker<br/>Local GPU]
     end
-    
+
     A & B & C -->|One API| D
     H & I & J & K --> D
-    
+
     style D fill:#3ecf8e,stroke:#047857,stroke-width:3px,color:#fff
     style E fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
     style F fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
@@ -110,6 +99,12 @@ graph TB
     style B fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
     style C fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
 ```
+
+### Three Layers, One API
+
+<p align="center">
+  <img src="assets/architecture.svg" alt="TwinOS architecture — three layers, one API" width="100%">
+</p>
 
 ### The Eleven Edge Functions
 
@@ -243,7 +238,10 @@ cd supabase/functions && \
 # Python unit tests (PC worker)
 cd workers/pc && python3 -m unittest discover -v -p "test_*.py"
 
-# Script tests (require Supabase CLI linked & keyring; may fail locally)
+# Cross-file consistency (CI gate)
+python3 tests/check_consistency.py
+
+# Script tests
 python3 -m unittest discover -v -s tests -p "test_*.py"
 
 # Secret key rotation checks (lists active keys, masks values)
@@ -264,15 +262,15 @@ flowchart LR
     subgraph Protected["🔒 Protected Branches"]
         MAIN((main))
     end
-    
+
     subgraph DevFlow["🔄 Development Flow"]
         FEAT[feat/*]
         FIX[fix/*]
     end
-    
+
     FEAT & FIX -.->|PR Review| MAIN
     MAIN -.->|Auto-deploy| PROD((production))
-    
+
     style MAIN fill:#ef4444,stroke:#b91c1c,color:#fff,stroke-width:3px
     style PROD fill:#10b981,stroke:#047857,color:#fff
 ```
