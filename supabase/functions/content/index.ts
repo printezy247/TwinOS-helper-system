@@ -86,7 +86,7 @@ serve(async (req) => {
 
     const db = admin();
     const { data: jobs, error } = await db.from("publish_jobs")
-      .select("id, content_id, platform, run_at, status, attempts, last_error")
+      .select("id, content_id, variant_id, platform, run_at, status, attempts, last_error")
       .gte("run_at", from).lt("run_at", to)
       .order("run_at", { ascending: true })
       .limit(500);
@@ -105,6 +105,9 @@ serve(async (req) => {
     const rows = (jobs ?? []).map((j) => ({
       job_id: j.id,
       content_id: j.content_id,
+      // content/cancel and content/edit take a variant_id, so a calendar card
+      // can only offer Cancel if it knows which variant the job is for.
+      variant_id: j.variant_id,
       platform: j.platform,
       run_at: j.run_at,
       status: j.status,

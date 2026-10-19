@@ -106,7 +106,8 @@ The server enforces it again (403), so the UI is not the guard, just honest.
 - **`GET /functions/v1/content/calendar?week=YYYY-MM-DD`** → `{ week_start, tz, days: [{ key, jobs: [...] }] }`.
   The **seven day keys are computed server-side in the channel timezone** — render one column per
   `days` entry and never re-derive a date in the browser. A 23:30 MYT post is tomorrow for a reader
-  in UTC, and that is not a rounding difference.
+  in UTC, and that is not a rounding difference. Each job carries `variant_id`, which is what
+  `content/cancel` and `content/edit` (both jack only) take — see `docs/LOVABLE-WAVE7-PROMPTS.md`.
 - **`template_variants (post_type, platform, lang)`** — read-only from here, but it changes what a
   draft looks like: a `lesson` can now be a Telegram post and a TikTok caption. The variant's
   `char_limit` and `hashtag` come back on the template, so a composer can show the limit that
