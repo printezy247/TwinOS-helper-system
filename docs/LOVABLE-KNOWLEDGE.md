@@ -103,7 +103,7 @@ The server enforces it again (403), so the UI is not the guard, just honest.
 
 ## New this wave — the four the backend was blocking
 
-- **`GET /functions/v1/content/calendar?week=YYYY-MM-DD`** → `{ week_start, tz, days: [{ key, jobs: [...] }] }`.
+- **`GET /functions/v1/content/calendar?week=YYYY-MM-DD`** → `{ week_start, tz, days: [{ key, rows: [...] }] }`.
   The **seven day keys are computed server-side in the channel timezone** — render one column per
   `days` entry and never re-derive a date in the browser. A 23:30 MYT post is tomorrow for a reader
   in UTC, and that is not a rounding difference. Each job carries `variant_id`, which is what

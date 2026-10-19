@@ -24,6 +24,28 @@ live in `docs/LOVABLE-KNOWLEDGE.md`:
 - times are shown in `Asia/Kuala_Lumpur`;
 - everything works at 390 px.
 
+> **Status (2026-10-19): built — not through Lovable's AI.** The workspace was
+> out of credits, so the wave was written directly in the Lovable-linked repo
+> `printezy247/twin-approval-hub` and synced into Lovable from GitHub. Five PRs,
+> each type-checked, tested and built before merge (87 tests at the end):
+>
+> | PR | Prompt | What landed |
+> |---|---|---|
+> | #3 | 1 | One TanStack Query cache, realtime → invalidation, shared `/health`, 15 s read timeouts, writes never retried, preload on intent |
+> | #4 | 2 + 6 | Badges on every page that needs Jack, header status pill, New post button, palette actions, `/links`, `/activity`, `g k` / `g y` |
+> | #5 | 3 | Edit (`content/edit`), Send to Desk, Copy body / link, `?item=` deep link; Calendar Cancel (`content/cancel`), Copy error, Open item |
+> | #6 | 4 | Inline `health_stale_*` editor, queue counts from `GET /jobs`, Copy summary, alert links, Settings "Recently changed" + Health group |
+> | #7 | 5 | Signals "Needs a result reply" filter; Friday missing inputs jump to their form |
+>
+> **Not built, on purpose:** list virtualization (no list is over 200 rows
+> today, so it would add a dependency for nothing); a 12-week / all-time win-rate
+> toggle (the strict rate is server-side over 4 weeks; a browser recount is a
+> second number that can disagree); Research "Draft from this" (the composer
+> fills per-template fields, so a topic has no single safe field); URL deep links
+> for every page's filters (done for Links, Activity and `/approve?item=`).
+> Calendar Cancel reads `variant_id` from `publish_jobs` until the `content`
+> function with `variant_id` on calendar jobs is deployed.
+
 **Build on what exists; do not rebuild it.** The app (TanStack Start + TanStack
 Router) already has: the `_shell` layout with `useRole()`, `AppNav.tsx` (grouped
 sidebar, a bottom nav of Today / Inbox / Calendar / Signals / More, and the More
