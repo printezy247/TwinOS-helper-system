@@ -28,7 +28,7 @@ Exit: schema reviewed; baseline logged.
 - [x] Reference-channel benchmark study: the numbers section is done (`docs/BENCHMARKS.md`; 2 of 7 channels publish a counter, view rate 1.80% vs 4.30% at a sixth the size). **Left: the five manual rows and the high-capital ICP note** — reading an offer is a judgement, not a fetch
 - [ ] Invite-link naming convention agreed (`src-campaign-yymm`) — Jack
 - [ ] The EzyMap indicator repo made private — Jack
-- [x] Backend scaffolding: `_shared`, ten functions, PC worker, docs, CI (this repo, Phase 0 commit)
+- [x] Backend scaffolding: `_shared`, eleven functions, PC worker, docs, CI (this repo, Phase 0 commit)
 
 **Phase 1 is live.** Jack confirmed the Supabase project and the functions are
 deployed (`cdnyybrfoclexjlroqcf`, all 11 at v8 as of 2 Oct); migrations

@@ -25,9 +25,9 @@
 
 **Status:** 🟡 **Phase 1** (Desk Loop) | October 2026
 
-[🚀 Quick Start](#-quick-start) • 
-[📖 Documentation](#-documentation) • 
-[🏗️ Architecture](#-architecture-overview) • 
+[🚀 Quick Start](#quick-start) • 
+[📖 Documentation](#documentation) • 
+[🏗️ Architecture](#architecture-overview) • 
 [⚙️ Setup Guide](docs/SETUP.md) • 
 [🎯 Roadmap](docs/PHASES.md) • 
 [💡 Upgrade Ideas](docs/UPGRADE-IDEAS.md)
@@ -237,19 +237,20 @@ Run these commands before committing changes:
 # TypeScript validation (edge functions)
 cd supabase/functions && \
   deno check --config deno.json _shared/*.ts */index.ts && \
-  deno test --allow-env _shared/
+  deno lint --config deno.json && \
+  deno test --config deno.json --allow-env _shared/
 
 # Python unit tests (PC worker)
-cd workers/pc && python3 -m unittest -v
+cd workers/pc && python3 -m unittest discover -v -p "test_*.py"
 
-# Secret key rotation checks
-./scripts/mint-keys.sh --verify
+# Script tests (require Supabase CLI linked & keyring; may fail locally)
+python3 -m unittest discover -v -s tests -p "test_*.py"
+
+# Secret key rotation checks (lists active keys, masks values)
+./scripts/mint-keys.sh --list
 
 # Desk tour validation
 ./scripts/desk-tour.sh --dry-run
-
-# Desk report testing
-python3 -m pytest tests/test_desk_report.py -v
 ```
 
 ---
@@ -299,7 +300,7 @@ flowchart LR
 | **Backend** | Supabase Postgres, Edge Functions (Deno), pg_cron | Serverless APIs, scheduled jobs |
 | **Frontend** | Lovable (TypeScript + Tailwind + shadcn/ui) | Dashboard UI |
 | **Automation** | Python workers, Telechurn API, Telegram Bot API | Local processing, integrations |
-| **Testing** | Deno Test, Python unittest, Pytest | Unit & integration tests |
+| **Testing** | Deno Test, Python unittest | Unit & integration tests |
 | **CI/CD** | GitHub Actions, Supabase CLI | Continuous integration & deployment |
 | **Monitoring** | Action logs, Error tracking, Health checks | System observability |
 
@@ -351,8 +352,9 @@ supabase link --project-ref cdnyybrfoclexjlroqcf
 # Start local services
 supabase start
 
-# Run all tests
-./scripts/run-all-tests.sh
+# Run all tests (see Local Verification above)
+cd supabase/functions && deno check --config deno.json _shared/*.ts */index.ts
+cd ../../workers/pc && python3 -m unittest discover -v -p "test_*.py"
 ```
 
 ---
@@ -386,6 +388,6 @@ MIT License — see [`LICENSE`](LICENSE) for details.
 [![Watch this repo](https://img.shields.io/github/watchers/printezy247/TwinOS-helper-system?style=social)](https://github.com/printezy247/TwinOS-helper-system/watchers)
 [![Fork this repo](https://img.shields.io/github/forks/printezy247/TwinOS-helper-system?style=social)](https://github.com/printezy247/TwinOS-helper-system/fork)
 
-[📖 Full Documentation](#-documentation) • [⚙️ Setup Guide](docs/SETUP.md) • [🎯 Roadmap](docs/PHASES.md)
+[📖 Full Documentation](#documentation • [⚙️ Setup Guide](docs/SETUP.md) • [🎯 Roadmap](docs/PHASES.md)
 
 </div>
