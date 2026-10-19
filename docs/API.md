@@ -173,7 +173,7 @@ for a plain string — `settings.value` is `jsonb`, so a bare string is a syntax
 here on purpose: a policy would grant UPDATE on the whole table and let the caller decide what a valid
 value looks like.
 
-`GET /content/calendar?week=2026-10-05` → `{ "week_start": "2026-10-05", "tz": "Asia/Kuala_Lumpur", "days": [ { "key": "2026-10-05", "jobs": [ { "job_id": "…", "content_id": "…", "platform": "telegram", "run_at": "…", "status": "queued", "last_error": null, "post_type": "lesson", "lang": "en", "title": "…" } ] } ] }`.
+`GET /content/calendar?week=2026-10-05` → `{ "week_start": "2026-10-05", "tz": "Asia/Kuala_Lumpur", "days": [ { "key": "2026-10-05", "jobs": [ { "job_id": "…", "content_id": "…", "variant_id": "…", "platform": "telegram", "run_at": "…", "status": "queued", "last_error": null, "post_type": "lesson", "lang": "en", "title": "…" } ] } ] }`.
 `week` is a Monday; absent means the current week. The seven days are named **server-side** in the channel timezone, so a 23:30 MYT post is not tomorrow for a reader in UTC. An item's variants are not in here — it is a schedule, not a preview.
 `POST /content/{id}/schedule` (below) creates the jobs this reads.
 
