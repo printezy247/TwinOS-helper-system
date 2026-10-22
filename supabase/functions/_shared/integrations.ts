@@ -55,7 +55,7 @@ export const PROVIDERS: ProviderSpec[] = [
     secrets: ["TWINOS_TV_SECRET"],
     get_url: "https://www.tradingview.com/chart/#alerts",
     set_command: "supabase secrets set TWINOS_TV_SECRET=\"$(secret-tool lookup service twinos key tv_secret)\"",
-    live: false,
+    live: true,
   },
   {
     provider: "instagram",
