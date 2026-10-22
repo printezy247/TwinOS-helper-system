@@ -91,7 +91,7 @@ export const PROVIDERS: ProviderSpec[] = [
     secrets: ["TWINOS_YT_REFRESH_TOKEN"],
     get_url: "https://console.cloud.google.com/apis/credentials",
     set_command: "supabase secrets set TWINOS_YT_REFRESH_TOKEN=\"$(secret-tool lookup service twinos key yt_refresh_token)\"",
-    live: false,
+    live: true,
   },
 ];
 
