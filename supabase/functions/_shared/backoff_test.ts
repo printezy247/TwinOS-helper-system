@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { backoffMs, classify, failuresAfter, isPoisonedUpdate, MAX_ATTEMPTS, retryPlan, UPDATE_FAIL_LIMIT, updateDisposition } from "./backoff.ts";
+import { backoffMs, classify, failuresAfter, isPoisonedUpdate, MAX_ATTEMPTS, RateLimiter, retryPlan, UPDATE_FAIL_LIMIT, updateDisposition } from "./backoff.ts";
 import { MetaError } from "./meta.ts";
 import { TgError } from "./tg.ts";
 
@@ -71,4 +71,19 @@ Deno.test("poison updates: an update that keeps failing is dropped, not replayed
   assertEquals(isPoisonedUpdate(UPDATE_FAIL_LIMIT - 1), false);
   assertEquals(isPoisonedUpdate(UPDATE_FAIL_LIMIT), true);
   assertEquals(isPoisonedUpdate(UPDATE_FAIL_LIMIT + 5), true);
+});
+
+Deno.test("jitteredBackoff returns between 0 and backoffMs", () => {
+  const delay = retryPlan(3, "network down", { jitter: true }).delayMs;
+  assertEquals(delay >= 0, true);
+  assertEquals(delay <= 120_000, true);
+});
+
+Deno.test("RateLimiter consumes tokens and refills up to capacity", () => {
+  const limiter = new RateLimiter(2, 2);
+  assertEquals(limiter.consume(), true);
+  assertEquals(limiter.consume(), true);
+  assertEquals(limiter.consume(), false);
+  limiter.refill();
+  assertEquals(limiter.consume(), true);
 });

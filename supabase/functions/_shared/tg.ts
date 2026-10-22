@@ -76,15 +76,30 @@ export class TelegramClient {
   async call<T = unknown>(
     method: string,
     params: Record<string, unknown> = {},
+    opts?: { timeoutMs?: number },
   ): Promise<T> {
     const body = JSON.stringify(stripUndefined(params));
+    const timeoutMs = opts?.timeoutMs ?? 30_000;
     let lastDesc = "unknown";
     for (let attempt = 0; attempt <= RETRY_LIMIT; attempt += 1) {
-      const res = await fetch(`https://api.telegram.org/bot${this.tokenValue}/${method}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body,
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let res: Response;
+      try {
+        res = await fetch(`https://api.telegram.org/bot${this.tokenValue}/${method}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+          signal: controller.signal,
+        });
+      } catch (err: unknown) {
+        clearTimeout(timer);
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw new TgError(method, 408, `request timed out after ${timeoutMs}ms`);
+        }
+        throw err;
+      }
+      clearTimeout(timer);
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         result?: T;
