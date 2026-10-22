@@ -14,6 +14,7 @@ import { defaultMiddlewares } from "./classifyMiddleware.ts";
 export const MAX_ATTEMPTS = 4;
 export const BACKOFF_BASE_MS = 30_000;
 export const BACKOFF_CAP_MS = 15 * 60_000;
+export const BACKOFF_JITTER = 0.5;
 
 export type Kind = "success" | "throttled" | "permanent" | "unknown";
 
@@ -34,6 +35,40 @@ export function classify(err: unknown): { kind: Kind; reason: string } {
 /** 30 s, 60 s, 120 s, 240 s … capped at 15 min. `attempts` is 1-based. */
 export function backoffMs(attempts: number): number {
   return Math.min(BACKOFF_BASE_MS * 2 ** Math.max(attempts - 1, 0), BACKOFF_CAP_MS);
+}
+
+/** Full jitter backoff: random value in [0, backoffMs(attempts)). */
+export function jitteredBackoff(attempts: number): number {
+  return backoffMs(attempts) * Math.random();
+}
+
+/** Token bucket rate limiter (plan §2.3) */
+export class RateLimiter {
+  private capacity: number;
+  private refillPerTick: number;
+  private tokens: number;
+
+  constructor(capacity = 10, refillPerTick = 10) {
+    this.capacity = capacity;
+    this.refillPerTick = refillPerTick;
+    this.tokens = capacity;
+  }
+
+  consume(n = 1): boolean {
+    if (this.tokens >= n) {
+      this.tokens -= n;
+      return true;
+    }
+    return false;
+  }
+
+  refill(): void {
+    this.tokens = Math.min(this.capacity, this.tokens + this.refillPerTick);
+  }
+
+  get available(): number {
+    return this.tokens;
+  }
 }
 
 /** A job held back by a platform's daily cap waits half an hour and keeps its attempts; anything else backs off. */
@@ -70,9 +105,14 @@ export function duplicateLanded(
   return !Number.isNaN(h) && !Number.isNaN(p) && p >= h;
 }
 
-export function retryPlan(attempts: number, reason: string): { delayMs: number; burnsAttempt: boolean } {
+export function retryPlan(
+  attempts: number,
+  reason: string,
+  opts?: { jitter?: boolean },
+): { delayMs: number; burnsAttempt: boolean } {
   if (/^capped:/.test(reason)) return { delayMs: CAP_HOLD_MS, burnsAttempt: false };
-  return { delayMs: backoffMs(attempts), burnsAttempt: true };
+  const delayMs = opts?.jitter ? jitteredBackoff(attempts) : backoffMs(attempts);
+  return { delayMs, burnsAttempt: true };
 }
 
 /* Telegram re-sends an update on every non-200, so one handler fault can    */
