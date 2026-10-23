@@ -330,6 +330,8 @@ export async function setStatus(
  */
 export function shortIdRange(short: string): { from: string; to: string } {
   const s = short.toLowerCase();
+  // The dashboard sends a whole uuid to edit/cancel; only Telegram buttons send 8 chars.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s)) return { from: s, to: s };
   if (!/^[0-9a-f]{8}$/.test(s)) throw notFound("draft");
   return { from: `${s}-0000-0000-0000-000000000000`, to: `${s}-ffff-ffff-ffff-ffffffffffff` };
 }
