@@ -63,3 +63,14 @@ Deno.test("menu: home panel has the five screens, every screen has Back + Home (
   const back = keyboardVerbs(backHomeRows());
   assertEquals(back, ["nav"]);
 });
+
+// Wave 8 §3.4: Back is not a second Home — the screen it returns to rides in
+// the callback, so the router resolves it with no memory between taps.
+Deno.test("back goes back: the previous screen rides in the callback (§3.4)", () => {
+  const datas = backHomeRows(NAV_LAYOUT, "batch").flat().map((b) => b.callback_data ?? "");
+  assertEquals(datas, [`nav:back:batch@${NAV_LAYOUT}`, `nav:home@${NAV_LAYOUT}`]);
+  const p = parseCallback(datas[0]);
+  assert(p?.kind === "nav" && p.screen === "back" && p.arg === "batch", JSON.stringify(p));
+  assert(new TextEncoder().encode(datas[0]).length <= 64, datas[0]);
+  assertEquals(backHomeRows().flat()[0].callback_data, `nav:back:home@${NAV_LAYOUT}`);
+});

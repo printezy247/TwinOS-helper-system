@@ -7,7 +7,7 @@
  *   draft → pending_approval → approved → scheduled → publishing → published | failed
  *   (+ rejected)
  */
-import { admin, requireSetting, SETTING_KEYS } from "./supabase.ts";
+import { admin, requireSetting, setting, SETTING_KEYS } from "./supabase.ts";
 import { check, TELEGRAM_CAPTION_LIMIT, type CheckResult, type Lang, type Platform, type PostType } from "./compliance.ts";
 import { HttpError, notFound } from "./http.ts";
 import { approvalKeyboard, escapeHtml, sendMessage, sendPhoto } from "./tg.ts";
@@ -378,13 +378,26 @@ export async function pushToDesk(
     : "✓ checks clear";
   const header = `<b>${escapeHtml(opts.heading ?? "Draft")}</b> <code>#${draft.content_id.slice(0, 8)}</code>`;
   const text = `${header}\n\n${escapeHtml(draft.body)}\n\n<i>${checks}</i>`;
-  const buttons = approvalKeyboard(draft.content_id);
+  // Wave 8 §3.1/§3.2: a copy button (the body straight to the clipboard) and,
+  // when Jack has filled in dashboard_url, a Mini App button into the dashboard.
+  const dashboardUrl = await setting(SETTING_KEYS.dashboardUrl);
+  const buttons = approvalKeyboard(draft.content_id, {
+    copy: draft.body,
+    dashboardUrl: dashboardUrl ?? undefined,
+  });
+  // Wave 8 §3.7: paid drafts live in a private group; protect_content stops the
+  // contents being forwarded or saved out of it.
   const msg = opts.photo
-    ? await sendPhoto(deskId, opts.photo, text.slice(0, TELEGRAM_CAPTION_LIMIT), { parse_mode: "HTML", buttons })
+    ? await sendPhoto(deskId, opts.photo, text.slice(0, TELEGRAM_CAPTION_LIMIT), {
+      parse_mode: "HTML",
+      buttons,
+      protect_content: true,
+    })
     : await sendMessage(deskId, text.slice(0, 4096), {
       parse_mode: "HTML",
       buttons,
       disable_web_page_preview: true,
+      protect_content: true,
     });
   await setStatus(draft.content_id, "pending_approval", opts.actor, {
     desk_chat_id: msg.chat.id,

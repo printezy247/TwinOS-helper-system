@@ -89,7 +89,9 @@ say "desk commands"
 if TOKEN="$(secret-tool lookup service twinos key ops_bot_token 2>/dev/null)" && [ -n "$TOKEN" ]; then
   DESK_ID="$(supabase db query --linked --output-format json "select value::text as v from settings where key='desk_group_chat_id'" 2>/dev/null | sed -n '/^[[{]/,$p' | jq -r '(.rows? // .) | .[0].v // .[0] // empty' 2>/dev/null || true)"
   if [ -n "${DESK_ID:-}" ]; then
-    COMMANDS='[{"command":"menu","description":"Button panel"},{"command":"status","description":"Anything broken?"},{"command":"friday","description":"Friday numbers so far"},{"command":"batch","description":"The Wednesday batch"},{"command":"hours","description":"Log baseline hours"},{"command":"help","description":"What the Desk understands"}]'
+    # Wave 8 §3.10: the bot's /help advertised clips and fanout but Telegram's
+    # menu never showed them, and drafts/today/queue had no command at all.
+    COMMANDS='[{"command":"menu","description":"Button panel"},{"command":"status","description":"Anything broken?"},{"command":"today","description":"Today's posts and failures"},{"command":"queue","description":"Is the PC behind?"},{"command":"drafts","description":"Pending drafts"},{"command":"friday","description":"Friday numbers so far"},{"command":"batch","description":"The Wednesday batch"},{"command":"hours","description":"Log baseline hours"},{"command":"clips","description":"Clip candidates"},{"command":"fanout","description":"Copy a draft to other platforms"},{"command":"help","description":"What the Desk understands"}]'
     if printf 'url = "https://api.telegram.org/bot%s/setMyCommands"\n' "$TOKEN" \
        | curl -s -K - -H 'content-type: application/json' -d "{\"commands\":$COMMANDS,\"scope\":{\"type\":\"chat\",\"chat_id\":$DESK_ID}}" | grep -q '"ok":true'; then
       echo "ok   setMyCommands scoped to the Desk chat"

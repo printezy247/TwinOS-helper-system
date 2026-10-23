@@ -135,4 +135,5 @@ export const SETTING_KEYS = {
   llmAngles: "llm_angles", // Wave 3 item 6: angles per platform (default 3)
   llmLocalUrl: "llm_local_url", // Wave 3 item 6: loopback llama-server base URL
   usePolling: "use_polling", // Phase 1 step 4: long-polling fallback when webhooks unavailable
+  dashboardUrl: "dashboard_url", // Wave 8 §3.2: the Mini App URL the Desk's web_app buttons open
 } as const;

@@ -69,6 +69,20 @@ Deno.test("contract: the tg-webhook approve hop matches what approve re-checks (
   assertEquals((payload.telegram as { user_id: string }).user_id, "6282941580");
 });
 
+// Wave 8 §3.1/§3.2: the approval card's clipboard and Mini App buttons only
+// exist when the caller has a body and a dashboard URL to give them.
+Deno.test("approval card: 📋 copy and Open-in-dashboard (Wave 8 §3.1, §3.2)", () => {
+  const kb = approvalKeyboard(ID, { copy: "the body", dashboardUrl: "https://hub.example/mini" });
+  const flat = kb.flat();
+  assert(flat.some((b) => b.copy_text === "the body"), "copy button missing");
+  assert(flat.some((b) => b.web_app?.url === "https://hub.example/mini"), "web_app button missing");
+  // No settings → no buttons: never a dead link or an empty copy row.
+  assert(!approvalKeyboard(ID).flat().some((b) => b.copy_text || b.web_app), "opt-in only");
+  // Both are not callbacks; the four decision verbs are unchanged.
+  assertEquals(keyboardVerbs(approvalKeyboard(ID, { copy: "x", dashboardUrl: "https://h/mini" })).sort(),
+    ["adj", "edit", "later", "no", "ok"]);
+});
+
 // Review 3 Oct: a rewritten card (desk_state 'rewritten', no timestamp) was
 // treated as an expired prompt, so Jack's edit to it was refused.
 Deno.test("promptStateExpired: only awaiting_* prompts expire", () => {

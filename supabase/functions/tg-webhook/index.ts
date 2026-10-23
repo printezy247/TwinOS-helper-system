@@ -24,6 +24,7 @@ import { createDraft, pushToDesk, resolveShort, resolveVariantShort, setStatus, 
 import { check as complianceCheck, ctaCount, extractNumbers, type PostType } from "_shared/compliance.ts";
 import { nextCta, nextHook } from "_shared/hooks.ts";
 import { formatMinutes, mondayOf, parseHoursCommand } from "_shared/hours.ts";
+import { dayAndWeekStart, queueLines, todayLines, todaySummary } from "_shared/today.ts";
 import { logAction } from "_shared/log.ts";
 import { fanOut } from "_shared/fanout.ts";
 import { fanoutSummary } from "_shared/platforms.ts";
@@ -98,6 +99,99 @@ async function callApprove(payload: Record<string, unknown>): Promise<Record<str
 
 function largestPhoto(m: Message): string | undefined {
   return m.photo?.length ? m.photo[m.photo.length - 1].file_id : undefined;
+}
+
+/** `HH:MM` in `tz` for a `run_at` instant. */
+function hm(iso: string, tz: string): string {
+  return new Date(iso).toLocaleTimeString("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * Which screen a panel message is showing, read off its plain text (Wave 8
+ * §3.4). The webhook keeps no memory between taps, so the message itself is
+ * the only history there is; an unrecognised text (a command reply, a body
+ * preview) reads as home.
+ */
+function screenFromText(text?: string): string {
+  const t = (text ?? "").trimStart();
+  if (t.startsWith("Status")) return "status";
+  if (t.startsWith("Friday numbers")) return "friday";
+  if (t.startsWith("Hours")) return "hours";
+  if (t.startsWith("Batch") || t.startsWith("No batch yet")) return "batch";
+  if (t.startsWith("Pending drafts")) return "drafts";
+  return "home";
+}
+
+/**
+ * The screen a Back tap returns to: whatever the message's current Back
+ * already points at (so Refresh keeps it), else the screen its text is.
+ */
+function prevScreenOf(m?: Message): string {
+  for (const row of m?.reply_markup?.inline_keyboard ?? []) {
+    for (const b of row) {
+      const p = /^nav:back:([a-z_]{1,16})@/.exec(b.callback_data ?? "");
+      if (p) return p[1];
+    }
+  }
+  return screenFromText(m?.text);
+}
+
+/** The page a paged panel is on, read off its ◀ n/N ▶ row (Wave 8 §3.11). */
+function pageOf(m?: Message): number {
+  for (const row of m?.reply_markup?.inline_keyboard ?? []) {
+    for (const b of row) {
+      const p = /^(\d+)\/\d+$/.exec(b.text ?? "");
+      if (p) return Number(p[1]);
+    }
+  }
+  return 1;
+}
+
+/**
+ * The master variant body per content id (oldest variant first) for a page of
+ * items — the one query that feeds the 📋 copy rows (Wave 8 §3.1).
+ */
+async function variantBodies(ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!ids.length) return out;
+  const { data } = await admin().from("content_variants")
+    .select("content_id, body").in("content_id", ids)
+    .order("created_at", { ascending: true });
+  for (const v of data ?? []) {
+    const id = String(v.content_id);
+    if (!out.has(id) && v.body) out.set(id, String(v.body));
+  }
+  return out;
+}
+
+/**
+ * Wave 8 §3.5: `sendChatAction("typing")` on a timer while the local model
+ * cooks (a Telegram action lasts ~5 s on its own). Fire-and-forget: the
+ * webhook must answer quickly, so an isolate frozen between timers only costs
+ * the tail of the animation, never the reply.
+ */
+function keepTyping(chatId: number, ms: number): void {
+  const until = Date.now() + ms;
+  const tick = () => {
+    void tg.sendChatAction(chatId, "typing").catch(() => undefined);
+    if (Date.now() + 5_000 < until) setTimeout(tick, 5_000);
+  };
+  tick();
+}
+
+/**
+ * Wave 8 §3.3/§3.13: pin the panel so the live state sits at the top of the
+ * chat, and put the permanent button under the chat input (a Mini App when
+ * dashboard_url is set, the command list otherwise). Both are best effort — a
+ * bot that cannot pin must not fail the command that showed the panel.
+ */
+async function afterMenuPanel(msg: tg.TgMessage): Promise<void> {
+  await tg.pinChatMessage(msg.chat.id, msg.message_id).catch(() => null);
+  const url = await setting(SETTING_KEYS.dashboardUrl).catch(() => null);
+  await tg.setChatMenuButton(
+    url ? { type: "web_app", text: "📋 Desk", web_app: { url } } : { type: "commands" },
+    msg.chat.id,
+  ).catch(() => null);
 }
 
 /* ------------------------------ callback buttons ------------------------------ */
@@ -217,6 +311,15 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       const preset = parsed.extra;
       if (preset === "own") {
         await tg.answerCallbackQuery(cq.id, "Reply with the full new text.");
+        // Wave 8 §3.6: a force reply ties the answer to this prompt, so it
+        // cannot land in another chat or attach to an older draft.
+        if (chat) {
+          await tg.sendMessage(chat, "✏️ Send the full new text as your reply to this message.", {
+            reply_to_message_id: mid,
+            force_reply: true,
+            input_field_placeholder: "New post text…",
+          }).catch(() => null);
+        }
         return;
       }
       const instructions: Record<string, string> = { soften: "soften", bm: "BM", shorter: "shorter" };
@@ -259,8 +362,17 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       const { data: v } = await admin().from("content_variants")
         .select("body").eq("content_id", content_id).limit(1).maybeSingle();
       await tg.answerCallbackQuery(cq.id);
-      if (chat && v?.body) {
-        await tg.sendMessage(chat, `👁 <code>#${content_id.slice(0, 8)}</code>\n\n${tg.escapeClip(String(v.body), 3500)}`, { parse_mode: "HTML", reply_to_message_id: mid });
+      if (chat && mid && v?.body) {
+        const preview = `👁 <code>#${content_id.slice(0, 8)}</code>\n\n${tg.escapeClip(String(v.body), 3500)}`;
+        // Wave 8 §3.12: preview the body on the card itself — one card per
+        // post, buttons stay with it. Back returns to the list it came from.
+        await tg.editMessageText(chat, mid, preview, {
+          parse_mode: "HTML",
+          buttons: tg.backHomeRows(tg.NAV_LAYOUT, screenFromText(cq.message?.text)),
+        }).catch(() =>
+          // Too old to edit: the old behaviour, a separate message, still works.
+          tg.sendMessage(chat, preview, { parse_mode: "HTML", reply_to_message_id: mid, protect_content: true })
+        );
       }
       return;
     }
@@ -366,6 +478,8 @@ async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: s
     }
     await logAction({ actor: "jack", action: "content.adjust_llm", target: content_id, payload: { angles } });
     await tg.answerCallbackQuery(cq.id, `Angles cooking on the PC (${angles} each) — I'll bring them here.`);
+    // Wave 8 §3.5: keep "typing…" on while the local model runs (up to a minute).
+    if (chat) keepTyping(chat, 60_000);
     return;
   }
   const hook = await nextHook(db, { pillar: item.pillar as string | null, lang });
@@ -393,7 +507,7 @@ async function onAdjust(cq: NonNullable<Update["callback_query"]>, content_id: s
   await tg.answerCallbackQuery(cq.id, checked.ok ? "Adjusted (no AI): hook up top, CTA below." : "Adjusted, but the checklist blocks: see the draft.");
   if (chat) {
     await tg.sendMessage(chat, `🎛 Adjusted <code>#${content_id.slice(0, 8)}</code> (no AI):\n<pre>${tg.escapeClip(body, 3000)}</pre>`, {
-      parse_mode: "HTML", reply_to_message_id: mid,
+      parse_mode: "HTML", reply_to_message_id: mid, protect_content: true, // §3.7: a draft body stays in the Desk
     });
   }
 }
@@ -661,15 +775,33 @@ function batchResultLines(states: SweepItem[], done: number[], refused: string[]
   ];
 }
 
-/** The /batch list as an editable panel (Wave 1 item 5). */
-async function batchPanel(): Promise<{ text: string; buttons: tg.InlineButton[][]; states: SweepItem[] } | null> {
+const BATCH_PAGE_SIZE = 5;
+
+/**
+ * The /batch list as an editable panel (Wave 1 item 5), five items a page with
+ * ◀ n/N ▶ (Wave 8 §3.11) and a 📋 copy row per item (§3.1). The Approve-ready
+ * count stays whole-batch: approving ready is not a page action.
+ */
+async function batchPanel(
+  page = 1,
+  prev = "home",
+): Promise<{ text: string; buttons: tg.InlineButton[][]; states: SweepItem[] } | null> {
   const batch = await openBatch();
   if (!batch) return null;
   const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
   const states = await loadBatchStates(batch);
+  const pages = Math.max(1, Math.ceil(batch.items.length / BATCH_PAGE_SIZE));
+  const p = Math.min(Math.max(1, page), pages);
+  const from = (p - 1) * BATCH_PAGE_SIZE;
+  const items = batch.items.slice(from, from + BATCH_PAGE_SIZE);
+  const bodies = await variantBodies(items.map((i) => i.id));
   return {
-    text: renderBatchList(batch, states, tz),
-    buttons: tg.batchListKeyboard(batch.items.map((i) => ({ n: i.batch_no, id: i.id })), states.filter(readyToApprove).length),
+    text: renderBatchList({ week: batch.week, items }, states.slice(from, from + BATCH_PAGE_SIZE), tz),
+    buttons: tg.batchListKeyboard(
+      items.map((i) => ({ n: i.batch_no, id: i.id, copy: bodies.get(i.id) })),
+      states.filter(readyToApprove).length,
+      { page: p, pages, prev },
+    ),
     states,
   };
 }
@@ -683,7 +815,7 @@ async function onBatchCmd(cq: NonNullable<Update["callback_query"]>, name: strin
     return;
   }
   if (name === "refresh") {
-    const panel = await batchPanel();
+    const panel = await batchPanel(pageOf(cq.message), prevScreenOf(cq.message));
     if (!panel) { await tg.answerCallbackQuery(cq.id, "No batch yet."); return; }
     await tg.answerCallbackQuery(cq.id, "Refreshed.");
     await tg.editMessageText(chat, mid, tg.clipHtml(panel.text), { parse_mode: "HTML", buttons: panel.buttons }).catch(() => null);
@@ -712,7 +844,7 @@ async function onBatchCmd(cq: NonNullable<Update["callback_query"]>, name: strin
     return;
   }
   if (name === "batchno") {
-    const panel = await batchPanel();
+    const panel = await batchPanel(pageOf(cq.message), prevScreenOf(cq.message));
     await tg.answerCallbackQuery(cq.id, "Kept as drafts.");
     if (panel) {
       await tg.editMessageText(chat, mid, tg.clipHtml(panel.text), { parse_mode: "HTML", buttons: panel.buttons }).catch(() => null);
@@ -746,12 +878,15 @@ const HELP_TEXT = [
   "Reply to a draft with new text to edit it, or with a time like <code>13:00</code> to reschedule.",
   "",
   "/status - anything broken?",
+  "/today - today's posts, failures, next up and minutes saved",
+  "/queue - jobs by kind and status (is the PC behind?)",
   "/friday - this week's Friday numbers so far",
   "/fanout - reply to a draft (or add its #id): copy it to Instagram, Facebook, Threads, TikTok, YouTube and X",
   "/batch - the Wednesday batch (<code>/batch ok</code> asks, then approves what is ready and claim-free)",
   "/hours &lt;task&gt; &lt;minutes&gt; [note] - log what a task cost by hand",
   "/hours today - today's total and the week so far",
-  "/menu - buttons for Status, Batch, Friday, Hours and Help",
+  "/drafts - the pending-drafts panel, with its own buttons",
+  "/menu - buttons for Status, Batch, Friday, Hours, Drafts and Help",
   "/clips - open clip candidates (Use taps cut on the PC)",
   "/help - this message",
 ].join("\n");
@@ -761,6 +896,29 @@ const HOME_TEXT = [
   "Status · Batch · Friday · Hours · Help — tap a button.",
   "Send the chart + raw lines any time; reply to a draft to edit it.",
 ].join("\n");
+
+/**
+ * The home panel with the counts on top (Wave 8 §3.15): *3 pending · 1 failed
+ * · next post 18:00* is what Jack wants the moment he opens Telegram. Any
+ * failure in the count queries drops the line — the panel must always render.
+ */
+async function homeText(): Promise<string> {
+  try {
+    const db = admin();
+    const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+    const [{ count: pending }, { count: failed }, next] = await Promise.all([
+      db.from("content_items").select("id", { count: "exact", head: true }).eq("status", "pending_approval"),
+      db.from("publish_jobs").select("id", { count: "exact", head: true }).eq("status", "failed"),
+      db.from("publish_jobs").select("run_at").in("status", ["queued", "running"])
+        .order("run_at").limit(1).maybeSingle(),
+    ]);
+    const bits = [`${pending ?? 0} pending`, `${failed ?? 0} failed`];
+    if (next?.data?.run_at) bits.push(`next post ${hm(String(next.data.run_at), tz)}`);
+    return [`<b>${tg.escapeHtml(bits.join(" · "))}</b>`, HOME_TEXT].join("\n");
+  } catch {
+    return HOME_TEXT;
+  }
+}
 
 function updatedLine(tz: string): string {
   const hm = new Date().toLocaleTimeString("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
@@ -852,6 +1010,52 @@ async function statusText(): Promise<string> {
   ].join("\n");
 }
 
+/**
+ * /today — the dashboard's Today page as a chat screen (Wave 8 §3.8). The
+ * queries mirror GET /health/today and the shape comes from the same pure
+ * `todaySummary`, so the bot and the dashboard cannot drift apart.
+ */
+async function todayText(): Promise<string> {
+  const db = admin();
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  const { day, week } = dayAndWeekStart(tz);
+  const end = new Date(Date.parse(day) + 86_400_000).toISOString();
+  const [pub, saved, pending] = await Promise.all([
+    db.from("publish_jobs").select("platform, run_at, status, last_error")
+      .gte("run_at", day).lt("run_at", end).order("run_at").limit(200),
+    db.from("time_saved").select("minutes_saved").gte("occurred_at", week).limit(5000),
+    db.from("content_items").select("id", { count: "exact", head: true }).eq("status", "pending_approval"),
+  ]);
+  const err = pub.error ?? saved.error ?? pending.error;
+  if (err) return `⚠️ ${tg.escapeHtml(err.message.slice(0, 200))}`;
+  const s = todaySummary(
+    pub.data ?? [],
+    (saved.data ?? []).map((r) => r.minutes_saved),
+    pending.count ?? 0,
+  );
+  return [`<b>Today</b> · ${day}`, "", ...todayLines(s, tz).map(tg.escapeHtml), updatedLine(tz)].join("\n");
+}
+
+/** /queue — jobs by kind and status, the Health table as a screen (§3.9). */
+async function queueText(): Promise<string> {
+  const db = admin();
+  const tz = (await setting(SETTING_KEYS.timezone)) ?? "Asia/Kuala_Lumpur";
+  const { data, error } = await db.from("jobs").select("kind, status")
+    .gte("created_at", new Date(Date.now() - 7 * 86400_000).toISOString());
+  if (error) return `⚠️ ${tg.escapeHtml(error.message.slice(0, 200))}`;
+  const counts: Record<string, Record<string, number>> = {};
+  for (const r of data ?? []) {
+    counts[r.kind] ??= {};
+    counts[r.kind][r.status] = (counts[r.kind][r.status] ?? 0) + 1;
+  }
+  return [
+    "<b>Queue</b> · last 7 days",
+    "",
+    ...queueLines(counts).map(tg.escapeHtml),
+    updatedLine(tz),
+  ].join("\n");
+}
+
 async function fridayText(): Promise<string> {
   const { data: w } = await admin().from("v_friday_scoreboard")
     .select("week_start, channel_members, net_joins, signals_posted, results_posted, strict_win_rate_4w, total_r_4w")
@@ -926,7 +1130,7 @@ async function batchListText(): Promise<string> {
 const DRAFTS_PAGE_SIZE = 5;
 
 /** Pending drafts with per-item buttons and ◀ n/N ▶ paging (Wave 1 item 10). */
-async function draftsPanel(page: number): Promise<{ text: string; buttons: tg.InlineButton[][] }> {
+async function draftsPanel(page: number, prev = "home"): Promise<{ text: string; buttons: tg.InlineButton[][] }> {
   const db = admin();
   const { count } = await db.from("content_items").select("id", { count: "exact", head: true })
     .in("status", ["draft", "pending_approval"]);
@@ -959,7 +1163,7 @@ async function draftsPanel(page: number): Promise<{ text: string; buttons: tg.In
     if (p < pages) row.push({ text: "▶", callback_data: tg.pageCallback("drafts", p + 1) });
     buttons.push(row);
   }
-  buttons.push(...tg.backHomeRows());
+  buttons.push(...tg.backHomeRows(tg.NAV_LAYOUT, prev));
   return {
     text: [`<b>Pending drafts</b> · ${total}`, "", ...(rows.length ? rows : ["Nothing pending."]), ""].join("\n"),
     buttons,
@@ -990,20 +1194,23 @@ async function onNav(
     return;
   }
   const stale = tg.isStaleFp(nav.fp, tg.NAV_LAYOUT);
-  const screen = nav.kind === "nav" &&
-      ((tg.MENU_SCREENS as readonly string[]).includes(nav.screen) || nav.screen === "home")
-    ? nav.screen
-    : nav.kind === "page" && nav.screen === "drafts"
-      ? "drafts"
-      : "home";
+  // Wave 8 §3.4: `nav:back:<prev>` resolves from the data alone (no server
+  // memory between taps); unknown screens and stale taps still land home.
+  // Paging covers drafts and — from §3.11 — batch.
+  const target = nav.kind === "nav" && nav.screen === "back" ? (nav.arg ?? "home") : nav.screen;
+  const screen = nav.kind === "page"
+    ? (nav.screen === "batch" || nav.screen === "drafts" ? nav.screen : "home")
+    : ((tg.MENU_SCREENS as readonly string[]).includes(target) || target === "home") ? target : "home";
+  // Where Back goes from the screen being drawn.
+  const prev = screen === "home" ? "home" : prevScreenOf(cq.message);
   await tg.answerCallbackQuery(cq.id, stale ? "Outdated menu — showing the latest." : undefined);
   if (screen === "batch") {
-    const panel = await batchPanel();
+    const panel = await batchPanel(nav.kind === "page" ? nav.n : 1, prev);
     try {
       if (panel) {
         await tg.editMessageText(chat, mid, tg.clipHtml(panel.text), { parse_mode: "HTML", buttons: panel.buttons });
       } else {
-        await tg.editMessageText(chat, mid, "No batch yet. It is drafted on Wednesday at 14:30.", { parse_mode: "HTML", buttons: tg.backHomeRows() });
+        await tg.editMessageText(chat, mid, "No batch yet. It is drafted on Wednesday at 14:30.", { parse_mode: "HTML", buttons: tg.backHomeRows(tg.NAV_LAYOUT, prev) });
       }
     } catch {
       await tg.sendMessage(chat, tg.clipHtml(panel?.text ?? "No batch yet."), { parse_mode: "HTML" });
@@ -1011,7 +1218,7 @@ async function onNav(
     return;
   }
   if (screen === "drafts") {
-    const panel = await draftsPanel(nav.kind === "page" ? nav.n : 1);
+    const panel = await draftsPanel(nav.kind === "page" ? nav.n : 1, prev);
     try {
       await tg.editMessageText(chat, mid, tg.clipHtml(panel.text), { parse_mode: "HTML", buttons: panel.buttons });
     } catch {
@@ -1019,15 +1226,15 @@ async function onNav(
     }
     return;
   }
-  const text = await navScreenText(screen);
+  const text = screen === "home" ? await homeText() : await navScreenText(screen);
   try {
     await tg.editMessageText(chat, mid, tg.clipHtml(text), {
       parse_mode: "HTML",
       buttons: screen === "home"
         ? tg.menuKeyboard()
         : screen === "status" || screen === "friday" || screen === "hours"
-          ? tg.screenKeyboard(screen)
-          : tg.backHomeRows(),
+          ? tg.screenKeyboard(screen, tg.NAV_LAYOUT, prev)
+          : tg.backHomeRows(tg.NAV_LAYOUT, prev),
     });
   } catch {
     await tg.sendMessage(chat, tg.clipHtml(text), { parse_mode: "HTML" });
@@ -1039,8 +1246,21 @@ async function onDeskCommand(m: Message, cmd: string): Promise<void> {
   const say = (html: string) => tg.sendMessage(m.chat.id, html, { parse_mode: "HTML", reply_to_message_id: m.message_id });
 
   if (cmd === "status") { await say(await statusText()); return; }
+  if (cmd === "today") { await say(await todayText()); return; }
+  if (cmd === "queue") { await say(await queueText()); return; }
 
   if (cmd === "friday") { await say(await fridayText()); return; }
+
+  if (cmd === "drafts") {
+    // Wave 8 §3.10: the drafts screen existed with no slash command at all.
+    const panel = await draftsPanel(1, "home");
+    await tg.sendMessage(m.chat.id, tg.clipHtml(panel.text), {
+      parse_mode: "HTML",
+      reply_to_message_id: m.message_id,
+      buttons: panel.buttons,
+    });
+    return;
+  }
 
   if (cmd === "hours") { await onHours(m); return; }
   if (cmd === "batch") { await onBatch(m); return; }
@@ -1048,16 +1268,39 @@ async function onDeskCommand(m: Message, cmd: string): Promise<void> {
   if (cmd === "clips") { await onClips(m); return; }
 
   if (cmd === "menu" || cmd === "start") {
-    await tg.sendMessage(m.chat.id, HOME_TEXT, {
+    const panel = await tg.sendMessage(m.chat.id, await homeText(), {
       parse_mode: "HTML",
       reply_to_message_id: m.message_id,
       buttons: tg.menuKeyboard(),
     });
+    await afterMenuPanel(panel);
     return;
   }
 
   if (cmd === "help") { await say(HELP_TEXT); return; }
   await say(`I don't know /${tg.escapeHtml(cmd)}.\n\n${HELP_TEXT}`);
+}
+
+/**
+ * Wave 8 §3.14: read-only state from Jack's own DM — his id only, and never a
+ * draft-writing path. The Desk group keeps every mutating command; a DM answers
+ * the five questions Jack asks when he is away from his desk.
+ */
+const DM_COMMANDS = ["start", "menu", "status", "today", "queue", "drafts", "friday", "help"] as const;
+
+async function onDmMessage(m: Message): Promise<void> {
+  if (m.from?.id !== await jackId()) return; // a DM is only Jack's
+  const command = /^\/([a-z_]+)(?:@\w+)?(?:\s|$)/i.exec((m.text ?? "").trim());
+  const cmd = command?.[1].toLowerCase();
+  if (!cmd || !(DM_COMMANDS as readonly string[]).includes(cmd)) {
+    await tg.sendMessage(
+      m.chat.id,
+      "Read-only here: /status /today /queue /drafts /friday /menu /help.\nSend the chart and raw lines in the Desk group.",
+      { reply_to_message_id: m.message_id },
+    );
+    return;
+  }
+  await onDeskCommand(m, cmd);
 }
 
 /**
@@ -1539,7 +1782,9 @@ serve(async (req) => {
       const m = update.message;
       if (deskId && m.chat.id === deskId) await onDeskMessage(m);
       else if (discussionId && m.chat.id === discussionId) await onDiscussionMessage(m);
-      // Any other chat: ignored on purpose (no DMs, no other groups).
+      // Wave 8 §3.14: Jack's own DM answers read-only state commands — his id
+      // only, and never a draft-writing path. Any other chat stays ignored.
+      else if (m.chat.type === "private") await onDmMessage(m);
     }
     await admin().from("health_checks").insert({ source: "ops_bot", status: "ok", detail: { update_id: update.update_id } });
     // Mark the update handled (failures 0): Telegram's later redeliveries
