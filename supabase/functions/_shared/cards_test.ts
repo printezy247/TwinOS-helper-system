@@ -35,12 +35,25 @@ Deno.test("later / edit / batch keyboards: every verb handled, data under 64 byt
     laterKeyboard(ID),
     editKeyboard(ID),
     batchListKeyboard([{ n: 1, id: ID }, { n: 2, id: ID }], 2),
+    // Wave 8 §3.11: a paged batch with a copy row and a Back that knows where
+    // it came from must stay inside the same grammar.
+    batchListKeyboard([{ n: 7, id: ID, copy: "the body" }, { n: 8, id: ID }], 1, {
+      page: 2,
+      pages: 3,
+      prev: "status",
+    }),
   ];
   const emitted = new Set<string>();
   for (const kb of kbs) {
     for (const row of kb) {
       for (const b of row) {
         const d = b.callback_data ?? "";
+        if (!d) {
+          // Wave 8 §3.1: a copy_text button carries no callback by design —
+          // it must carry the text it puts on the clipboard.
+          assert(!!b.copy_text || !!b.url || !!b.web_app, `bare button: ${b.text}`);
+          continue;
+        }
         assert(new TextEncoder().encode(d).length <= 64, `over 64 bytes: ${d}`);
         assert(parseCallback(d) !== null, `unparseable button: ${d}`);
       }
@@ -50,6 +63,20 @@ Deno.test("later / edit / batch keyboards: every verb handled, data under 64 byt
   const missing = [...emitted].filter((v) => !(HANDLED_CALLBACK_VERBS as readonly string[]).includes(v));
   assertEquals(missing, [], `unhandled callback verbs: ${missing.join(", ")}`);
   assert(emitted.has("rs") && emitted.has("ed") && emitted.has("cmd"), [...emitted].join(","));
+  assert(emitted.has("pg") && emitted.has("nav"), [...emitted].join(","));
+});
+
+Deno.test("batch list: copy row, pager, Back (Wave 8 §3.1, §3.11)", () => {
+  const flat = batchListKeyboard([{ n: 7, id: ID, copy: "the body" }], 0, { page: 2, pages: 3 }).flat();
+  assert(flat.some((b) => b.copy_text === "the body"), "a 📋 copy row for the item");
+  const datas = flat.map((b) => b.callback_data ?? "");
+  const pg = datas.find((d) => d.startsWith("pg:batch"));
+  assert(pg && parseCallback(pg)?.kind === "page", `no batch pager: ${pg}`);
+  assert(datas.includes("nav:back:home@v2"), datas.join(","));
+  // One page: no pager, and a copy-less item gets no copy row.
+  const single = batchListKeyboard([{ n: 1, id: ID }], 0, { page: 1, pages: 1 }).flat();
+  assert(!single.some((b) => b.callback_data?.startsWith("pg:")), "no pager on a single page");
+  assert(!single.some((b) => b.copy_text), "no copy row without a body");
 });
 
 Deno.test("a held send asks Jack: It's posted / Send again, both handled and under 64 bytes", () => {

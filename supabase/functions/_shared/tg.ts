@@ -27,6 +27,10 @@ export interface InlineButton {
   text: string;
   callback_data?: string; // ≤64 bytes, see shortCallback()
   url?: string;
+  /** Bot API 7.10: one tap puts this text on the clipboard (Wave 8 §3.1). */
+  copy_text?: string;
+  /** Bot API 7.x: opens a Mini App in Telegram; needs the dashboard_url setting (§3.2). */
+  web_app?: { url: string };
 }
 
 export interface SendOpts {
@@ -37,6 +41,10 @@ export interface SendOpts {
   buttons?: InlineButton[][];
   message_thread_id?: number;
   protect_content?: boolean;
+  /** Wave 8 §3.6: the answer is attached to this prompt. Wins over `buttons` —
+   *  Telegram's reply_markup carries one keyboard type at a time. */
+  force_reply?: boolean;
+  input_field_placeholder?: string;
 }
 
 export interface TgMessage {
@@ -175,7 +183,11 @@ function common(opts: SendOpts): Record<string, unknown> {
     reply_parameters: opts.reply_to_message_id
       ? { message_id: opts.reply_to_message_id, allow_sending_without_reply: true }
       : undefined,
-    reply_markup: opts.buttons ? { inline_keyboard: opts.buttons } : undefined,
+    reply_markup: opts.force_reply
+      ? { force_reply: true, input_field_placeholder: opts.input_field_placeholder }
+      : opts.buttons
+        ? { inline_keyboard: opts.buttons }
+        : undefined,
   };
 }
 
@@ -296,6 +308,21 @@ export function pinChatMessage(
   disable_notification = true,
 ) {
   return call<true>("pinChatMessage", { chat_id, message_id, disable_notification });
+}
+
+/** Wave 8 §3.5: "typing…" while a long job runs (the local model on Adjust). */
+export function sendChatAction(chat_id: number | string, action = "typing") {
+  return call<true>("sendChatAction", { chat_id, action });
+}
+
+/**
+ * Wave 8 §3.3: the always-visible button under the chat input. The caller
+ * builds `menu_button` — `{ type: "web_app", text, web_app: { url } }` when the
+ * dashboard_url setting is filled in, `{ type: "commands" }` otherwise — so
+ * this stays a thin wrapper over the Bot API method.
+ */
+export function setChatMenuButton(menu_button: Record<string, unknown>, chat_id?: number) {
+  return call<true>("setChatMenuButton", { chat_id, menu_button });
 }
 
 /**
@@ -508,15 +535,36 @@ export function editKeyboard(contentId: string): InlineButton[][] {
   ];
 }
 
-/** /batch list: per-item approve/edit/preview, Refresh, confirmed approve-ready. */
-export function batchListKeyboard(items: Array<{ n: number; id: string }>, ready: number): InlineButton[][] {
-  const rows: InlineButton[][] = items.map((i) => [
-    { text: `✅ ${i.n}`, callback_data: shortCallback("ok", i.id) },
-    { text: `✏️ ${i.n}`, callback_data: shortCallback("edit", i.id) },
-    { text: `👁 ${i.n}`, callback_data: shortCallback("vw", i.id) },
-  ]);
+/**
+ * /batch list: per-item approve/edit/preview (+ 📋 copy when the body is at
+ * hand), ◀ n/N ▶ paging for a twelve-item batch (Wave 8 §3.11), Refresh,
+ * confirmed approve-ready, then Back + Home like every other screen.
+ */
+export function batchListKeyboard(
+  items: Array<{ n: number; id: string; copy?: string }>,
+  ready: number,
+  opts: { page?: number; pages?: number; prev?: string } = {},
+): InlineButton[][] {
+  const rows: InlineButton[][] = items.map((i) => {
+    const row: InlineButton[] = [
+      { text: `✅ ${i.n}`, callback_data: shortCallback("ok", i.id) },
+      { text: `✏️ ${i.n}`, callback_data: shortCallback("edit", i.id) },
+      { text: `👁 ${i.n}`, callback_data: shortCallback("vw", i.id) },
+    ];
+    if (i.copy) row.push({ text: "📋", copy_text: i.copy });
+    return row;
+  });
+  const { page, pages } = opts;
+  if (page && pages && pages > 1) {
+    const pager: InlineButton[] = [];
+    if (page > 1) pager.push({ text: "◀", callback_data: pageCallback("batch", page - 1) });
+    pager.push(nopButton(`${page}/${pages}`));
+    if (page < pages) pager.push({ text: "▶", callback_data: pageCallback("batch", page + 1) });
+    rows.push(pager);
+  }
   rows.push([{ text: "🔄 Refresh", callback_data: cmdCallback("refresh") }]);
   rows.push([{ text: `✅ Approve ready (${ready})`, callback_data: cmdCallback("ready") }]);
+  rows.push(...backHomeRows(NAV_LAYOUT, opts.prev));
   return rows;
 }
 
@@ -543,17 +591,22 @@ export function menuKeyboard(fp = NAV_LAYOUT): InlineButton[][] {
 }
 
 /** Status/Friday/Hours panels: Refresh on top, Back + Home below. */
-export function screenKeyboard(screen: string, fp = NAV_LAYOUT): InlineButton[][] {
+export function screenKeyboard(screen: string, fp = NAV_LAYOUT, prev = "home"): InlineButton[][] {
   return [
     [{ text: "🔄 Refresh", callback_data: navCallback(screen, undefined, fp) }],
-    ...backHomeRows(fp),
+    ...backHomeRows(fp, prev),
   ];
 }
 
-export function backHomeRows(fp = NAV_LAYOUT): InlineButton[][] {
+/**
+ * Back + Home on every screen. Back is stateless: the screen it returns to
+ * rides in the callback (`nav:back:<prev>@<fp>`, Wave 8 §3.4), which the
+ * webhook resolves from the data alone — no server memory between taps.
+ */
+export function backHomeRows(fp = NAV_LAYOUT, prev = "home"): InlineButton[][] {
   return [
     [
-      { text: "⬅️ Back", callback_data: navCallback("home", undefined, fp) },
+      { text: "⬅️ Back", callback_data: navCallback("back", prev, fp) },
       { text: "🏠 Home", callback_data: navCallback("home", undefined, fp) },
     ],
   ];
@@ -563,8 +616,11 @@ export function backHomeRows(fp = NAV_LAYOUT): InlineButton[][] {
  * Desk approval keyboard (ported in spirit from ASAP `build_keyboard`, two
  * columns). The verbs are fixed; tg-webhook routes on them.
  */
-export function approvalKeyboard(contentId: string): InlineButton[][] {
-  return [
+export function approvalKeyboard(
+  contentId: string,
+  opts: { copy?: string; dashboardUrl?: string } = {},
+): InlineButton[][] {
+  const rows: InlineButton[][] = [
     [
       { text: "✅ Approve", callback_data: shortCallback("ok", contentId) },
       { text: "✏️ Edit", callback_data: shortCallback("edit", contentId) },
@@ -577,6 +633,14 @@ export function approvalKeyboard(contentId: string): InlineButton[][] {
       { text: "🎛 Adjust", callback_data: shortCallback("adj", contentId) },
     ],
   ];
+  // One tap puts the body on the clipboard (Wave 8 §3.1).
+  if (opts.copy) rows.push([{ text: "📋 Copy", copy_text: opts.copy }]);
+  // The dashboard as a Mini App inside Telegram (§3.2): only when Jack has
+  // filled in the dashboard_url setting, so the button is never a dead link.
+  if (opts.dashboardUrl) {
+    rows.push([{ text: "🖥 Open in dashboard", web_app: { url: opts.dashboardUrl } }]);
+  }
+  return rows;
 }
 
 /** Render ASAP-style post buttons (link only; reveal buttons stay in ASAP). */

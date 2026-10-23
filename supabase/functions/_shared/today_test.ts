@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { dayAndWeekStart, todaySummary } from "./today.ts";
+import { dayAndWeekStart, queueLines, todayLines, todaySummary } from "./today.ts";
 
 const TZ = "Asia/Kuala_Lumpur";
 
@@ -39,4 +39,38 @@ Deno.test("todaySummary: counts, failures, next up, saved minutes", () => {
 
 Deno.test("todaySummary: a quiet day", () => {
   assertEquals(todaySummary([], [], 0).summary, "0 post(s) today; 0 waiting for approval; 0 min saved this week");
+});
+
+// Wave 8 §3.8: the bot's /today screen shapes the same summary in KL time.
+Deno.test("todayLines: posts, approvals, failures, next up, minutes saved", () => {
+  const s = todaySummary([
+    { platform: "telegram", run_at: "2026-10-03T05:00:00Z", status: "done" },
+    { platform: "threads", run_at: "2026-10-03T09:00:00Z", status: "queued" },
+    { platform: "instagram", run_at: "2026-10-03T07:00:00Z", status: "queued" },
+    { platform: "facebook", run_at: "2026-10-03T04:00:00Z", status: "failed", last_error: "token expired" },
+  ], [30, "12.5", null], 2);
+  assertEquals(todayLines(s, TZ), [
+    "📨 4 post(s) today — 1 done, 1 failed, 2 queued",
+    "✅ 2 waiting for approval",
+    "❌ 1 failed — facebook 12:00",
+    "⏭ next — instagram 15:00, threads 17:00",
+    "💾 43 min saved this week",
+  ]);
+});
+
+Deno.test("todayLines: a quiet day has no failure or next line", () => {
+  assertEquals(todayLines(todaySummary([], [], 0), TZ), [
+    "📨 0 post(s) today",
+    "✅ 0 waiting for approval",
+    "💾 0 min saved this week",
+  ]);
+});
+
+// Wave 8 §3.9: the bot's /queue screen, same counts as GET /jobs.
+Deno.test("queueLines: one line per kind, statuses sorted, empty queue says so", () => {
+  assertEquals(queueLines({}), ["Nothing queued in the last 7 days."]);
+  assertEquals(
+    queueLines({ llm_variants: { failed: 1, queued: 2 }, clip: { done: 4 } }),
+    ["clip: 4 done", "llm_variants: 1 failed, 2 queued"],
+  );
 });
