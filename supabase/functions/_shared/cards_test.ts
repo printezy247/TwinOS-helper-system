@@ -68,7 +68,7 @@ Deno.test("later / edit / batch keyboards: every verb handled, data under 64 byt
 
 Deno.test("batch list: copy row, pager, Back (Wave 8 §3.1, §3.11)", () => {
   const flat = batchListKeyboard([{ n: 7, id: ID, copy: "the body" }], 0, { page: 2, pages: 3 }).flat();
-  assert(flat.some((b) => b.copy_text === "the body"), "a 📋 copy row for the item");
+  assert(flat.some((b) => b.copy_text?.text === "the body"), "a 📋 copy row for the item");
   const datas = flat.map((b) => b.callback_data ?? "");
   const pg = datas.find((d) => d.startsWith("pg:batch"));
   assert(pg && parseCallback(pg)?.kind === "page", `no batch pager: ${pg}`);
