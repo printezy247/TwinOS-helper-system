@@ -272,6 +272,9 @@ async function onCallback(cq: NonNullable<Update["callback_query"]>): Promise<vo
       return;
     }
     case "no": {
+      // P2-20 — the one reject rule in all three surfaces (bot, Desk, Mini App):
+      // a note is always optional. The tap carries none (no prompt, no gate);
+      // when a note exists it rides back on approvals.reject_note.
       const r = await callApprove(buildApprovePayload(content_id, "reject", cq.from.id, `cb:${cq.id}`));
       await tg.answerCallbackQuery(cq.id, r.ok ? "Rejected." : `Failed: ${r.message ?? r.error}`, !r.ok);
       if (chat && mid && r.ok) {
