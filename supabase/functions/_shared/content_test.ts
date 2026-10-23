@@ -11,6 +11,15 @@ Deno.test("a Desk short id becomes a uuid range (Postgres has no LIKE on uuid)",
   assertThrows(() => shortIdRange("c0203593%"));
 });
 
+Deno.test("a full uuid (what the dashboard sends to edit/cancel) is a one-point range", () => {
+  const id = "C0203593-1a2b-4c3d-8e4f-0123456789AB";
+  assertEquals(shortIdRange(id), {
+    from: "c0203593-1a2b-4c3d-8e4f-0123456789ab",
+    to: "c0203593-1a2b-4c3d-8e4f-0123456789ab",
+  });
+  assertThrows(() => shortIdRange("c0203593-1a2b-4c3d-8e4f-0123456789a"));
+});
+
 const tpl = (body: string, fields: string[] = [], lines: string[] = []) => ({ body, fields, required_lines: lines });
 
 Deno.test("render fills {{field}} and flags missing ones as [NEEDED]", () => {
