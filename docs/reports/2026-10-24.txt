@@ -1,0 +1,123 @@
+TWINOS TRENDING-REPO RESEARCH + UPGRADE ASSESSMENT, Sat 24 Oct 2026
+
+A fresh pass over GitHub trending (telegram-bot, telegraf/grammY middleware,
+lifeomic/attempt retries, susu-indexer idempotency, postmill-ai job queues,
+strapi-scheduler UX) compared every pattern against this repo and against the
+dashboard mirror (printezy247/twin-approval-hub-715dc526). Headline: nothing
+from the trending set is missing on the backend, and the "Phase 0 bug list"
+from the earlier look is already built — the live gaps are three Jack actions
+and the remaining Phase 2 dashboard buttons.
+
+1. TRENDING PATTERNS — ALL SEVEN ALREADY SHIPPED
+
+Pattern                          TwinOS implementation                        In git
+Classification pipeline          classifyMiddleware.ts chains TgError ->     4093c..#86 wave
+                                 MetaError -> Transport -> Generic; the
+                                 chain lives in _shared/backoff.ts
+Jittered exponential backoff +   jitteredBackoff() = backoffMs * random,     943f873
+hard cap                         BACKOFF_BASE_MS/CAP_MS (cap 15 min)
+Token-bucket rate limiter        RateLimiter (consume/refill/available)      943f873
+Bound bot client                 TelegramClient bound to its token once,     4093ec4
+                                 cached in tgClients Map, getTgClient()
+Stale-layout fingerprints        NAV_FINGERPRINT/NAV_LAYOUT, parseCallback   4093ec4
+                                 reads the @<fp> suffix, isStaleFp() guard
+Long-polling fallback            pollUpdates() async generator behind the    4093ec4
+                                 use_polling setting
+Idempotent job claim             publish/index.ts claimOne() is one atomic   earlier (fanout wave)
+                                 UPDATE ... WHERE status=queued; fanout.ts
+                                 isolates per platform with a stuck-queue
+                                 threshold (FANOUT_STUCK_THRESHOLD = 5)
+
+CI already enforces all of it (.github/workflows/ci.yml: deno check/lint/test
++ migration schema check + token-shape secret scan). Conclusion: no backend
+upgrade is owed from this pass — the earlier UPGRADE-CODE-PLAN.md phases
+landed them all, verified by git history, not by memory.
+
+2. THE PHASE 0 LIST WAS ALREADY HANDLED (check the mirror's roadmap.md)
+
+The interrupted turn's "11 real bugs" pre-date Wave 8 Phase 0 (22 Oct) and
+PRs #4, #9 and #10 (all merged 23 Oct). Evidence per item, from the mirror's
+roadmap.md and merged PR bodies:
+
+  P0-1 buttons 403 for non-Jack ..... Draft/send actions are Jack-only and
+       hidden (not disabled) on Inbox cards and Compose; Research brief
+       verified already gated. Backend roles.ts is unchanged on purpose:
+       dashboard stays read-mostly (roles.ts comments), so this was right to
+       fix in the UI, not by widening the permission table.
+  P0-2 security headers dead ........ Fixed: src/lib/security-headers.ts now
+       applied by src/server.ts on every response; public/_headers deleted
+       (PR #4 wave-8 gates test keeps the two lists from drifting).
+  P0-3 jobs never refresh ........... jobs is in TABLE_KEYS and polled every
+       60 s; feeds + jobs subscribed (wave8-gates.test.ts fails on drift).
+  P0-4 five tables off realtime ..... Backend half was already done here:
+       20261018030000 (platform_accounts, feed_items, csi...),
+       20261022000000 (feeds, jobs), 20261023000000 (invite_links,
+       poll_results, template_variants, clip_candidates, inbox_items),
+       20261023000100 (benchmarks). Mirror half: subscriptions + TABLE_KEYS
+       + Channels consuming platform_accounts, all gated by tests.
+  P0-5 36 px touch targets .......... min-h-9 -> min-h-11 in 15 spots
+       (+ shared Button 44 px from 768 px down, PR #8).
+  P0-6 missing cursor ............... pointer cursor on .btn/.chip/.entry/
+       .panel-interactive (roadmap, Phase 0 row).
+  P0-7 fake alertdialog ............. Calendar "Cancel schedule" is a real
+       nested ResponsiveDialog modal, not an inline panel wearing a role.
+  P0-8 stale docs ................... README/AGENTS/roadmap corrected to the
+       19-screen app with real backend contracts (PR #4; also fixed the
+       hero SVG and stopped the README leaking a publishable key).
+  P0-9 dead code .................... lib/ai-review.ts and the dead drizzle
+       files deleted (roadmap, Phase 0 row).
+  P0-10 query layer split ........... Shared query layer is the norm now
+       (src/lib/queries.ts one cache, TABLE_KEYS, queries polled while the
+       tab is visible); the palette shares the bell's drafts query.
+  P0-11 no dashboard CI ............. .github/workflows/ci.yml exists on the
+       mirror (bun: lint, vitest, tsc --noEmit, build) and every PR gate ran
+       it green through #10.
+
+No code change is owed for Phase 0. Re-running those fixes would be the waste
+the interrupted turn was trying to avoid.
+
+3. WHAT REMAINS
+
+On Jack (per the mirror roadmap "Still on Jack"):
+  a. Apply the realtime publication migrations to the live database
+     (supabase db query --linked, output-format json, then scripts/deploy.sh
+     to refresh the functions). Until then the new subscriptions look wired
+     and deliver nothing — the same silent failure the migrations describe.
+  b. Sign in as Jack in the dashboard preview once so live writes (Compose,
+     Settings) are tested as him.
+  c. Test /mini from the EzyMap Desk in Telegram.
+  d. Two decisions: health stale threshold (6 h now) and whether the inbox
+     badge counts drafts.
+
+Phase 2 — dashboard buttons for backend endpoints: started, not finished.
+PR #1 (22 Oct) added role-gated buttons for friday post, friday
+request-inputs, expand topics and the Monday brief. The June-style AI
+refinement PR #3 is client-side OpenRouter, not these endpoints. Still
+without buttons, by endpoint:
+  research/feeds (poll all feeds), research/channels (refresh channel stats),
+  friday/export (CSV), content/batch (build this week's batch),
+  content/annual-offer (template selector entry),
+  content/{id}/fanout (fan out to platforms),
+  metrics/snapshots + metrics/benchmarks (check what the Insights refresh
+  buttons already call — the phase 3 migration comment says two refresh
+  buttons exist, so verify before building),
+  jobs/enqueue per-item "Re-run", desk/output internal Desk connector button.
+Each goes through the existing internal-hop pattern (x-twinos-internal +
+derived secret + Jack-id recheck) and a roles.ts check; several of these
+verbs (content.batch, jobs.enqueue) already carry the right permission rows.
+
+4. RECOMMENDED ORDER
+
+1. Jack applies the pending migrations to the live DB (unblocks realtime
+   everywhere for one command — highest value per minute).
+2. Verify the Insights refresh buttons' actual calls, then wire the Phase 2
+   remainder as small role-gated PRs on the mirror, batched: research/
+   (feeds, channels) and friday/export in one; content fanout + batch +
+   annual-offer in another.
+3. Do not touch roles.ts, _shared/ or the migrations for this: the trending
+   pass found the backend complete.
+
+Sources: repo git history (943f873, 4093ec4..#99), mirror PRs #1 #3 #4 #5-#10
+(merged 22-23 Oct), mirror roadmap.md + .lovable/plan.md, docs/
+DASHBOARD-UPGRADE-PLAN.md Outcome, supabase/migrations 20261018030000 and
+20261022/23_*_realtime_publication_*.
