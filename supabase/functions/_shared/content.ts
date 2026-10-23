@@ -9,7 +9,7 @@
  */
 import { admin, requireSetting, setting, SETTING_KEYS } from "./supabase.ts";
 import { check, TELEGRAM_CAPTION_LIMIT, type CheckResult, type Lang, type Platform, type PostType } from "./compliance.ts";
-import { HttpError, notFound } from "./http.ts";
+import { HttpError, notFound, sanitizeError } from "./http.ts";
 import { approvalKeyboard, escapeHtml, sendMessage, sendPhoto } from "./tg.ts";
 import { logAction, logTimeSaved } from "./log.ts";
 import { isPublishableVariant } from "./platforms.ts";
@@ -387,18 +387,28 @@ export async function pushToDesk(
   });
   // Wave 8 §3.7: paid drafts live in a private group; protect_content stops the
   // contents being forwarded or saved out of it.
-  const msg = opts.photo
-    ? await sendPhoto(deskId, opts.photo, text.slice(0, TELEGRAM_CAPTION_LIMIT), {
-      parse_mode: "HTML",
-      buttons,
-      protect_content: true,
-    })
-    : await sendMessage(deskId, text.slice(0, 4096), {
-      parse_mode: "HTML",
-      buttons,
-      disable_web_page_preview: true,
-      protect_content: true,
-    });
+  const send = (kb: typeof buttons) =>
+    opts.photo
+      ? sendPhoto(deskId, opts.photo, text.slice(0, TELEGRAM_CAPTION_LIMIT), {
+        parse_mode: "HTML",
+        buttons: kb,
+        protect_content: true,
+      })
+      : sendMessage(deskId, text.slice(0, 4096), {
+        parse_mode: "HTML",
+        buttons: kb,
+        disable_web_page_preview: true,
+        protect_content: true,
+      });
+  // The copy and dashboard buttons are extras. If Telegram refuses one, the draft is already
+  // saved, so send the card with the four decision buttons instead of failing the request.
+  const msg = await send(buttons).catch((err) => {
+    if (!/BUTTON_|InlineKeyboardButton|reply markup/i.test(String((err as Error)?.message ?? err))) {
+      throw err;
+    }
+    console.warn("[twinos] desk card sent without extra buttons:", sanitizeError(err));
+    return send(approvalKeyboard(draft.content_id));
+  });
   await setStatus(draft.content_id, "pending_approval", opts.actor, {
     desk_chat_id: msg.chat.id,
     desk_message_id: msg.message_id,
