@@ -320,6 +320,14 @@ export async function setStatus(
   await logAction({ actor, action: `content.${status}`, target: content_id, payload: extra });
 }
 
+/**
+ * Select for a variant plus its item. content_variants has two foreign keys to
+ * content_items (item_id, content_id), so a bare `content_items(...)` embed fails with
+ * "more than one relationship was found"; the key must be named.
+ */
+export const VARIANT_WITH_ITEM_SELECT =
+  "id, status, platform, lang, item_id, claim_flags, content_items!content_variants_item_id_fkey(post_type, icp, source)";
+
 /** Resolve the 8-hex short id from a callback button to the full content id. */
 /**
  * The uuid range a short id covers. The short id is the uuid's first 8 hex

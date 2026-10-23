@@ -19,7 +19,7 @@ import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, setting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
-import { createDraft, enqueuePublish, loadContent, pushToDesk, resolveVariantShort } from "_shared/content.ts";
+import { createDraft, enqueuePublish, loadContent, pushToDesk, resolveVariantShort, VARIANT_WITH_ITEM_SELECT } from "_shared/content.ts";
 import { fanOut, isStuckQueue } from "_shared/fanout.ts";
 import { annualOffers, offerText, type ProductRow } from "_shared/offers.ts";
 import { fanoutFailure, fanoutSummary } from "_shared/platforms.ts";
@@ -656,7 +656,7 @@ serve(async (req) => {
     const next = reqString(body, "body", { max: 20000 });
     const db = admin();
     const { data: v, error: vErr } = await db.from("content_variants")
-      .select("id, status, platform, lang, item_id, claim_flags, content_items(post_type, icp, source)")
+      .select(VARIANT_WITH_ITEM_SELECT)
       .eq("id", id).maybeSingle();
     if (vErr) throw new HttpError(503, "upstream_failed", `content_variants: ${vErr.message}`);
     if (!v) throw notFound("variant");
