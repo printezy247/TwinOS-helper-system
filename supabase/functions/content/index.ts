@@ -656,7 +656,7 @@ serve(async (req) => {
     const next = reqString(body, "body", { max: 20000 });
     const db = admin();
     const { data: v, error: vErr } = await db.from("content_variants")
-      .select("id, status, platform, lang, item_id, claim_flags, content_items(post_type, icp, source)")
+      .select("id, status, platform, lang, item_id, claim_flags, content_items!content_variants_item_id_fkey(post_type, icp, source)")
       .eq("id", id).maybeSingle();
     if (vErr) throw new HttpError(503, "upstream_failed", `content_variants: ${vErr.message}`);
     if (!v) throw notFound("variant");

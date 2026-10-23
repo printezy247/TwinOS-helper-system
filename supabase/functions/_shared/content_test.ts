@@ -105,3 +105,9 @@ Deno.test("parsePoll: Telegram's own limits are enforced at the edge", () => {
   const bigQ = parsePoll("q".repeat(400) + "?\n- a\n- b");
   assertEquals(bigQ?.question.length, 300, "the question is capped at Telegram's 300 with the ? kept");
 });
+
+Deno.test("content/edit names the variant→item foreign key (two exist, so a bare embed is ambiguous)", async () => {
+  const src = await Deno.readTextFile(new URL("../content/index.ts", import.meta.url));
+  assertEquals(/content_items\(/.test(src), false);
+  assertEquals(src.includes("content_items!content_variants_item_id_fkey("), true);
+});
