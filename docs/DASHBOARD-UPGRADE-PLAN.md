@@ -117,7 +117,7 @@ Built in the repo Lovable watches, `printezy247/twin-approval-hub-715dc526`, as 
 | D. Visual uniformity | #8 | Shared Button 44 px on phones; hand-sized `.btn` overrides removed. |
 
 ### Already in the app, so not rebuilt
-Sidebar collapse saved per device and `Ctrl+\\`; `g`-key hints in collapsed tooltips; green focus ring; motion tokens (`--tr-fast`, `--tr`, `--tr-smooth`) with reduced-motion handling; JetBrains Mono beside Inter; the Recent section and the full shortcuts dialog (`?`); jump keys `g m` (Messages), `g d` (Friday), `g p` (Insights).
+Sidebar collapse saved per device and `Ctrl+\`; `g`-key hints in collapsed tooltips; green focus ring; motion tokens (`--tr-fast`, `--tr`, `--tr-smooth`) with reduced-motion handling; JetBrains Mono beside Inter; the Recent section and the full shortcuts dialog (`?`); jump keys `g m` (Messages), `g d` (Friday), `g p` (Insights).
 
 ### Changed from the plan
 - **Jump keys `gm`, `gf`, `gg`:** not added. Messages, Friday and Insights already have keys, and `g f` is Feeds; the build fails on a duplicate key.
