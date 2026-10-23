@@ -75,9 +75,12 @@ Deno.test("approval card: 📋 copy and Open-in-dashboard (Wave 8 §3.1, §3.2)"
   const kb = approvalKeyboard(ID, { copy: "the body", dashboardUrl: "https://hub.example/mini" });
   const flat = kb.flat();
   assert(flat.some((b) => b.copy_text?.text === "the body"), "copy button missing");
-  assert(flat.some((b) => b.web_app?.url === "https://hub.example/mini"), "web_app button missing");
+  assert(flat.some((b) => b.url === "https://hub.example/mini"), "dashboard link button missing");
+  // 23 Oct 2026: the Desk is a group, and Telegram refuses inline web_app buttons outside
+  // private chats (BUTTON_TYPE_INVALID), which failed every Send to Desk. A plain URL button works.
+  assert(!flat.some((b) => b.web_app), "no web_app button on the Desk card");
   // No settings → no buttons: never a dead link or an empty copy row.
-  assert(!approvalKeyboard(ID).flat().some((b) => b.copy_text || b.web_app), "opt-in only");
+  assert(!approvalKeyboard(ID).flat().some((b) => b.copy_text || b.url), "opt-in only");
   // Both are not callbacks; the four decision verbs are unchanged.
   assertEquals(keyboardVerbs(approvalKeyboard(ID, { copy: "x", dashboardUrl: "https://h/mini" })).sort(),
     ["adj", "edit", "later", "no", "ok"]);

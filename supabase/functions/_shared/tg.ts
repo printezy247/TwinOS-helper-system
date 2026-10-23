@@ -650,10 +650,12 @@ export function approvalKeyboard(
   // One tap puts the body on the clipboard (Wave 8 §3.1).
   const copy = copyButton("📋 Copy", opts.copy);
   if (copy) rows.push([copy]);
-  // The dashboard as a Mini App inside Telegram (§3.2): only when Jack has
-  // filled in the dashboard_url setting, so the button is never a dead link.
+  // A link to the dashboard (§3.2): only when Jack has filled in the dashboard_url
+  // setting, so the button is never a dead link. A plain URL button, not web_app:
+  // the Desk is a group, and Telegram refuses inline web_app buttons outside private
+  // chats (BUTTON_TYPE_INVALID), which failed every Send to Desk.
   if (opts.dashboardUrl) {
-    rows.push([{ text: "🖥 Open in dashboard", web_app: { url: opts.dashboardUrl } }]);
+    rows.push([{ text: "🖥 Open in dashboard", url: opts.dashboardUrl }]);
   }
   return rows;
 }
