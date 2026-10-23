@@ -58,8 +58,11 @@ say "live probe"
 fail=0
 for fn in content approve publish signals-ingest results health friday jobs links metrics research; do
   code="$(curl -s -o /dev/null -w '%{http_code}' "https://$REF.supabase.co/functions/v1/$fn")"
-  # 401/403 = deployed and refusing an anonymous caller. 404 = not deployed.
-  case "$code" in 401|403) echo "ok   $fn ($code)";; *) echo "FAIL $fn ($code)"; fail=1;; esac
+  # 401/403 = deployed and refusing an anonymous caller; 400 = the same refusal
+  # from a POST-only entry whose method gate runs before auth (approve, publish,
+  # metrics, research — their 400 says "POST only", so the code answered).
+  # 404 = not deployed, and nothing else is accepted.
+  case "$code" in 400|401|403) echo "ok   $fn ($code)";; *) echo "FAIL $fn ($code)"; fail=1;; esac
 done
 # tg-auth has no bare route (unknown route = 400 by design): probe GET /me,
 # which refuses a caller without a Mini App session (401).
@@ -91,7 +94,10 @@ if TOKEN="$(secret-tool lookup service twinos key ops_bot_token 2>/dev/null)" &&
   if [ -n "${DESK_ID:-}" ]; then
     # Wave 8 §3.10: the bot's /help advertised clips and fanout but Telegram's
     # menu never showed them, and drafts/today/queue had no command at all.
-    COMMANDS='[{"command":"menu","description":"Button panel"},{"command":"status","description":"Anything broken?"},{"command":"today","description":"Today's posts and failures"},{"command":"queue","description":"Is the PC behind?"},{"command":"drafts","description":"Pending drafts"},{"command":"friday","description":"Friday numbers so far"},{"command":"batch","description":"The Wednesday batch"},{"command":"hours","description":"Log baseline hours"},{"command":"clips","description":"Clip candidates"},{"command":"fanout","description":"Copy a draft to other platforms"},{"command":"help","description":"What the Desk understands"}]'
+    # The apostrophe in "Today's" closes a single-quoted string, so it is
+    # closed and reopened (\'\') — without that, `bash -n` fails on this file
+    # and the desk-commands step never runs.
+    COMMANDS='[{"command":"menu","description":"Button panel"},{"command":"status","description":"Anything broken?"},{"command":"today","description":"Today'\''s posts and failures"},{"command":"queue","description":"Is the PC behind?"},{"command":"drafts","description":"Pending drafts"},{"command":"friday","description":"Friday numbers so far"},{"command":"batch","description":"The Wednesday batch"},{"command":"hours","description":"Log baseline hours"},{"command":"clips","description":"Clip candidates"},{"command":"fanout","description":"Copy a draft to other platforms"},{"command":"help","description":"What the Desk understands"}]'
     if printf 'url = "https://api.telegram.org/bot%s/setMyCommands"\n' "$TOKEN" \
        | curl -s -K - -H 'content-type: application/json' -d "{\"commands\":$COMMANDS,\"scope\":{\"type\":\"chat\",\"chat_id\":$DESK_ID}}" | grep -q '"ok":true'; then
       echo "ok   setMyCommands scoped to the Desk chat"
