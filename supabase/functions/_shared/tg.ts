@@ -27,10 +27,23 @@ export interface InlineButton {
   text: string;
   callback_data?: string; // ≤64 bytes, see shortCallback()
   url?: string;
-  /** Bot API 7.10: one tap puts this text on the clipboard (Wave 8 §3.1). */
-  copy_text?: string;
+  /** Bot API 7.10: one tap puts this text on the clipboard (Wave 8 §3.1). An object, not a string. */
+  copy_text?: { text: string };
   /** Bot API 7.x: opens a Mini App in Telegram; needs the dashboard_url setting (§3.2). */
   web_app?: { url: string };
+}
+
+/** Telegram rejects a CopyTextButton whose text is empty or over 256 characters. */
+export const COPY_TEXT_MAX = 256;
+
+/**
+ * A 📋 button that copies `text`, or null when Telegram would refuse it. A
+ * rejected button fails the whole sendMessage, and the draft is already saved by
+ * then, so a long body just gets no copy button instead of a failed request.
+ */
+export function copyButton(label: string, text?: string | null): InlineButton | null {
+  if (!text || text.length > COPY_TEXT_MAX) return null;
+  return { text: label, copy_text: { text } };
 }
 
 export interface SendOpts {
@@ -551,7 +564,8 @@ export function batchListKeyboard(
       { text: `✏️ ${i.n}`, callback_data: shortCallback("edit", i.id) },
       { text: `👁 ${i.n}`, callback_data: shortCallback("vw", i.id) },
     ];
-    if (i.copy) row.push({ text: "📋", copy_text: i.copy });
+    const copy = copyButton("📋", i.copy);
+    if (copy) row.push(copy);
     return row;
   });
   const { page, pages } = opts;
@@ -634,7 +648,8 @@ export function approvalKeyboard(
     ],
   ];
   // One tap puts the body on the clipboard (Wave 8 §3.1).
-  if (opts.copy) rows.push([{ text: "📋 Copy", copy_text: opts.copy }]);
+  const copy = copyButton("📋 Copy", opts.copy);
+  if (copy) rows.push([copy]);
   // The dashboard as a Mini App inside Telegram (§3.2): only when Jack has
   // filled in the dashboard_url setting, so the button is never a dead link.
   if (opts.dashboardUrl) {

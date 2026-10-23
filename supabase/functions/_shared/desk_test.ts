@@ -74,7 +74,7 @@ Deno.test("contract: the tg-webhook approve hop matches what approve re-checks (
 Deno.test("approval card: 📋 copy and Open-in-dashboard (Wave 8 §3.1, §3.2)", () => {
   const kb = approvalKeyboard(ID, { copy: "the body", dashboardUrl: "https://hub.example/mini" });
   const flat = kb.flat();
-  assert(flat.some((b) => b.copy_text === "the body"), "copy button missing");
+  assert(flat.some((b) => b.copy_text?.text === "the body"), "copy button missing");
   assert(flat.some((b) => b.web_app?.url === "https://hub.example/mini"), "web_app button missing");
   // No settings → no buttons: never a dead link or an empty copy row.
   assert(!approvalKeyboard(ID).flat().some((b) => b.copy_text || b.web_app), "opt-in only");
@@ -112,4 +112,17 @@ Deno.test("replaceRowsFor: a single card collapses; a shared panel keeps the oth
   assertEquals(out[1], panel[1]);
   assertEquals(out[2], panel[2]);
   assertEquals(replaceRowsFor(undefined, A, stamp), stamp);
+});
+
+// 23 Oct 2026: Telegram answered sendMessage with 400 "Field copy_text must be of
+// type Object" and the content function turned it into a 500 "unexpected failure"
+// after the draft had already been saved. The API wants { text } (1 to 256 chars).
+Deno.test("approval card: copy_text is an object, and a body over 256 chars gets no copy button", () => {
+  const ok = approvalKeyboard(ID, { copy: "the body" }).flat().find((b) => b.copy_text);
+  assertEquals(ok?.copy_text, { text: "the body" });
+  const edge = approvalKeyboard(ID, { copy: "x".repeat(256) }).flat().find((b) => b.copy_text);
+  assertEquals(edge?.copy_text?.text.length, 256);
+  const long = approvalKeyboard(ID, { copy: "x".repeat(257) }).flat();
+  assert(!long.some((b) => b.copy_text), "Telegram rejects copy_text over 256 chars");
+  assert(!approvalKeyboard(ID, { copy: "" }).flat().some((b) => b.copy_text), "empty copy is rejected too");
 });
