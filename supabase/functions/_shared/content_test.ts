@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "std/assert/mod.ts";
-import { buildCommentJobs, parsePoll, pickLines, render, requiredLineFacts, shortIdRange } from "./content.ts";
+import { buildCommentJobs, parsePoll, pickLines, render, requiredLineFacts, shortIdRange, VARIANT_WITH_ITEM_SELECT } from "./content.ts";
 
 Deno.test("a Desk short id becomes a uuid range (Postgres has no LIKE on uuid)", () => {
   assertEquals(shortIdRange("C0203593"), {
@@ -106,8 +106,7 @@ Deno.test("parsePoll: Telegram's own limits are enforced at the edge", () => {
   assertEquals(bigQ?.question.length, 300, "the question is capped at Telegram's 300 with the ? kept");
 });
 
-Deno.test("content/edit names the variant→item foreign key (two exist, so a bare embed is ambiguous)", async () => {
-  const src = await Deno.readTextFile(new URL("../content/index.ts", import.meta.url));
-  assertEquals(/content_items\(/.test(src), false);
-  assertEquals(src.includes("content_items!content_variants_item_id_fkey("), true);
+Deno.test("the edit select names the variant→item foreign key (two exist, so a bare embed is ambiguous)", () => {
+  assertEquals(/content_items\(/.test(VARIANT_WITH_ITEM_SELECT), false);
+  assertEquals(VARIANT_WITH_ITEM_SELECT.includes("content_items!content_variants_item_id_fkey("), true);
 });
