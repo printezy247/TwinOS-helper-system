@@ -1,0 +1,20 @@
+# Quick Win 5: automatic update PRs. Two ecosystems exist in this repo —
+# GitHub Actions workflows and the PC worker's Python requirements. There is
+# no JS package.json at the root (the dashboard lives in its own repo), so
+# npm has nothing to do here.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+  - package-ecosystem: pip
+    directory: "/workers/pc"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies]
