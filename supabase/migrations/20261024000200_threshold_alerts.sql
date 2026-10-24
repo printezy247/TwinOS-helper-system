@@ -129,12 +129,24 @@ revoke all on function public.twinos_threshold_alerts() from public;
 grant execute on function public.twinos_threshold_alerts() to postgres;
 
 -- Every minute = "alert fires within 60s of condition" from the plan.
--- cron.schedule with a fixed job name replaces on re-run.
-select cron.schedule(
-  'twinos-threshold-alerts',
-  '* * * * *',
-  $$select public.twinos_threshold_alerts()$$
-);
+-- pg_cron is absent on a vanilla Postgres (CI): the schedule degrades to a
+-- notice — same pattern as 0023_metrics_cron.sql.
+do $$
+begin
+  if exists (select 1 from pg_namespace where nspname = 'cron') then
+    if exists (select 1 from cron.job where jobname = 'twinos-threshold-alerts') then
+      perform cron.unschedule('twinos-threshold-alerts');
+    end if;
+    perform cron.schedule(
+      'twinos-threshold-alerts',
+      '* * * * *',
+      $cron$select public.twinos_threshold_alerts()$cron$
+    );
+    raise notice 'scheduled twinos-threshold-alerts (every minute)';
+  else
+    raise notice 'pg_cron not available here: schedule twinos-threshold-alerts on Supabase';
+  end if;
+end $$;
 
 -- GET /health/check verifies the realtime publication is intact. Edge
 -- functions talk through the PostgREST client, which cannot run arbitrary
