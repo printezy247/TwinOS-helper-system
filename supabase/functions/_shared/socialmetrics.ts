@@ -113,6 +113,40 @@ export function insightSum(body: Record<string, unknown>, name: string): number 
   return entry.values.reduce((sum, v) => sum + Number(v?.value ?? 0), 0);
 }
 
+/** Follow Meta Graph cursor pagination across pages, capped to avoid runaway calls. */
+async function paginateGraph(url: string, f: FetchFn, maxPages = 6): Promise<unknown[]> {
+  let current = url;
+  const all: unknown[] = [];
+  for (let i = 0; i < maxPages; i++) {
+    const body = await getJson(current, f);
+    const data = Array.isArray(body.data) ? (body.data as unknown[]) : [];
+    all.push(...data);
+    const after = (body.paging as { cursors?: { after?: string } } | undefined)?.cursors?.after;
+    if (!after) break;
+    current = `${current}${current.includes("?") ? "&" : "?"}after=${q(after)}`;
+  }
+  return all;
+}
+
+/** Follow YouTube nextPageToken pagination for playlistItems, capped to avoid runaway calls. */
+async function paginateYouTube(
+  url: string,
+  f: FetchFn,
+  maxPages = 6,
+): Promise<unknown[]> {
+  let pageToken: string | null = null;
+  const all: unknown[] = [];
+  for (let i = 0; i < maxPages; i++) {
+    const current = pageToken ? `${url}&pageToken=${q(pageToken)}` : url;
+    const body = await getJson(current, f);
+    const items = Array.isArray(body.items) ? (body.items as unknown[]) : [];
+    all.push(...items);
+    pageToken = (body.nextPageToken as string | undefined) ?? null;
+    if (!pageToken) break;
+  }
+  return all;
+}
+
 /** A token without a stored id: `/me` resolves it (page and user tokens both answer). */
 async function meId(
   base: string,
@@ -135,13 +169,11 @@ export async function pollInstagram(
   const warnings: string[] = [];
   const rows: SocialRow[] = [];
 
-  const list = await getJson(
+  const mediaRaw = await paginateGraph(
     `${GRAPH}/${q(userId)}/media?fields=id,timestamp&limit=25&access_token=${q(creds.token)}`,
     f,
   );
-  const media = Array.isArray(list.data)
-    ? (list.data as Array<{ id?: string; timestamp?: string }>)
-    : [];
+  const media = (mediaRaw as Array<{ id?: string; timestamp?: string }>).filter((m) => m?.id);
   for (const m of media) {
     if (!m?.id) continue;
     try {
@@ -206,13 +238,11 @@ export async function pollFacebook(
   const warnings: string[] = [];
   const rows: SocialRow[] = [];
 
-  const list = await getJson(
+  const postsRaw = await paginateGraph(
     `${GRAPH}/${q(pageId)}/posts?fields=id,created_time&limit=25&access_token=${q(creds.token)}`,
     f,
   );
-  const posts = Array.isArray(list.data)
-    ? (list.data as Array<{ id?: string; created_time?: string }>)
-    : [];
+  const posts = (postsRaw as Array<{ id?: string; created_time?: string }>).filter((p) => p?.id);
   for (const p of posts) {
     if (!p?.id) continue;
     try {
@@ -353,14 +383,13 @@ export async function pollYouTube(
     warnings.push("the channel has no uploads playlist");
     return { rows, warnings };
   }
-  const pl = await getJson(
+  const ids = (await paginateYouTube(
     `${YTAPI}/playlistItems?part=contentDetails&playlistId=${q(uploads)}&maxResults=25&key=${
       q(creds.apiKey)
     }`,
     f,
-  );
-  const ids = (Array.isArray(pl.items) ? pl.items : [])
-    .map((i: { contentDetails?: { videoId?: string } }) => i?.contentDetails?.videoId)
+  ) as Array<{ contentDetails?: { videoId?: string } }>)
+    .map((i) => i?.contentDetails?.videoId)
     .filter((v): v is string => Boolean(v))
     .map(q);
   if (!ids.length) return { rows, warnings };
@@ -415,10 +444,45 @@ export function subscriberDelta(
   return next - previous;
 }
 
-/** A partial provider failure must make the shared poller health beat degraded. */
+/** One surface's outcome — ran-and-succeeded, ran-and-failed, or skipped (no credentials). */
+export interface SurfaceResult {
+  ok?: boolean;
+  skipped?: boolean;
+  rows?: number;
+  inserted?: number;
+  error?: string;
+  warnings?: string[];
+}
+
+/**
+ * Aggregate per-surface results into a single run-level outcome.
+ *  - no surfaces → skipped
+ *  - all skipped → skipped
+ *  - any non-skipped surface failed → degraded
+ *  - otherwise → ok (sum inserted).
+ */
+export function pollOutcome(
+  surfaces: Record<string, SurfaceResult>,
+): { ok: boolean; status: "ok" | "skipped" | "degraded"; inserted: number } {
+  const vals = Object.values(surfaces);
+  if (!vals.length) return { ok: false, status: "skipped", inserted: 0 };
+  const active = vals.filter((s) => !s.skipped);
+  if (!active.length) return { ok: false, status: "skipped", inserted: 0 };
+  if (active.some((s) => !s.ok)) return { ok: false, status: "degraded", inserted: 0 };
+  return {
+    ok: true,
+    status: "ok",
+    inserted: active.reduce((sum, s) => sum + (s.inserted ?? s.rows ?? 0), 0),
+  };
+}
+
+/** A partial provider failure must make the shared poller health beat degraded.
+ *  Surfaces that were skipped (no credentials) are treated as non-degrading;
+ *  only configured-and-failed surfaces flip the beat to degraded. */
 export function pollHealthStatus(
-  surfaces: Record<string, { ok: boolean }>,
+  surfaces: Record<string, { ok?: boolean; skipped?: boolean }>,
 ): "ok" | "degraded" {
-  const results = Object.values(surfaces);
-  return results.length > 0 && results.every((surface) => surface.ok) ? "ok" : "degraded";
+  const active = Object.values(surfaces).filter((s) => !s.skipped);
+  if (!active.length) return Object.keys(surfaces).length > 0 ? "ok" : "degraded";
+  return active.every((s) => s.ok) ? "ok" : "degraded";
 }

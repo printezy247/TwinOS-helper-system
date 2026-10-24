@@ -25,10 +25,12 @@ import {
   pollFacebook,
   pollHealthStatus,
   pollInstagram,
+  pollOutcome,
   type PollOutcome,
   pollThreads,
   pollYouTube,
   type SocialRow,
+  type SurfaceResult,
   subscriberDelta,
 } from "_shared/socialmetrics.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -249,7 +251,7 @@ serve(async (req) => {
   // provider actually reported.
   if (tail[0] === "poll" && (tail[1] === "meta" || tail[1] === "youtube")) {
     const provider = tail[1];
-    const surfaces: Record<string, { ok: boolean; rows?: number; error?: string }> = {};
+    const surfaces: Record<string, SurfaceResult> = {};
     const skipped: string[] = [];
     const warnings: string[] = [];
     let inserted = 0;
@@ -292,25 +294,30 @@ serve(async (req) => {
         const out = await job.run();
         const n = await saveSocialRows(db, out.rows);
         inserted += n;
-        surfaces[job.platform] = { ok: true, rows: n };
+        surfaces[job.platform] = { ok: true, inserted: n } as SurfaceResult;
         warnings.push(...out.warnings.map((w) => `${job.platform}: ${w}`));
       } catch (e) {
-        surfaces[job.platform] = { ok: false, error: e instanceof Error ? e.message : String(e) };
+        const err = e instanceof Error ? e.message : String(e);
+        surfaces[job.platform] = { ok: false, error: err } as SurfaceResult;
       }
+    }
+    for (const s of skipped) {
+      const platform = s.split(" ")[0];
+      surfaces[platform] = { ok: true, skipped: true } as SurfaceResult;
     }
 
     // One beat per run keeps the board's `poller` source honest; a run with
     // nothing to poll (no credentials yet) beats nothing rather than lying.
-    const anyOk = Object.values(surfaces).some((s) => s.ok);
-    if (jobs.length > 0) {
+    const outcome = pollOutcome(surfaces);
+    if (jobs.length > 0 || skipped.length > 0) {
       await db.from("health_checks").insert({
         source: "poller",
         status: pollHealthStatus(surfaces),
         detail: {
           provider,
           inserted,
-          skipped,
-          failed: Object.entries(surfaces).filter(([, s]) => !s.ok).map(([p, s]) =>
+          skipped: skipped.length,
+          failed: Object.entries(surfaces).filter(([, s]) => !s.ok && !s.skipped).map(([p, s]) =>
             `${p}: ${s.error}`
           ),
         },
@@ -322,7 +329,7 @@ serve(async (req) => {
       payload: { provider, inserted, skipped: skipped.length, surfaces },
     });
     return json({
-      ok: anyOk || jobs.length === 0,
+      ok: outcome.ok,
       provider,
       surfaces,
       skipped,
