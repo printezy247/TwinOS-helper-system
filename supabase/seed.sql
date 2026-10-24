@@ -76,6 +76,11 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('health_stale_ops_bot', '1440', 'Minutes before the ops bot counts as stale (24 h).', false),
   ('health_stale_abdul', '1440', 'Minutes before ABDUL counts as stale (24 h).', false),
   ('health_stale_sales_bot', '1440', 'Minutes before the sales bot counts as stale (24 h).', false),
+  -- Phase 1 decisions (UPGRADE-PHASES Decision Log): global stale fallback +
+  -- whether the Approval Inbox badge counts drafts. Migration
+  -- 20261024000100 holds the same rows for environments that skip the seed.
+  ('health_stale_threshold_hours', '6', 'Decision 1 (Phase 1): global fallback hours before a health source counts as stale. Per-source health_stale_<source> rows (minutes) override this where they exist.', false),
+  ('inbox_badge_counts_drafts', 'true', 'Decision 2 (Phase 1): when true the Approval Inbox nav badge counts drafts alongside pending approvals.', false),
   ('platform_daily_limits', '{"instagram": 100, "facebook": 30, "threads": 250}', 'Official API posting limits per 24 h (§9.F).', false),
   ('media_max_mb', '45', 'Storage: media ≤ 45 MB (§7).', false),
   ('snapshot_offsets', '["1h", "24h", "7d"]', 'Post view snapshot schedule (§9.H.66).', false),
