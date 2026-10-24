@@ -138,4 +138,16 @@ export const SETTING_KEYS = {
   dashboardUrl: "dashboard_url", // Wave 8 §3.2: the Mini App URL the Desk's web_app buttons open
   openrouterApiKey: "openrouter_api_key",
   openrouterModel: "openrouter_model", // default "openrouter/free"
+  // Phase 8 metrics pollers: settings row first, function secret as fallback
+  // (seeded + migration 20261024002000, all needs_confirm on the dashboard).
+  // Test credentials are fine — a surface with no value skips by name
+  // instead of faking a poll.
+  metaIgUserId: "meta_ig_user_id",
+  metaIgToken: "meta_ig_token",
+  metaPageId: "meta_page_id",
+  metaPageToken: "meta_page_token",
+  threadsUserId: "threads_user_id",
+  threadsToken: "threads_token",
+  ytApiKey: "yt_api_key", // YouTube Data API v3 key
+  ytChannelId: "yt_channel_id",
 } as const;
