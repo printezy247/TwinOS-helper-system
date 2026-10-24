@@ -33,7 +33,11 @@ async function latestBeats() {
   const out: Record<string, { status: string; at: string; detail: unknown; stale: boolean; stale_after_min: number }> = {};
   for (const source of SOURCES) {
     const { data } = await db.from("health_checks").select("status, detail, at").eq("source", source).order("at", { ascending: false }).limit(1).maybeSingle();
-    const staleMin = Number((await settingTyped(`health_stale_${source}`)) ?? STALE_DEFAULT_MIN[source]);
+    // Decision 1 (Phase 1): per-source minutes win; a source without a row
+    // falls back to the global hours setting, then to the hardcoded default.
+    const globalHours = Number(await settingTyped("health_stale_threshold_hours"));
+    const fallback = Number.isFinite(globalHours) && globalHours > 0 ? globalHours * 60 : STALE_DEFAULT_MIN[source];
+    const staleMin = Number((await settingTyped(`health_stale_${source}`)) ?? fallback);
     const at = data?.at ?? null;
     const stale = !at || Date.now() - Date.parse(at) > staleMin * 60_000;
     out[source] = { status: data?.status ?? "never", at: at ?? "", detail: data?.detail ?? null, stale, stale_after_min: staleMin };
