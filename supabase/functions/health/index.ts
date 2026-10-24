@@ -20,6 +20,7 @@ import { tokenWarnings } from "_shared/meta.ts";
 import { escapeHtml, sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
 import { checkWebhook, runProviderChecks } from "_shared/providers.ts";
+import { HEALTH_SOURCES, STALE_DEFAULT_MIN } from "_shared/health_sources.ts";
 import { deskAlert, staleBeatPlan, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
 import { channelStage, feedStale, FEED_STALE_MS } from "_shared/insights.ts";
 import { currentTrace } from "_shared/trace.ts";
@@ -42,10 +43,7 @@ registerGauge("twinos_ratelimit_available", "Tokens left in the registered limit
   return vals.length ? Math.min(...vals) : -1;
 });
 
-const SOURCES = ["ops_bot", "scheduler", "pc_worker", "poller", "abdul", "sales_bot"] as const;
-const STALE_DEFAULT_MIN: Record<string, number> = {
-  ops_bot: 24 * 60, scheduler: 5, pc_worker: 20, poller: 30, abdul: 24 * 60, sales_bot: 24 * 60,
-};
+const SOURCES = HEALTH_SOURCES;
 
 async function latestBeats() {
   const db = admin();
