@@ -19,7 +19,7 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 4. ~~Decide: health stale threshold (6h), inbox badge counts drafts~~ — deferred by Jack (24 Oct); documented defaults seeded to the DB (Decisions 1–2), changeable in Settings later
 
 **Delivered 24 Oct (Codex, one PR per phase, all CI green, live-verified)**:
-Phases 4, 5, 6, 7 backend+dashboard as marked below — helper PRs #106/#107 (observability), #108 (AI pipeline), #109 (clip pipeline), #110 (webhooks + funnel); mirror PRs #17 (AI UI), #18 (clips decisions), #19 (affiliates). Phases 1–3 were closed earlier the same day. Still open: Phase 7's MCP server + public API keys, every Phase 8 platform item (blocked on provider credentials), Phase 9's four deliberately-skipped rewrites, and the Quick Wins below.
+Phases 4, 5, 6, 7 backend+dashboard as marked below — helper PRs #106/#107 (observability), #108 (AI pipeline), #109 (clip pipeline), #110 (webhooks + funnel); mirror PRs #17 (AI UI), #18 (clips decisions), #19 (affiliates). Phases 1–3 were closed earlier the same day. Still open: every Phase 8 platform item (blocked on provider credentials), Phase 9's four deliberately-skipped rewrites, and the Quick Wins below.
 
 ---
 
@@ -138,12 +138,12 @@ Phases 4, 5, 6, 7 backend+dashboard as marked below — helper PRs #106/#107 (ob
 
 ## Phase 7 — Community & Growth (2 weeks)
 
-**Status: partially done 24 Oct (helper #110 + mirror #19, merged green, live-verified)**:
+**Status: done 24 Oct — all five items built (webhooks/referrals/affiliates earlier 24 Oct, helper #110 + mirror #19; MCP server + public API keys this round)**:
 - ✅ **Webhook registry + dispatch** — `webhooks`/`webhook_deliveries` (RLS: Jack only), `webhooks` function with register/list/remove (jack) + dispatch (cron, every minute via `twinos_cron_call`), HMAC-signed POSTs, Decision 6 exactly (4 attempts, retries +1m/+5m/+15m — proven live: a 2xx delivered, an HTTP 404 requeued with the delay armed), `/ping` echo for receiver-side signature verification, emitters on post.published / alert.fired / signal.result / friday.done.
 - ✅ **Referral tracking** — `v_referral_funnel` (joins/leaves from Telegram attribution; clicks/deposits/FTDs/IB/commissions/payouts from `manual_metrics` via the link's campaign; unmeasured = null, never a fake zero).
 - ✅ **Affiliate dashboard** — `/affiliates` route in the Grow group (palette `g b`), read-only over the view.
-- ⬜ **MCP server** — not built this round; Decision 5's default (bearer token, ≤8 tools) is ready when it is picked up.
-- ⬜ **Public API keys** — not built this round; the internal scoped-key system (`twk_…`, `mint-keys.sh`) already exists and is the pattern to extend for partners.
+- ✅ **MCP server** — `mcp` function (`POST /mcp`, JSON-RPC 2.0: initialize · tools/list · tools/call), Decision 5's default taken — bearer token, same as the edge functions (`twk_…` straight off Authorization, deployed `--no-verify-jwt`). **7 tools**: get_health, get_friday, get_signals, draft_post, fanout_post, get_calendar, search_feed — the plan table's `approve_post` was dropped deliberately: approval stays Jack's tap (roles.ts + apps/mcp refuse any agent approve path), and the risk register caps v1 at 8 tools.
+- ✅ **Public API keys** — `partner` role on `api_keys`, per-key `rate_limit_per_min` (mint default 60/min → `429 { error: "rate_limited", retry_after_s }` when exhausted), the plan's three scopes (`read:health · read:signals · write:posts`) enforced per MCP tool, and a Jack-only `keys` function (list / mint-once / revoke) so the dashboard manages keys.
 
 **Owner**: Codex (main repo + mirror-hub)
 
@@ -151,7 +151,7 @@ Phases 4, 5, 6, 7 backend+dashboard as marked below — helper PRs #106/#107 (ob
 
 | Work | Why |
 |------|-----|
-| **MCP server** | Expose TwinOS as MCP server: `tools: get_health, get_friday, get_signals, draft_post, approve_post, fanout_post, get_calendar, search_feed` | Agents (Claude, Cursor, Codex) can drive TwinOS natively |
+| **MCP server** | Expose TwinOS as MCP server (`POST /mcp`, bearer auth): `tools: get_health, get_friday, get_signals, draft_post, fanout_post, get_calendar, search_feed` (7 — no approve: approval stays Jack's tap) | Agents (Claude, Cursor, Codex) can drive TwinOS natively |
 | **Webhook registry** | `webhooks` table + `webhooks/dispatch` function: register URLs per event (post.published, signal.result, alert.fired, friday.done); retry with backoff | External systems (Make, n8n, custom) subscribe to TwinOS events |
 | **Public API keys** | Scoped keys (read:health, write:posts, read:signals) + rate limits per key; dashboard manages keys | Partners integrate without Jack's credentials |
 | **Referral tracking** | Extend `invite_links` + `member_events` → `v_campaign_cost` already exists; add `v_referral_funnel` (clicks → joins → deposits → IB) | Friday scoreboard shows cost per FTD per campaign |
@@ -256,6 +256,6 @@ Phase 9 (ongoing)
 | 2 | Inbox badge counts drafts | Yes | Phase 1 | ✅ seeded (`inbox_badge_counts_drafts=true`); same deferral note |
 | 3 | OpenRouter model for production | `openrouter/free` → upgrade to `anthropic/claude-3.5-sonnet` when budget allows | Phase 5 | ✅ default live; upgrade is one Settings row when you want it |
 | 4 | Clip candidate auto-create trigger | On `map_recap` + `lesson` publish | Phase 6 | ✅ live (`clip_auto_create=true`), deduped per content |
-| 5 | MCP server auth | Bearer token (same as edge functions) | Phase 7 | ⬜ awaiting the MCP build (deferred this round) |
+| 5 | MCP server auth | Bearer token (same as edge functions) | Phase 7 | ✅ default taken — `mcp` ships `--no-verify-jwt` and reads the `twk_…` bearer / X-TwinOS-Key in the handler |
 | 6 | Webhook retry policy | 3× exponential backoff (1m, 5m, 15m) | Phase 7 | ✅ implemented exactly, proven live (deliver + 404-requeue) |
 | 7 | Next platform after TikTok | YouTube Shorts (highest ROI for trading content) | Phase 8 | ⬜ awaiting YouTube API credentials |

@@ -33,6 +33,7 @@
  */
 import { admin, anonWithJwt, setting, SETTING_KEYS } from "./supabase.ts";
 import { HttpError } from "./http.ts";
+import { registerLimiter } from "./backoff.ts";
 import { verifySession } from "./miniapp.ts";
 import type { Role } from "./roles.ts";
 
@@ -43,6 +44,8 @@ export interface Caller {
   /** For action_log.actor: jack | abdul | ops_bot | dashboard | cron | ezyai | pc_worker. */
   actor: string;
   keyName?: string;
+  /** The key's scopes (Phase 7); null for logins, cron and unscoped keys. */
+  scopes?: string[] | null;
 }
 
 const KEY_RE = /^twk_([a-z_]+)_([0-9a-f]{40})$/;
@@ -191,13 +194,37 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
   }
 }
 
+/* ------------------------------------------------------------------------ */
+/* Per-key rate limits (Phase 7)                                               */
+/*                                                                             */
+/* Only keys with rate_limit_per_min set get a bucket — partner keys minted   */
+/* from the dashboard; internal keys keep their NULL and their old            */
+/* behaviour. Buckets are isolate-local, like every other limiter here, and   */
+/* the live ones are registered under key:<name> for GET /health/ratelimit.   */
+/* ------------------------------------------------------------------------ */
+
+const keyBuckets = new Map<string, KeyBucket>();
+
+/** One key's refill state: `limit` tokens per 60 s, refilled by elapsed time. */
+export type KeyBucket = { tokens: number; at: number; limit: number };
+
+/** Consume one token (refilling first). Pure; `now` is injectable for tests. */
+export function takeKeyToken(bucket: KeyBucket, now = Date.now()): boolean {
+  const elapsed = Math.max(0, now - bucket.at);
+  bucket.tokens = Math.min(bucket.limit, bucket.tokens + (elapsed * bucket.limit) / 60_000);
+  bucket.at = now;
+  if (bucket.tokens < 1) return false;
+  bucket.tokens -= 1;
+  return true;
+}
+
 async function callerFromKey(token: string): Promise<Caller> {
   const m = KEY_RE.exec(token);
   if (!m) throw new HttpError(401, "unauthorized", "malformed api key");
   const hash = await sha256Hex(token);
   const { data, error } = await admin()
     .from("api_keys")
-    .select("id, name, role, revoked_at")
+    .select("id, name, role, scopes, rate_limit_per_min, revoked_at")
     .eq("key_hash", hash)
     .maybeSingle();
   if (error) throw new HttpError(503, "upstream_failed", "api_keys lookup failed");
@@ -210,13 +237,34 @@ async function callerFromKey(token: string): Promise<Caller> {
     // The prefix is cosmetic; the table decides. Refuse if they disagree.
     throw new HttpError(401, "unauthorized", "key prefix does not match its role");
   }
+  // Phase 7: per-key rate limit. A throttled request consumes nothing else —
+  // no beat, no work — and answers with the standard rate_limited code so the
+  // caller can back off (retry_after_s is a conservative whole window).
+  const limit = typeof data.rate_limit_per_min === "number" ? data.rate_limit_per_min : 0;
+  if (limit > 0) {
+    const bucket = keyBuckets.get(data.id) ?? { tokens: limit, at: Date.now(), limit };
+    keyBuckets.set(data.id, bucket);
+    registerLimiter(`key:${data.name}`, () => Math.floor(bucket.tokens));
+    if (!takeKeyToken(bucket)) {
+      throw new HttpError(429, "rate_limited", `rate limit reached for key ${data.name}`, {
+        limit_per_min: limit,
+        retry_after_s: 60,
+      });
+    }
+  }
   // Fire-and-forget beat; a failed update must not fail the request.
   admin()
     .from("api_keys")
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", data.id)
     .then(() => {}, () => {});
-  return { role: data.role as Role, subject: data.id, actor: data.role, keyName: data.name };
+  return {
+    role: data.role as Role,
+    subject: data.id,
+    actor: data.role,
+    keyName: data.name,
+    scopes: (data.scopes as string[] | null) ?? null,
+  };
 }
 
 async function callerFromJwt(req: Request, jwt: string): Promise<Caller> {
