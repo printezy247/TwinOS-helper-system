@@ -6,7 +6,7 @@
  *   POST /health/check      {}   (cron, every 5 min) → alert Jack on stale sources and on Meta tokens
  *                                that lapse within 7 days (TWINOS_META_IG_EXPIRES, _PAGE_EXPIRES, TWINOS_THREADS_EXPIRES)
  *
- * Who: beats from ezyai, ops_bot, pc_worker, cron, abdul, jack; reads: all.
+ * Who: beats from ops_bot, pc_worker, cron, abdul, jack; reads: all.
  * Expected cadence per source lives in `settings` as `health_stale_<source>`
  * (minutes), defaulting to STALE_DEFAULT_MIN.
  */
@@ -42,9 +42,9 @@ registerGauge("twinos_ratelimit_available", "Tokens left in the registered limit
   return vals.length ? Math.min(...vals) : -1;
 });
 
-const SOURCES = ["ezyai", "ops_bot", "scheduler", "pc_worker", "poller", "abdul", "sales_bot"] as const;
+const SOURCES = ["ops_bot", "scheduler", "pc_worker", "poller", "abdul", "sales_bot"] as const;
 const STALE_DEFAULT_MIN: Record<string, number> = {
-  ezyai: 30, ops_bot: 24 * 60, scheduler: 5, pc_worker: 20, poller: 30, abdul: 24 * 60, sales_bot: 24 * 60,
+  ops_bot: 24 * 60, scheduler: 5, pc_worker: 20, poller: 30, abdul: 24 * 60, sales_bot: 24 * 60,
 };
 
 async function latestBeats() {

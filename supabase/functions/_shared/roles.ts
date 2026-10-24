@@ -12,7 +12,6 @@ export type Role =
   | "abdul" // ABDUL's scoped key
   | "ops_bot" // the tg-webhook function acting for the bot
   | "pc_worker" // scoped key on Jack's PC
-  | "ezyai" // scoped key held by the EzyAi bot on its host
   | "sales_bot" // scoped key for @EzyRegisterBot, wherever it is hosted
   | "tradingview" // tv-webhook secret
   | "cron" // pg_cron / scheduler invocations (service role + x-twinos-actor: cron)
@@ -35,7 +34,6 @@ export type Action =
   | "content.template_variant" // give one platform its own wording for a post type
   | "content.fanout_drain" // cron works the fan-out retry queue
   | "publish.run"
-  | "signals.ingest"
   | "tv.alert"
   | "results.reply"
   | "assets.ingest"
@@ -60,7 +58,6 @@ const ALL: Role[] = [
   "abdul",
   "ops_bot",
   "pc_worker",
-  "ezyai",
   "sales_bot",
   "tradingview",
   "cron",
@@ -96,9 +93,8 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   // this is not.
   "content.template_variant": ["jack"],
   "publish.run": ["cron", "jack"],
-  "signals.ingest": ["ezyai"],
   "tv.alert": ["tradingview"],
-  "results.reply": ["abdul", "cron", "ezyai", "jack"],
+  "results.reply": ["abdul", "cron", "jack"],
   "assets.ingest": ["pc_worker", "jack"],
   "links.create": ["jack", "abdul"],
   "metrics.manual": ["jack", "abdul"],
@@ -114,7 +110,7 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   // sales_bot is here because the health board watches it and it could never
   // report: there was no such role, so no key could ever carry one. It gets
   // nothing else — least privilege until it has a job to do here.
-  "health.beat": ["ezyai", "sales_bot", "ops_bot", "pc_worker", "cron", "abdul", "jack"],
+  "health.beat": ["sales_bot", "ops_bot", "pc_worker", "cron", "abdul", "jack"],
   "research.csi": ["jack", "abdul"],
   "research.brief": ["jack", "abdul", "pc_worker"],
   // Read-only research pages. Separate from research.run, which polls feeds and

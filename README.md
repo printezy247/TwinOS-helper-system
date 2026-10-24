@@ -82,7 +82,7 @@ graph TB
     end
 
     subgraph Integrations["🔗 Integrations"]
-        H[EzyAi / TradingView<br/>Signal Source]
+        H[TradingView<br/>Signal Source]
         I["@EzyOps Bot<br/>Telegram"]
         J[printezy<br/>Board]
         K[PC Worker<br/>Local GPU]
@@ -115,7 +115,6 @@ graph TB
 | `publish` | pg_cron (every min) | Schedule & send posts with backoff | ✅ Phase 0 |
 | `tg-webhook` | Telegram Bot API | Desk input, buttons, member events | ✅ Phase 0 |
 | `tv-webhook` | TradingView alerts | Signal card drafts (COUNTER-TREND line kept) | 🟡 Phase 1 |
-| `signals-ingest` | Signal bot | Idempotent batch ingestion | ✅ Phase 0 |
 | `results` | ABDUL, cron | Result replies under signals | 🟡 Phase 1 |
 | `health` | Everyone (beats) | System health checks | ✅ Phase 0 |
 | `friday` | cron, Jack, ABDUL | Weekly scoreboard | 🟡 Phase 1 |
@@ -141,7 +140,6 @@ TwinOS-helper-system/
 │   │   ├── publish/         # Scheduled publishing with backoff
 │   │   ├── tg-webhook/      # Telegram inbound events
 │   │   ├── tv-webhook/      # TradingView alerts
-│   │   ├── signals-ingest/  # Signal data extraction
 │   │   ├── results/         # Performance tracking & replies
 │   │   ├── health/          # System health checks
 │   │   ├── friday/          # Weekly scoreboard

@@ -116,7 +116,7 @@ the funded tiers, the EzyAI founding price) — see UPGRADE-PLAN §16.2.
 
 Every connection is either the **service role** (Edge Functions, bypasses RLS)
 or an **authenticated** JWT carrying a custom claim `twinos_role`. Scoped keys
-for EzyAi, the ops bot, the PC worker, ABDUL and cron are JWTs signed with the
+for the ops bot, the PC worker, ABDUL and cron are JWTs signed with the
 project's JWT secret with `role: "authenticated"` and the `twinos_role` claim;
 Jack and the dashboard get the claim through a Supabase Auth hook
 (`custom_access_token_hook`) that reads a `jack`/`dashboard` mapping.
@@ -127,7 +127,6 @@ Jack and the dashboard get the claim through a Supabase Auth hook
 | `abdul` | read all; insert/update `content_items` and `content_variants` while `draft`/`pending_approval`; insert `jobs`, `queries`, `csi_captures`, `manual_metrics`, `approvals` (requests), `compliance_checks`, `briefs`, `exemplars`, `baseline_hours`, `time_saved`, `alerts`, `health_checks` |
 | `cron` | like `abdul`, plus `publish_jobs` and `channel_daily` |
 | `ops_bot` | insert `member_events`, `moderation_events`, `post_snapshots`, `tg_posts`, `signal_posts`, `invite_links`, `channel_daily`; update `publish_jobs`, `tg_posts`; read `settings`, `mod_rules`, `invite_links`, `publish_jobs`, `content_variants/items`, `tg_posts`, `signal_posts`, `member_events`, `approvals`, `brand_facts`, `templates` |
-| `ezyai` | insert / upsert `signals` and `signal_outcomes` only (plus health beats); use `ingest_signals(jsonb)` and `ingest_outcome(jsonb)` |
 | `pc_worker` | select/update `jobs`; insert `assets`, `post_metrics`, `telechurn_imports`, `queries`, `topic_clusters`; read `settings`, `assets`, research tables, `content_*`, `personas`, `benchmarks`, `exemplars` |
 | `dashboard` | read all; writes only through RPC / Edge Functions |
 | `anon` | the public board: `v_results_board`, backed by column grants and an RLS policy on live, non-shadow `signals` only (0013) |
@@ -171,9 +170,9 @@ against it and must not redesign tables.
    numbering style and are reviewed before `db push`.
 3. The UI reads through the views and tables its role allows (`dashboard` or
    `jack` claim). **No direct table writes from the UI**: every write goes through
-   an RPC (`ingest_signals`, `ingest_outcome`, and the Phase 1 functions) or an
+   an RPC (the Phase 1 functions) or an
    Edge Function (`content`, `approve`, `publish`, `tg-webhook`, `tv-webhook`,
-   `signals-ingest`, `metrics`, `research`, `jobs` — §11). The RLS and the guards
+   `metrics`, `research`, `jobs` — §11). The RLS and the guards
    make a direct write from the dashboard fail, which is intended.
 4. The approve action exists only for Jack's Telegram tap and his own dashboard
    session; ABDUL and Lovable-generated screens never carry an approve button for
@@ -186,13 +185,13 @@ against it and must not redesign tables.
 | Object | What it holds |
 |---|---|
 | `settings` | Business constants as jsonb: timezone, channel ids, posting times, IB numbers, trial days, quarter targets; `needs_confirm` flags placeholders |
-| `api_keys` | Scoped keys for ABDUL, the PC worker and EzyAi. Only the SHA-256 of each key is stored; `mint_api_key(name, role)` returns the plain key once |
+| `api_keys` | Scoped keys for ABDUL and the PC worker. Only the SHA-256 of each key is stored; `mint_api_key(name, role)` returns the plain key once |
 | `brand_facts` | Promise, pledge, IB disclosure, strict win-rate rule, hashtag index — locked lines pasted verbatim |
 | `products` | The price list: three ladders with `ladder`, `step`, `billing` (monthly/lifetime/one_time); offer posts may only quote from here |
 | `personas` | The six ICPs with pain points and seed questions (EN/BM/Manglish) |
 | `action_log` | Trigger-written audit trail: actor, action, target, payload |
 | `approvals` | Jack's Approve/Edit/Reject/Reschedule decisions and the Desk message they came from |
-| `health_checks` | Beats from EzyAi, ops bot, scheduler, PC worker, pollers |
+| `health_checks` | Beats from the ops bot, scheduler, PC worker, pollers |
 | `alerts` | Stop-if, health, publish failures, double-down tasks; deduped while open |
 | `jobs` | Outbound-only work queue the PC worker and ABDUL poll (clips, research, backups) |
 | `baseline_hours` | Week 1 time log by task (decision 6) |
@@ -208,7 +207,7 @@ against it and must not redesign tables.
 | `publish_jobs` | Scheduler queue with idempotency key, attempts, error class, platform post id |
 | `platform_accounts` | Which account posts where; Vault secret names only |
 | `compliance_checks` | Evidence trail: which checks passed per variant, by whom, when |
-| `signals` | Every signal pushed by EzyAi or TradingView (EzyAi field names), with status and R |
+| `signals` | Every signal from TradingView or entered by hand, with status and R |
 | `signal_outcomes` | Outcome events per signal (tp1, tp2, be, sl, expired), idempotent by `external_id` |
 | `signal_posts` | Channel message ids of each signal card and its result replies |
 | `invite_links` | Named invite links (`src-campaign-yymm`) with source, campaign, partner, cost |

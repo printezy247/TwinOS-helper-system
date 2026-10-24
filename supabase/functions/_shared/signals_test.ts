@@ -85,7 +85,7 @@ Deno.test("free-text fields are capped at 120 characters", () => {
 });
 
 Deno.test("the raw alert is kept for the audit trail", () => {
-  const r = validate({ external_id: "x", raw: { from: "ezyai", score: 3 } });
+  const r = validate({ external_id: "x", raw: { from: "tradingview", score: 3 } });
   assertEquals(r.ok, true);
-  if (r.ok) assertEquals(r.value.raw, { from: "ezyai", score: 3 });
+  if (r.ok) assertEquals(r.value.raw, { from: "tradingview", score: 3 });
 });
