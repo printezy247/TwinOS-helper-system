@@ -14,6 +14,7 @@ import { HttpError, notFound } from "./http.ts";
 import type { Lang, Platform, PostType } from "./compliance.ts";
 import { adaptCaption, FANOUT_DEFAULT, type FanResult, isKitPlatform, validatePlatform, withSignature } from "./platforms.ts";
 import { nextCta, nextHook } from "./hooks.ts";
+import { withTrace } from "./trace.ts";
 import { renderScriptKit, scriptKit, type KitLang, type KitPlatform } from "./kits.ts";
 
 type Media = { kind: "photo" | "video"; url?: string; asset_id?: string; file_id?: string };
@@ -77,7 +78,7 @@ export async function fanOut(
       if (opts.enqueueRetry !== false) {
         await db.from("jobs").insert({
           kind: "fanout_platform",
-          payload: { parent: masterId, platform, asset_id: opts.assetId ?? null },
+          payload: withTrace({ parent: masterId, platform, asset_id: opts.assetId ?? null }) ?? {},
           status: "queued",
           created_by: opts.actor,
         });

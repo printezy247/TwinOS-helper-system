@@ -22,6 +22,25 @@ import { integrationStatus } from "_shared/integrations.ts";
 import { runProviderChecks } from "_shared/providers.ts";
 import { deskAlert, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
 import { channelStage, feedStale, FEED_STALE_MS } from "_shared/insights.ts";
+import { currentTrace } from "_shared/trace.ts";
+import { log } from "_shared/logger.ts";
+import { registerGauge, renderProm } from "_shared/metrics.ts";
+import { limiterSnapshot } from "_shared/backoff.ts";
+
+/* Phase 4 gauges: read live at scrape time (global by construction), unlike
+   the isolate-local request counters metrics.ts accumulates. */
+registerGauge("twinos_jobs_queued", "Jobs with status=queued right now.", async () => {
+  const { count } = await admin().from("jobs").select("id", { count: "exact", head: true }).eq("status", "queued");
+  return count ?? 0;
+});
+registerGauge("twinos_alerts_open", "Alerts not yet resolved.", async () => {
+  const { count } = await admin().from("alerts").select("id", { count: "exact", head: true }).is("resolved_at", null);
+  return count ?? 0;
+});
+registerGauge("twinos_ratelimit_available", "Tokens left in the registered limiter; -1 when none is registered/readable.", () => {
+  const vals = Object.values(limiterSnapshot());
+  return vals.length ? Math.min(...vals) : -1;
+});
 
 const SOURCES = ["ezyai", "ops_bot", "scheduler", "pc_worker", "poller", "abdul", "sales_bot"] as const;
 const STALE_DEFAULT_MIN: Record<string, number> = {
@@ -101,6 +120,98 @@ serve(async (req) => {
     const err = pub.error ?? saved.error ?? pending.error;
     if (err) throw new HttpError(503, "upstream_failed", err.message);
     return json({ day, week, ...todaySummary(pub.data ?? [], (saved.data ?? []).map((r) => r.minutes_saved), pending.count ?? 0) });
+  }
+
+  // GET /health/check — the deep readiness probe (UPGRADE-PHASES Phase 4):
+  // five live checks in one payload, { ok, checks: { db, realtime,
+  // openrouter, telegram, storage } }. It spends real provider calls, so it
+  // is a button/poll target, not something to spam.
+  if (method === "GET" && tail[0] === "check") {
+    requireRole(caller.role, "reports.read");
+    const checks: Record<string, { ok: boolean; detail: string }> = {};
+
+    const { error: dbErr } = await db.from("settings").select("key").limit(1);
+    checks.db = dbErr ? { ok: false, detail: dbErr.message } : { ok: true, detail: "postgrest query ok" };
+
+    const { data: pubCount, error: pubErr } = await db.rpc("twinos_realtime_publication_count");
+    checks.realtime = pubErr
+      ? { ok: false, detail: pubErr.message }
+      : { ok: Number(pubCount) > 0, detail: `${Number(pubCount)} tables in supabase_realtime` };
+
+    const orKey = Deno.env.get("TWINOS_OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+    if (!orKey) checks.openrouter = { ok: false, detail: "OPENROUTER_API_KEY not set" };
+    else {
+      try {
+        const r = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { Authorization: `Bearer ${orKey}` },
+          signal: AbortSignal.timeout(4000),
+        });
+        checks.openrouter = r.ok
+          ? { ok: true, detail: "models endpoint reachable" }
+          : { ok: false, detail: `openrouter HTTP ${r.status}` };
+      } catch (e) {
+        checks.openrouter = { ok: false, detail: `openrouter unreachable: ${(e as Error).message}` };
+      }
+    }
+
+    const bot = Deno.env.get("TWINOS_OPS_BOT_TOKEN");
+    if (!bot) checks.telegram = { ok: false, detail: "TWINOS_OPS_BOT_TOKEN not set" };
+    else {
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${bot}/getWebhookInfo`, { signal: AbortSignal.timeout(4000) });
+        const j = await r.json() as { ok: boolean; result?: { url?: string; last_error_message?: string } };
+        checks.telegram = j.ok
+          ? {
+              ok: !j.result?.last_error_message,
+              detail: j.result?.url
+                ? `webhook set${j.result.last_error_message ? ` (last error: ${j.result.last_error_message})` : ""}`
+                : "no webhook (pull mode)",
+            }
+          : { ok: false, detail: "telegram API refused the call" };
+      } catch (e) {
+        checks.telegram = { ok: false, detail: `telegram unreachable: ${(e as Error).message}` };
+      }
+    }
+
+    const { error: stErr } = await db.storage.from("assets").list("", { limit: 1 });
+    checks.storage = stErr ? { ok: false, detail: stErr.message } : { ok: true, detail: "assets bucket listable" };
+
+    const ok = Object.values(checks).every((c) => c.ok);
+    log(ok ? "info" : "warn", "health.check.deep", { ok });
+    return json({ ok, checks, trace_id: currentTrace() });
+  }
+
+  // GET /health/metrics — Prometheus exposition (Phase 4): the global
+  // request series (request_stats) plus the live DB gauges registered at
+  // module load. Isolate-local counters are deliberately not shown — they
+  // depend on which isolate the scrape lands on.
+  if (method === "GET" && tail[0] === "metrics") {
+    requireRole(caller.role, "reports.read");
+    const { data: stats, error: statsErr } = await db
+      .from("request_stats")
+      .select("route, cls, count, errors, ms_sum, ms_max");
+    if (statsErr) throw new HttpError(503, "upstream_failed", statsErr.message);
+    const body = await renderProm((stats ?? []) as Array<{
+      route: string; cls: string; count: number; errors: number; ms_sum: number; ms_max: number
+    }>);
+    return new Response(body, {
+      headers: { "content-type": "text/plain; version=0.0.4; charset=utf-8" },
+    });
+  }
+
+  // GET /health/ratelimit — registered token buckets (Phase 4). Honest empty
+  // state: backoff.ts RateLimiter exists but is not yet wired to a request
+  // path, so this reports none active instead of inventing headroom.
+  if (method === "GET" && tail[0] === "ratelimit") {
+    requireRole(caller.role, "reports.read");
+    const limiters = limiterSnapshot();
+    return json({
+      limiters,
+      active: Object.keys(limiters).length,
+      ...(Object.keys(limiters).length
+        ? {}
+        : { note: "No request-path limiters registered yet — the bucket (backoff.ts RateLimiter) activates once /health/metrics shows real saturation." }),
+    });
   }
 
   if (method === "GET") {
