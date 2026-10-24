@@ -13,12 +13,17 @@
  * (compared constant-time; never logged). The alert becomes a `signals` row
  * (source=tradingview) and a signal_card draft in the Desk group for Jack's
  * tap. A COUNTER-TREND alert keeps the kit's warning line in the card.
+ *
+ * EzyMap_Pro_V3_3.pine (Alert Payload = JSON, alert condition "Any alert()
+ * function call") sends its own format; _shared/tvpine.ts translates it:
+ * live → signal + card, tp/sl/be → status update, ready/expired → ignored.
  * Replays of the same alert id are idempotent (merge on external_id).
  */
 import { serve, json, bad } from "_shared/http.ts";
 import { requireSecret } from "_shared/auth.ts";
 import { admin } from "_shared/supabase.ts";
 import { upsertSignal, validate } from "_shared/signals.ts";
+import { adaptEzyMapAlert, isEzyMapPlainText } from "_shared/tvpine.ts";
 import { createDraft, pushToDesk } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
 import { weekStartMyt } from "_shared/time.ts";
@@ -40,9 +45,33 @@ serve(async (req) => {
 
   // TradingView sends the message as-is; accept JSON, else a plain text line.
   const text = await req.text();
-  let alert: Record<string, unknown>;
-  try { alert = JSON.parse(text); } catch { alert = { note: text.slice(0, 500) }; }
-  if (!alert || typeof alert !== "object") throw bad("alert must be a JSON object");
+  // The indicator's plain-text alertcondition() messages carry no numbers: never a signal.
+  if (isEzyMapPlainText(text)) {
+    return json({ ok: true, ignored: "plain-text EzyMap alert; create the alert from 'Any alert() function call' with Alert Payload set to JSON" });
+  }
+  let parsed: Record<string, unknown>;
+  try { parsed = JSON.parse(text); } catch { parsed = { note: text.slice(0, 500) }; }
+  if (!parsed || typeof parsed !== "object") throw bad("alert must be a JSON object");
+
+  // EzyMap Pro's own JSON: live → a signal + card; tp/sl/be → status update; ready/expired → ignored.
+  const pine = adaptEzyMapAlert(parsed);
+  if (pine?.kind === "ignore") return json({ ok: true, ignored: pine.reason });
+  if (pine?.kind === "result") {
+    const { data: known } = await admin().from("signals").select("id").eq("external_id", pine.entry.external_id).maybeSingle();
+    if (!known) return json({ ok: true, ignored: "result for a setup TwinOS never saw go live" });
+    const r = await upsertSignal({ ...pine.entry, source: "tradingview" });
+    if (!r.ok) throw bad(r.error ?? "signal update failed");
+    await logAction({ actor: ACTOR, action: "tv.result", target: r.id, payload: { external_id: pine.entry.external_id, status: pine.entry.status } });
+    return json({ ok: true, signal_id: r.id, status_changed: r.status_changed });
+  }
+  // A LIVE alert reuses the card path below with the indicator's fields mapped to it.
+  const alert: Record<string, unknown> = pine?.kind === "signal"
+    ? {
+      id: pine.entry.external_id, symbol: pine.entry.symbol, side: pine.entry.direction, entry: pine.entry.entry_low,
+      sl: pine.entry.stop_price, tp1: pine.entry.tp1, rr: pine.entry.rr, tf: pine.entry.timeframe,
+      setup: pine.entry.setup, counter_trend: pine.counterTrend,
+    }
+    : parsed;
 
   const side = String(alert.side ?? alert.direction ?? "").toLowerCase();
   const direction = side === "buy" || side === "long" ? "buy" : side === "sell" || side === "short" ? "sell" : undefined;
@@ -56,7 +85,7 @@ serve(async (req) => {
     entry_low: num(alert.entry_low) ?? entry, entry_high: num(alert.entry_high) ?? entry,
     stop_price: num(alert.sl) ?? num(alert.stop), tp1: num(alert.tp1), tp2: num(alert.tp2),
     rr: num(alert.rr), timeframe: alert.tf ?? alert.interval, setup: alert.setup, counter_trend: counterTrend,
-    status: "pending", raw: alert,
+    status: pine ? "running" : "pending", raw: parsed,
   });
   if (!row.ok) throw bad(row.error);
   const sig = await upsertSignal({ ...row.value, external_id, source: "tradingview" });
