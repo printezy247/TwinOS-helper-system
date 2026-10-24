@@ -71,6 +71,34 @@ export class RateLimiter {
   }
 }
 
+/* ------------------------------------------------------------------------ */
+/* Limiter registry (UPGRADE-PHASES Phase 4)                                  */
+/*                                                                             */
+/* `GET /health/ratelimit` reports these. A limiter is registered by whoever  */
+/* puts it on a request path — until then the endpoint honestly reports none  */
+/* active rather than inventing headroom.                                     */
+/* ------------------------------------------------------------------------ */
+
+const LIMITERS = new Map<string, () => number>();
+
+/** Register a live limiter under a stable per-client/integration name. */
+export function registerLimiter(name: string, read: () => number): void {
+  LIMITERS.set(name, read);
+}
+
+/** Snapshot for /health/ratelimit: name → tokens currently available. */
+export function limiterSnapshot(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [name, read] of LIMITERS) {
+    try {
+      out[name] = read();
+    } catch {
+      out[name] = -1;
+    }
+  }
+  return out;
+}
+
 /** A job held back by a platform's daily cap waits half an hour and keeps its attempts; anything else backs off. */
 export const CAP_HOLD_MS = 30 * 60_000;
 

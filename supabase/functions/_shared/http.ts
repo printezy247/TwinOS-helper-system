@@ -9,6 +9,24 @@
  *   rate_limited · not_configured · upstream_failed · internal
  */
 
+import { runWithTrace, traceIdFromReq } from "./trace.ts";
+import { log } from "./logger.ts";
+import { observe, setRequestPersist } from "./metrics.ts";
+import { admin } from "./supabase.ts";
+
+// Persist every observation into `request_stats` (one atomic RPC, never
+// awaited): isolate-local counters are invisible to a later scrape on another
+// isolate, the table is global. Registered once per module; the admin client
+// is constructed inside the callback so module load needs no env.
+setRequestPersist((route, cls, ms) => {
+  void (async () => {
+    try {
+      const { error } = await admin().rpc("twinos_observe_request", { p_route: route, p_cls: cls, p_ms: ms });
+      if (error) console.warn("[metrics] persist failed", error.message);
+    } catch { /* metrics never fail a request */ }
+  })();
+});
+
 export class HttpError extends Error {
   constructor(
     public readonly status: number,
@@ -163,10 +181,30 @@ export function routeOf(req: Request, fnName: string): { method: string; tail: s
 export function serve(handler: (req: Request) => Promise<Response>): void {
   Deno.serve(async (req) => {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+    // Phase 4 observability: one trace id per request (adopted from
+    // x-twinos-trace), one structured log line, one metrics observation —
+    // every function that calls serve() gets all three without changing.
+    const trace = traceIdFromReq(req);
+    const started = performance.now();
+    const url = new URL(req.url);
+    let res: Response;
     try {
-      return await handler(req);
+      res = await runWithTrace(trace, () => handler(req));
     } catch (err) {
-      return errorResponse(err);
+      res = errorResponse(err);
     }
+    const ms = Math.round(performance.now() - started);
+    observe(req.method, url.pathname, res.status, ms);
+    log(res.status >= 500 ? "error" : res.status >= 400 ? "warn" : "info", "request", {
+      method: req.method,
+      path: url.pathname,
+      status: res.status,
+      ms,
+    });
+    const out = new Response(res.body, res);
+    try {
+      out.headers.set("x-twinos-trace", trace);
+    } catch { /* immutable headers (e.g. prebuilt bodies) — logging still carries the id */ }
+    return out;
   });
 }

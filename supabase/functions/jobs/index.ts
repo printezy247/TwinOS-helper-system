@@ -30,6 +30,7 @@ import { createDraft } from "_shared/content.ts";
 import { fanOut } from "_shared/fanout.ts";
 import { logAction } from "_shared/log.ts";
 import { nextHook } from "_shared/hooks.ts";
+import { withTrace } from "_shared/trace.ts";
 import * as tg from "_shared/tg.ts";
 
 export const JOB_KINDS = [
@@ -249,7 +250,7 @@ serve(async (req) => {
       const run_at = optString(body, "run_at", 64) ?? new Date().toISOString();
       if (Number.isNaN(Date.parse(run_at))) throw bad("run_at must be an ISO timestamp");
       const { data, error } = await db.from("jobs").insert({
-        kind, payload: body.payload ?? {}, status: "queued", priority: Number(body.priority ?? 0),
+        kind, payload: withTrace((body.payload ?? {}) as Record<string, unknown>), status: "queued", priority: Number(body.priority ?? 0),
         run_at: new Date(run_at).toISOString(), created_by: caller.actor,
       }).select("id").single();
       if (error || !data) throw bad(`jobs insert failed: ${error?.message}`);
