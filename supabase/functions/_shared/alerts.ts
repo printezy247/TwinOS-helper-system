@@ -108,3 +108,53 @@ async function notifyDesk(opts: { message: string; buttons?: InlineButton[][] })
   const desk = Number(await requireSetting(SETTING_KEYS.deskChatId, "TWINOS_DESK_CHAT_ID"));
   await sendMessage(desk, redactSecrets(opts.message), { parse_mode: "HTML", buttons: opts.buttons });
 }
+
+/** The Telegram nudge for a still-stale source repeats at most this often. */
+export const STALE_BEAT_COOLDOWN_MS = 6 * 3600_000;
+
+export interface OpenStaleAlert {
+  id: string;
+  source: string;
+  at: string;
+  repeats: number;
+}
+
+export interface StaleBeatPlan {
+  /** Alert rows to close: the source recovered, or an older duplicate. */
+  resolve: string[];
+  /** Sources with no open alert yet: raise one. */
+  insert: string[];
+  /** The one live row per still-stale source: grow its repeat count; `notify` when the cooldown passed. */
+  bump: { id: string; repeats: number; notify: boolean }[];
+}
+
+/**
+ * One open `stale_beat` alert per source. The check used to insert a fresh row
+ * every hour and never close any, so a source that stayed down (or had long
+ * recovered) left a pile of identical open alerts. This keeps the newest row
+ * per stale source, resolves older duplicates, resolves every alert of a source
+ * that is no longer stale, and raises one only when nothing is open for it.
+ */
+export function staleBeatPlan(
+  open: OpenStaleAlert[],
+  staleSources: string[],
+  now = Date.now(),
+  cooldownMs = STALE_BEAT_COOLDOWN_MS,
+): StaleBeatPlan {
+  const stale = new Set(staleSources);
+  const plan: StaleBeatPlan = { resolve: [], insert: [], bump: [] };
+  const bySource = new Map<string, OpenStaleAlert[]>();
+  for (const a of open) bySource.set(a.source, [...(bySource.get(a.source) ?? []), a]);
+  for (const [source, rows] of bySource) {
+    if (!stale.has(source)) {
+      plan.resolve.push(...rows.map((r) => r.id));
+      continue;
+    }
+    const sorted = [...rows].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    const [live, ...dupes] = sorted;
+    plan.resolve.push(...dupes.map((r) => r.id));
+    plan.bump.push({ id: live.id, repeats: live.repeats + 1, notify: cooldownDue(live.at, cooldownMs, now) });
+  }
+  for (const s of staleSources) if (!bySource.has(s)) plan.insert.push(s);
+  return plan;
+}

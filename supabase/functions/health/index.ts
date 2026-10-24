@@ -20,7 +20,7 @@ import { tokenWarnings } from "_shared/meta.ts";
 import { escapeHtml, sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
 import { runProviderChecks } from "_shared/providers.ts";
-import { deskAlert, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
+import { deskAlert, staleBeatPlan, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
 import { channelStage, feedStale, FEED_STALE_MS } from "_shared/insights.ts";
 import { currentTrace } from "_shared/trace.ts";
 import { log } from "_shared/logger.ts";
@@ -238,19 +238,42 @@ serve(async (req) => {
     requireRole(caller.role, "health.beat");
     const beats = await latestBeats();
     const stale = Object.entries(beats).filter(([, b]) => b.stale && b.status !== "never");
-    if (stale.length) {
-      // One alert per source per hour, not one per tick.
-      const since = new Date(Date.now() - 3600_000).toISOString();
-      for (const [source, b] of stale) {
-        const { data: recent } = await db.from("alerts").select("id").eq("kind", "stale_beat").contains("payload", { source }).gte("at", since).limit(1).maybeSingle();
-        if (recent) continue;
-        const message = `${source} has not reported for over ${b.stale_after_min} min (last: ${b.at || "never"})`;
-        await db.from("alerts").insert({ kind: "stale_beat", severity: "high", message, payload: { source } });
-        try {
-          const jack = await requireSetting(SETTING_KEYS.jackTelegramId, "TWINOS_JACK_TELEGRAM_ID");
-          await sendMessage(Number(jack), `⚠️ ${message}`);
-        } catch (err) { console.warn("[health] alert send failed", err); }
-      }
+    // One open alert per stale source (see staleBeatPlan): bump it, close it on
+    // recovery, raise one only when none is open. Runs even with nothing stale,
+    // so a recovered source stops showing as an open alert.
+    const { data: openRows } = await db.from("alerts").select("id, at, payload").eq("kind", "stale_beat").is("resolved_at", null);
+    const open = (openRows ?? []).map((r) => ({
+      id: r.id as string,
+      at: r.at as string,
+      source: String((r.payload as { source?: string } | null)?.source ?? ""),
+      repeats: Number((r.payload as { repeats?: number } | null)?.repeats ?? 0),
+    })).filter((r) => r.source);
+    const plan = staleBeatPlan(open, stale.map(([source]) => source));
+    if (plan.resolve.length) await db.from("alerts").update({ resolved_at: new Date().toISOString() }).in("id", plan.resolve);
+    const staleMessage = (source: string) => {
+      const b = beats[source];
+      return `${source} has not reported for over ${b?.stale_after_min} min (last: ${b?.at || "never"})`;
+    };
+    const nudge = async (message: string) => {
+      try {
+        const jack = await requireSetting(SETTING_KEYS.jackTelegramId, "TWINOS_JACK_TELEGRAM_ID");
+        await sendMessage(Number(jack), `⚠️ ${message}`);
+      } catch (err) { console.warn("[health] alert send failed", err); }
+    };
+    for (const bump of plan.bump) {
+      const row = open.find((o) => o.id === bump.id)!;
+      const message = staleMessage(row.source);
+      await db.from("alerts").update({
+        message,
+        payload: { source: row.source, repeats: bump.repeats },
+        ...(bump.notify ? { at: new Date().toISOString() } : {}),
+      }).eq("id", bump.id);
+      if (bump.notify) await nudge(message);
+    }
+    for (const source of plan.insert) {
+      const message = staleMessage(source);
+      await db.from("alerts").insert({ kind: "stale_beat", severity: "high", message, payload: { source, repeats: 0 }, dedupe_key: `stale_beat:${source}` });
+      await nudge(message);
     }
     // A Meta token that lapses within 7 days: one alert a day per source.
     for (const t of metaTokenWarnings()) {
