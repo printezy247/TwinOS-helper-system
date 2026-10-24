@@ -19,7 +19,7 @@
 import { serve, json, readJson, bad } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
-import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
+import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
 import { parsePoll, setStatus } from "_shared/content.ts";
 import { check as complianceCheck, checkComment, TELEGRAM_CAPTION_LIMIT } from "_shared/compliance.ts";
 import {
@@ -346,6 +346,52 @@ serve(async (req) => {
     }
     if (r.ok) {
       await db.from("publish_jobs").update({ status: "done", done_at: new Date().toISOString(), last_error: null }).eq("id", job.id);
+      // Phase 6 (Decision 4): a map_recap/lesson that just published on the
+      // master platform queues ONE clip scan for that day's recording. The
+      // worker owns the rest (windows → clip_candidates → Desk Use/Drop; a
+      // tap is what cuts, nothing is cut before it). Dedupe on content_id
+      // makes this whole block safe to re-run — a loop re-run, a retry or a
+      // second publish of the same item cannot queue two scans. A failure
+      // here is reported on the Desk and never touches the publish above.
+      try {
+        const clipOn = await setting("clip_auto_create").catch(() => null);
+        // No row yet (migration not applied) still means the default: on.
+        const enabled = clipOn === null || clipOn === "true";
+        if (enabled && job.platform === "telegram" && job.content_id) {
+          // "telegram" is the master platform: fan-out copies publish on
+          // their own content_ids elsewhere, so this queues exactly one scan
+          // per original item.
+          const { data: item } = await db.from("content_items")
+            .select("post_type, lang").eq("id", job.content_id).maybeSingle();
+          if (item && ["map_recap", "lesson"].includes(item.post_type)) {
+            const { data: dup } = await db.from("jobs").select("id")
+              .eq("kind", "clip_candidates")
+              .contains("payload", { content_id: job.content_id }).limit(1);
+            if (!dup?.length) {
+              // date = the MYT calendar day of the publish (MYT is UTC+8,
+              // no DST — see time_test): that is the recording the worker
+              // looks for under LIVES_DIR. lang steers the hook line.
+              const mytDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+              const { error: qErr } = await db.from("jobs").insert({
+                kind: "clip_candidates",
+                payload: { content_id: job.content_id, date: mytDate, lang: item.lang === "ms" ? "ms" : "en" },
+                status: "queued",
+                created_by: caller.actor,
+              });
+              if (qErr) throw new Error(qErr.message);
+              await logAction({ actor: caller.actor, action: "clip.enqueue", target: job.content_id });
+            }
+          }
+        }
+      } catch (err) {
+        await deskAlert({
+          db,
+          key: "clip_enqueue",
+          kind: "clip_enqueue_failed",
+          severity: "medium",
+          message: `Clip scan could not be queued for ${job.content_id}: ${String(err).slice(0, 200)}`,
+        });
+      }
     } else if (r.kind === "permanent" || (job.attempts >= MAX_ATTEMPTS && retryPlan(job.attempts, r.reason ?? "").burnsAttempt)) {
       await db.from("publish_jobs").update({ status: "failed", last_error: r.reason ?? r.kind }).eq("id", job.id);
       await deskAlert({

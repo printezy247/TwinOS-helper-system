@@ -10,10 +10,12 @@
  *   POST /content/{id}/request-approval     {}
  *   POST /content/{id}/schedule             { run_at }   (claim posts: jack only)
  *   GET  /content/{id}                      → item + variants + checks
+ *   GET  /content/clips                     → clip_candidates (Phase 6 dashboard list)
+ *   POST /content/clips/{id}/decision       { decision: "use" | "drop" }   jack; same tap as the Desk
  *
  * Who: jack, abdul, cron, ops_bot (plan §11). Idempotency-Key honoured on POSTs.
  */
-import { serve, json, readJson, routeOf, reqString, optString, oneOf, bad, HttpError, notFound } from "_shared/http.ts";
+import { serve, json, readJson, routeOf, reqString, optString, oneOf, bad, conflict, HttpError, notFound } from "_shared/http.ts";
 import { deskAlert } from "_shared/alerts.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
@@ -118,6 +120,70 @@ serve(async (req) => {
     }));
     const days = bucketByDay(tz, rows, { from, days: 7, at: (r) => r.run_at as string });
     return json({ week_start: monday, tz, days });
+  }
+
+  // GET /content/clips — the Clips list for the dashboard (Phase 6). The heavy
+  // half lives on the PC: a publish queues a clip_candidates scan, the worker
+  // returns windows, the jobs result handler lands them as rows and the Desk
+  // gets Use/Drop buttons. This is that list on a bigger screen.
+  if (method === "GET" && tail.length === 1 && tail[0] === "clips") {
+    requireRole(caller.role, "reports.read");
+    const db = admin();
+    const { data, error } = await db.from("clip_candidates")
+      .select("id, start_s, end_s, score, reason, hook_text, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw new HttpError(503, "upstream_failed", error.message);
+    return json({ clips: data ?? [] });
+  }
+
+  // POST /content/clips/{id}/decision { decision: "use" | "drop" }  (jack)
+  // The dashboard button repeats the Desk tap exactly: drop only from
+  // `proposed`; use claims the row atomically FIRST so a double press cannot
+  // queue two cuts, and if the cut job will not queue the claim rolls back so
+  // the button can be pressed again. Nothing is cut by the claim itself — the
+  // queued `clip` job is what cuts, on the PC.
+  if (method === "POST" && tail.length === 3 && tail[0] === "clips" && tail[2] === "decision") {
+    requireRole(caller.role, "content.approve");
+    const db = admin();
+    const id = tail[1];
+    const body = await readJson(req);
+    const decision = oneOf(body, "decision", ["use", "drop"] as const);
+    const { data: c, error: cErr } = await db.from("clip_candidates")
+      .select("id, source_path, start_s, end_s, status").eq("id", id).maybeSingle();
+    if (cErr) throw new HttpError(503, "upstream_failed", cErr.message);
+    if (!c) throw notFound("clip candidate");
+    if (decision === "drop") {
+      const { data: dropped } = await db.from("clip_candidates")
+        .update({ status: "dropped", decided_by: "jack" })
+        .eq("id", c.id).eq("status", "proposed").select("id");
+      if (!dropped?.length) throw conflict("that moment was already handled");
+      await logAction({ actor: caller.actor, action: "clip.drop", target: c.id });
+      return json({ ok: true, status: "dropped" });
+    }
+    if (c.status !== "proposed") throw conflict("that moment was already handled");
+    const { data: claimed } = await db.from("clip_candidates")
+      .update({ status: "approved", decided_by: "jack" })
+      .eq("id", c.id).eq("status", "proposed").select("id");
+    if (!claimed?.length) throw conflict("that moment was already handled");
+    const { error: jobErr } = await db.from("jobs").insert({
+      kind: "clip",
+      payload: {
+        path: String(c.source_path ?? ""),
+        clip_start: Number(c.start_s),
+        clip_end: Number(c.end_s),
+        max_clips: 1,
+      },
+      status: "queued",
+      created_by: caller.actor,
+    });
+    if (jobErr) {
+      // Roll the claim back: a queue failure must leave the moment tappable.
+      await db.from("clip_candidates").update({ status: "proposed", decided_by: null }).eq("id", c.id);
+      throw bad(`could not queue the cut: ${jobErr.message}`);
+    }
+    await logAction({ actor: caller.actor, action: "clip.use", target: c.id });
+    return json({ ok: true, status: "approved" });
   }
 
   if (method === "GET" && tail.length === 1) {
