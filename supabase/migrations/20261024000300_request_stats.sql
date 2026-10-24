@@ -66,8 +66,22 @@ $$;
 revoke all on function public.twinos_prune_request_stats() from public;
 grant execute on function public.twinos_prune_request_stats() to postgres;
 
-select cron.schedule(
-  'twinos-prune-request-stats',
-  '15 * * * *',
-  $$select public.twinos_prune_request_stats()$$
-);
+-- Rolling window: keep the last 24 h only. pg_cron is absent on a vanilla
+-- Postgres (CI): the schedule degrades to a notice — same pattern as
+-- 0023_metrics_cron.sql.
+do $$
+begin
+  if exists (select 1 from pg_namespace where nspname = 'cron') then
+    if exists (select 1 from cron.job where jobname = 'twinos-prune-request-stats') then
+      perform cron.unschedule('twinos-prune-request-stats');
+    end if;
+    perform cron.schedule(
+      'twinos-prune-request-stats',
+      '15 * * * *',
+      $cron$select public.twinos_prune_request_stats()$cron$
+    );
+    raise notice 'scheduled twinos-prune-request-stats (hourly)';
+  else
+    raise notice 'pg_cron not available here: schedule twinos-prune-request-stats on Supabase';
+  end if;
+end $$;
