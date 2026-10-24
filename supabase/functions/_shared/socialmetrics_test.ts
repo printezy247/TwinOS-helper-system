@@ -23,6 +23,7 @@ import {
   pollFacebook,
   pollHealthStatus,
   pollInstagram,
+  pollOutcome,
   pollThreads,
   pollYouTube,
   subscriberDelta,
@@ -37,11 +38,16 @@ interface Hit {
 
 function stub(hits: Hit[]): { f: typeof fetch; calls: string[] } {
   const calls: string[] = [];
+  const indices = new Map<string, number>();
   const f = ((input: RequestInfo | URL) => {
     const url = String(input);
     calls.push(url);
-    const hit = hits.find((h) => url.includes(h.on));
-    if (!hit) throw new Error(`test stub: no fixture for ${new URL(url).pathname}`);
+    const matching = hits.filter((h) => url.includes(h.on));
+    if (!matching.length) throw new Error(`test stub: no fixture for ${new URL(url).pathname}`);
+    const key = matching.map((h) => h.on).join("|");
+    const idx = indices.get(key) ?? 0;
+    indices.set(key, (idx + 1) % matching.length);
+    const hit = matching[idx];
     return Promise.resolve(
       new Response(JSON.stringify(hit.body), {
         status: hit.status ?? 200,
@@ -216,6 +222,122 @@ Deno.test("pollFacebook: a missing Page id is resolved from the Page token's /me
   assertStringIncludes(calls[0], "/me?fields=id");
   assertEquals(out.rows.length, 1);
   assertEquals(out.rows[0].platform_post_id, "account:123");
+});
+
+Deno.test("pollInstagram: follows the cursor to page 2 and stops", async () => {
+  const { f, calls } = stub([
+    {
+      on: "/999/media",
+      body: {
+        data: [{ id: "111", timestamp: "2026-10-20T08:00:00+0000" }],
+        paging: { cursors: { after: "CUR1" } },
+      },
+    },
+    {
+      on: "/999/media",
+      body: {
+        data: [{ id: "333", timestamp: "2026-10-19T08:00:00+0000" }], // no cursor → stop after page 2
+      },
+    },
+    { on: "/111/insights", body: { data: [{ name: "impressions", values: [{ value: 5 }] }] } },
+    { on: "/333/insights", body: { data: [{ name: "impressions", values: [{ value: 9 }] }] } },
+    { on: "/999/insights", body: { data: [] } },
+  ]);
+  const out = await pollInstagram({ userId: "999", token: "T" }, f);
+  assertEquals(out.rows.length, 3); // 111 + 333 + account
+  assertStringIncludes(calls[1], "after=CUR1"); // page 2 requested
+  assertEquals(calls.filter((u) => u.includes("/999/media")).length, 2); // no page 3
+});
+
+Deno.test("pollFacebook: page cursor followed, capped at 6 list pages", async () => {
+  let pages = 0;
+  const f = ((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/123/posts")) {
+      pages += 1;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ id: `123_${pages}`, created_time: "2026-10-20T08:00:00+0000" }],
+            paging: { cursors: { after: `CUR${pages}` } },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }
+    if (url.includes("/insights")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [{ name: "post_impressions", values: [{ value: 1 }] }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(new Response(JSON.stringify({}), { status: 404, headers: { "content-type": "application/json" } }));
+  }) as typeof fetch;
+  const out = await pollFacebook({ pageId: "123", token: "T" }, f);
+  assertEquals(pages, 6); // capped
+  assertEquals(out.rows.length, 7); // 6 posts + account
+});
+
+Deno.test("pollYouTube: playlistItems nextPageToken followed", async () => {
+  const { f, calls } = stub([
+    {
+      on: "/channels?",
+      body: {
+        items: [{
+          statistics: { subscriberCount: "1030", viewCount: "5000" },
+          contentDetails: { relatedPlaylists: { uploads: "UU1" } },
+        }],
+      },
+    },
+    {
+      on: "/playlistItems?",
+      body: {
+        nextPageToken: "TOKEN2",
+        items: [{ contentDetails: { videoId: "vid1" } }],
+      },
+    },
+    {
+      on: "/playlistItems?",
+      body: { items: [{ contentDetails: { videoId: "vid2" } }] }, // no nextPageToken → stop
+    },
+    {
+      on: "/videos?",
+      body: {
+        items: [
+          { id: "vid1", statistics: { viewCount: "1200", likeCount: "34", commentCount: "5" } },
+          { id: "vid2", statistics: { viewCount: "80", likeCount: "2", commentCount: "0" } },
+        ],
+      },
+    },
+  ]);
+  const out = await pollYouTube({ apiKey: "K", channelId: "UC1" }, f);
+  assertEquals(out.rows.length, 3);
+  const plCalls = calls.filter((u) => u.includes("/playlistItems?"));
+  assertStringIncludes(plCalls[plCalls.length - 1] ?? "", "pageToken=TOKEN2");
+});
+
+Deno.test("pollOutcome: skipped/no-credentials is clearly not success", () => {
+  assertEquals(pollOutcome({}), { ok: false, status: "skipped", inserted: 0 });
+  const skipped = { instagram: { ran: false, skipped: true } };
+  assertEquals(pollOutcome(skipped), { ok: false, status: "skipped", inserted: 0 });
+  const ok = { instagram: { ran: true, ok: true, rows: 5, skipped: false } };
+  assertEquals(pollOutcome(ok), { ok: true, status: "ok", inserted: 5 });
+  const failed = { instagram: { ran: true, ok: false, error: "boom", skipped: false } };
+  assertEquals(pollOutcome(failed), { ok: false, status: "degraded", inserted: 0 });
+  const mixed = {
+    instagram: { ran: false, skipped: true },
+    facebook: { ran: true, ok: true, rows: 3, skipped: false },
+  };
+  assertEquals(pollOutcome(mixed), { ok: true, status: "ok", inserted: 3 });
+});
+
+Deno.test("pollHealthStatus: skipped surfaces stay non-degrading", () => {
+  assertEquals(pollHealthStatus({}), "degraded");
+  assertEquals(pollHealthStatus({ instagram: { ok: false, skipped: true } }), "ok"); // unconfigured, not broken
+  assertEquals(pollHealthStatus({ instagram: { ok: true }, facebook: { ok: false } }), "degraded");
+  assertEquals(pollHealthStatus({ instagram: { ok: true }, facebook: { ok: true } }), "ok");
 });
 
 Deno.test("pollThreads: replies and reposts land as comments and shares", async () => {
