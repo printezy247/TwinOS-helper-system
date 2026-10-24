@@ -19,7 +19,7 @@ import { logAction } from "_shared/log.ts";
 import { tokenWarnings } from "_shared/meta.ts";
 import { escapeHtml, sendMessage } from "_shared/tg.ts";
 import { integrationStatus } from "_shared/integrations.ts";
-import { runProviderChecks } from "_shared/providers.ts";
+import { checkWebhook, runProviderChecks } from "_shared/providers.ts";
 import { deskAlert, staleBeatPlan, UPDATE_FAILURE_WINDOW_MS, updateFailuresExceeded } from "_shared/alerts.ts";
 import { channelStage, feedStale, FEED_STALE_MS } from "_shared/insights.ts";
 import { currentTrace } from "_shared/trace.ts";
@@ -287,6 +287,10 @@ serve(async (req) => {
       } catch (err) { console.warn("[health] token alert send failed", err); }
     }
     // Live provider checks: record every run, alert only on a change or a recovery.
+    // The ops bot only reports when Telegram sends it an update, so a quiet day
+    // looked like an outage. Ask Telegram about the webhook instead and beat from that.
+    const wh = await checkWebhook(Deno.env.get("TWINOS_OPS_BOT_TOKEN"));
+    if (wh) await db.from("health_checks").insert({ source: "ops_bot", status: wh.status, detail: { webhook: wh.detail } });
     const live = await runProviderChecks(functionEnv());
     const changed: string[] = [];
     for (const r of live) {
