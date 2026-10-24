@@ -39,6 +39,21 @@ export async function idemFrom(
 }
 
 /**
+ * Content-addressed context for a route whose "same request" is a file, not a
+ * body: `POST /jobs/asset` retries carry a freshly signed upload path, so a
+ * body hash would 409 (or, with no key at all, silently draft the same asset
+ * twice — the 24 Oct acceptance run reproduced exactly that). The sha256 IS
+ * the request: same file in, same stored response back; the path never enters
+ * the hash. An explicit caller key (the PC worker sends `Idempotency-Key:
+ * asset:<digest>`) still wins.
+ */
+export function contentIdem(scope: string, sha256: string, callerKey?: string | null): IdemContext {
+  const explicit = (callerKey ?? "").trim();
+  if (explicit.length > 200) throw new HttpError(400, "bad_request", "idempotency key too long");
+  return { scope, key: explicit || `asset:${sha256}`, requestHash: `sha256:${sha256}` };
+}
+
+/**
  * Claim the key and return a replayed Response if it was seen before, else
  * null. The claim is the insert itself: two concurrent callers with the same
  * key cannot both win the primary key, so only one ever runs the handler (the
