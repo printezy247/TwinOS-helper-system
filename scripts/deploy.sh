@@ -46,13 +46,15 @@ if [ "${1:-}" != "--check" ]; then
     [ -n "$f" ] || continue
     mv -f "$f" "$TESTCACHE/$(printf '%s' "$f" | tr '/' '__')"
   done < "$TESTLIST"
-  say "deploy (11 functions + ai/ai-eval; all authenticate inside the handler)"
+  say "deploy (11 functions + ai/ai-eval/webhooks; all authenticate inside the handler)"
   supabase functions deploy content approve publish signals-ingest results health friday jobs links metrics research
   # NEW functions default to verify_jwt=true, which makes the platform's
   # gateway reject X-TwinOS-Key/twk_ callers with its own UNAUTHORIZED_* body
   # before our handler runs. Every TwinOS function authenticates itself
-  # (scoped keys included), so ai and ai-eval belong with --no-verify-jwt.
-  supabase functions deploy ai ai-eval --no-verify-jwt
+  # (scoped keys included), so ai, ai-eval and webhooks belong with
+  # --no-verify-jwt — webhooks additionally has the intentionally open
+  # /ping echo (it only echoes; the registry routes all authenticate).
+  supabase functions deploy ai ai-eval webhooks --no-verify-jwt
   say "deploy (3 routes that carry their own credential)"
   supabase functions deploy tg-webhook tv-webhook tg-auth --no-verify-jwt
   restore_tests
@@ -61,7 +63,7 @@ fi
 
 say "live probe"
 fail=0
-for fn in content approve publish signals-ingest results health friday jobs links metrics research ai ai-eval; do
+for fn in content approve publish signals-ingest results health friday jobs links metrics research ai ai-eval webhooks; do
   code="$(curl -s -o /dev/null -w '%{http_code}' "https://$REF.supabase.co/functions/v1/$fn")"
   # 401/403 = deployed and refusing an anonymous caller; 400 = the same refusal
   # from a POST-only entry whose method gate runs before auth (approve, publish,

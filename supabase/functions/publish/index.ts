@@ -30,6 +30,7 @@ import {
   DAILY_CAPS, metaConfigFromEnv, type MetaPlatform, publishFacebookReel, publishInstagram, publishThreads,
 } from "_shared/meta.ts";
 import { logAction, logTimeSaved, sanitizeError } from "_shared/log.ts";
+import { emitWebhook } from "_shared/webhooks.ts";
 import * as tg from "_shared/tg.ts";
 
 const PACE_MS = 1100; // Telegram: ~1 msg/s to one chat, 20/min to a group
@@ -392,6 +393,13 @@ serve(async (req) => {
           message: `Clip scan could not be queued for ${job.content_id}: ${String(err).slice(0, 200)}`,
         });
       }
+      // Phase 7: external systems learn a post went out. Queued, not sent
+      // here — emitWebhook is one insert and never throws.
+      await emitWebhook(db, "post.published", {
+        content_id: job.content_id,
+        platform: job.platform,
+        publish_job: job.id,
+      });
     } else if (r.kind === "permanent" || (job.attempts >= MAX_ATTEMPTS && retryPlan(job.attempts, r.reason ?? "").burnsAttempt)) {
       await db.from("publish_jobs").update({ status: "failed", last_error: r.reason ?? r.kind }).eq("id", job.id);
       await deskAlert({

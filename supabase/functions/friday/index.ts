@@ -22,6 +22,7 @@ import { require as requireRole } from "_shared/roles.ts";
 import { admin, setting, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, pushToDesk } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
+import { emitWebhook } from "_shared/webhooks.ts";
 import { fanoutLine, hoursCutLine } from "_shared/hours.ts";
 import { campaignRows } from "_shared/campaign.ts";
 import { dayAndWeekStart } from "_shared/today.ts";
@@ -184,6 +185,12 @@ serve(async (req) => {
     await db.from("jobs").insert({ kind: "scorecard_image", payload: { content_id: draft.content_id, week, scoreboard: sb }, status: "queued", created_by: caller.actor });
     const desk = await pushToDesk(draft, { heading: `Friday scorecard ${week}${missing.length ? " (inputs missing: " + missing.join(", ") + ")" : ""}`, actor: caller.actor });
     await logTimeSaved(caller.actor, "friday.report", draft.content_id);
+    // Phase 7: the week's scorecard is done — queue the event (never throws).
+    await emitWebhook(db, "friday.done", {
+      week,
+      content_id: draft.content_id,
+      missing_inputs: missing,
+    });
     return json({ ok: true, content_id: draft.content_id, desk, missing_inputs: missing }, 201);
   }
 

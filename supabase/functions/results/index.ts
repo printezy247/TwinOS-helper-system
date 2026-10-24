@@ -23,6 +23,7 @@ import { idemFrom, replay, remember, type IdemContext } from "_shared/idempotenc
 import { admin, requireSetting, settingTyped, SETTING_KEYS } from "_shared/supabase.ts";
 import { createDraft, enqueuePublish, setStatus } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
+import { emitWebhook } from "_shared/webhooks.ts";
 import { sendMessage } from "_shared/tg.ts";
 
 const RESULT_STATUSES = ["tp", "tp1", "tp2", "be", "sl"] as const;
@@ -133,6 +134,13 @@ async function replyUnderCard(
     await setStatus(draft.content_id, "approved", caller.actor);
     const jobs = await enqueuePublish(draft.content_id, new Date().toISOString(), caller.actor);
     await logTimeSaved(caller.actor, "results.reply", draft.content_id);
+    // Phase 7: a signal outcome is one of the four public events (queued,
+    // never throws).
+    await emitWebhook(db, "signal.result", {
+      signal_id: sig.id,
+      status,
+      content_id: draft.content_id,
+    });
     return { status: 201, body: { ok: true, content_id: draft.content_id, jobs, reply_to: card.message_id, stats } };
   } catch (err) {
     // Release the claim so a retry can try again (the send never happened).
