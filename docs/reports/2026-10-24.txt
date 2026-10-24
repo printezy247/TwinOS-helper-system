@@ -121,3 +121,124 @@ Sources: repo git history (943f873, 4093ec4..#99), mirror PRs #1 #3 #4 #5-#10
 (merged 22-23 Oct), mirror roadmap.md + .lovable/plan.md, docs/
 DASHBOARD-UPGRADE-PLAN.md Outcome, supabase/migrations 20261018030000 and
 20261022/23_*_realtime_publication_*.
+
+================================================================
+ACCEPTANCE RUN, Sat 24 Oct 2026 — four phases, all verified live
+against project cdnyybrfoclexjlroqcf with real sessions (Jack,
+jack@printezy.money claim-less, abdul, anon). Everything below was
+observed over the wire, not read from the code.
+
+PHASE 1 — READINESS GATES: PASS
+
+* Migrations: 51/51 tracked in supabase_migrations.schema_migrations,
+  including all five realtime-publication migrations. pg_publication_tables
+  shows the expected 19 tables in supabase_realtime. Nothing was missing;
+  nothing extra was applied.
+* Delivery observed: a postgres_changes subscriber signed in as Jack got
+  SUBSCRIBED and received the INSERT event within seconds of a Jack
+  content/draft write. The roadmap's "not applied" notes were stale and are
+  now reconciled (mirror roadmap.md + .lovable/plan.md).
+* Jack writes: content/draft 201 (Compose's endpoint) and set_setting 204,
+  value persisted (Settings' endpoint), both with his session.
+* SECURITY HOLE FOUND AND FIXED: set_setting's guard was
+  `if twinos_role() <> 'jack'`. twinos_role() is NULL for anon and for any
+  login without the claim, and NULL <> 'jack' is NULL — the IF never fired.
+  Live proof: anon and the claim-less user both got 204 and overwrote
+  settings.dashboard_url (value restored immediately; action_log kept as
+  evidence). Fix: migration 20261024000000 coalesces the guard to ''.
+  After push: anon 400, abdul 400, jack 204. This was the only unguarded
+  imperative twinos_role() check; RLS policies and the trigger checks are
+  NULL-safe already.
+* Mini App mismatch resolved: docs/PHASES.md was right — src/routes/mini.tsx
+  exists (594 lines), Route /mini, and the deployed preview serves 200 on
+  /mini. The mirror roadmap claimed "not built"; that line is corrected.
+  Left for Jack: @BotFather registration, a dashboard nav link (Wave 8
+  P1-4), one live test from Telegram.
+* Deferred by agreement: health stale threshold (6 h) and inbox badge
+  counting drafts — Jack's preferences, non-blocking.
+
+PHASE 2 — THE MERGED DASHBOARD ACTIONS (af6ec0e): PASS
+
+Matrix (role => result, live):
+  action                    jack            claim-less   abdul    anon
+  content/batch             201, idempotent   403          —       —
+  content/annual-offer      201 draft         403          —       —
+  content/{id}/fanout       201 children      403 (real id) —      —
+  metrics/benchmarks        200 {updated:1}   403          —       —
+  jobs/enqueue (rerun)      201 queued        403          —       —
+  content/content/draft     201               403          —       —
+  rpc set_setting           204               400*         400     400*
+  approve endpoint          —                 403          403     —
+  (* pre-fix; post-fix both 400.)
+
+* Batch repeatable: three runs for the same week returned the same
+  content_ids; zero new content_items (created_at forensics — the existing
+  batch rows date from 21 Oct).
+* Annual offer: prices come from products (Auto TPSL 1y $99.00 / 1m $9.00
+  in the body matches products.price_usd), status pending_approval,
+  approved_by NULL, Desk card posted for review; second call replayed the
+  same content_id (idempotent).
+* Fan-out: per-platform children created (instagram/tiktok), all variants
+  status=draft, approved_by NULL, publish_jobs 0, approvals 48 unchanged —
+  approval gate held for every path tested.
+* Rerun: no failed jobs exist to re-run (jobs: 29 done, 0 failed), so the
+  mechanism was exercised directly — jobs/enqueue queues a fresh row
+  (status queued, attempts 0, created_by jack) and mutates nothing; the
+  dashboard Re-run button replays kind+payload exactly this way.
+* Errors visible: every refusal above returns a structured JSON error
+  (403 forbidden with role, 400 with message) and the dashboard surfaces
+  them (toast.error / LoadError / inline Settings errors).
+* Nothing published or approved during the whole run: publish_jobs stayed
+  0, approvals stayed 48.
+
+PHASE 3 — ASSET-INGEST FAN-OUT: PASS (with one real bug fixed)
+
+* The pipeline already existed in jobs/index.ts (04dc79c) — the PHASES line
+  claiming it stops at the assets row was stale; corrected to [x].
+* Live: POST /jobs/asset with meta {post_type, platforms, caption} =>
+  asset row + telegram master draft + per-platform children (instagram,
+  tiktok with kit), every variant status=draft approved_by NULL, Desk
+  review card, publish_jobs 0. Missing meta.post_type keeps the old
+  row-only behaviour. Non-Jack: 403 (assets.ingest).
+* BUG FOUND LIVE: a retry of the same file created a SECOND draft tree.
+  idemFrom() returns null without a caller Idempotency-Key, and its hash
+  included the signed upload path — so the PC worker's key would have 409'd
+  on any re-upload, while a keyless retry duplicated the drafts.
+  Fix: contentIdem() in _shared/idempotency.ts — content-addressed key
+  (asset:<sha256>) and request hash = the sha256, path never enters; caller
+  key still wins. 7 new unit tests (idempotency_test.ts), 335/335 deno,
+  108/108 consistency, 90/90 worker tests green; functions redeployed.
+* Retest after fix: three ingests of one sha256 under three different
+  paths (worker-header key, no key) => one asset, one draft tree, calls 2-3
+  returned replayed:true with identical ids, content_items count unchanged.
+* Validation surfaces: compliance findings ride the draft to the Desk
+  (blocking/warn rows in content_variants.compliance; [NEEDED] placeholders
+  inline), so a failure is visible before approval, never after publish.
+* Meta/YouTube metrics polling stays dependency-gated (provider credentials)
+  — not claimed complete.
+* Test artifacts cleaned: 13 content rows + 13 variants + 3 asset rows from
+  the run deleted by exact timestamp window, Desk test card un-sent; the
+  action_log rows from the security test were deliberately kept.
+
+PHASE 4 — OPERATING OUTCOME: HONEST STATE, NOT A CLAIM
+
+* Machinery exists and runs: post_snapshots 95 rows, v_friday_scoreboard 13
+  rows, v_hours_cut view live, Friday CSV export works.
+* Baseline NOT recorded: baseline_hours 0 rows, time_saved 0, manual_metrics
+  0 => v_hours_cut returns nothing and the >=60% target cannot be evaluated
+  from data. docs/PHASES.md now states this data state verbatim instead of
+  implying progress; the checkbox stays unchecked until Jack logs the
+  baseline week (Desk /hours) and real weeks accumulate.
+* Clipping/long-form remain gated on the PC setup + a successful real run.
+
+JACK — WHAT IS LEFT FOR YOU (nothing else is pending)
+ 1. Sign in to the dashboard preview as Jack and click through Compose and
+    Settings once (API paths are proven; this is the browser-level check).
+ 2. Register the Mini App with @BotFather, add the t.me/<bot>/<app> link,
+    then test /mini from the EzyMap Desk (screen is built and deployed).
+ 3. Log the baseline week with the Desk /hours command — hours-cut
+    measurement starts from that row.
+ 4. Decide: health stale threshold (6 h now) and whether the inbox badge
+    counts drafts.
+ 5. Lovable: both repos' mains are merged and CI-checked; hit Publish in
+    the Lovable project if the live URL is not already current.
