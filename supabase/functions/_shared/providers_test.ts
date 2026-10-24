@@ -67,3 +67,52 @@ Deno.test("redactSecrets strips bot tokens and access_token values", () => {
   const s = redactSecrets("x https://api.telegram.org/bot1:AB-c_d/getMe y ?access_token=EAAx&z=1");
   assertEquals(/AB-c_d|EAAx/.test(s), false, s);
 });
+
+import { checkWebhook, webhookHealth } from "./providers.ts";
+
+const NOW = Date.parse("2026-10-25T12:00:00Z");
+const URL_OK = "https://x.supabase.co/functions/v1/tg-webhook";
+
+Deno.test("webhookHealth: registered, quiet and clean is ok", () => {
+  assertEquals(webhookHealth({ url: URL_OK, pending_update_count: 0 }, NOW).status, "ok");
+});
+
+Deno.test("webhookHealth: no webhook registered is down", () => {
+  const r = webhookHealth({ url: "" }, NOW);
+  assertEquals(r.status, "down");
+});
+
+Deno.test("webhookHealth: unreadable info is down", () => {
+  assertEquals(webhookHealth(null, NOW).status, "down");
+});
+
+Deno.test("webhookHealth: pointing at another URL is degraded", () => {
+  assertEquals(webhookHealth({ url: "https://elsewhere.example/hook" }, NOW).status, "degraded");
+});
+
+Deno.test("webhookHealth: a delivery error in the last hour is degraded, an old one is not", () => {
+  const recent = Math.floor((NOW - 10 * 60_000) / 1000);
+  const old = Math.floor((NOW - 3 * 3600_000) / 1000);
+  assertEquals(webhookHealth({ url: URL_OK, last_error_date: recent, last_error_message: "timeout" }, NOW).status, "degraded");
+  assertEquals(webhookHealth({ url: URL_OK, last_error_date: old, last_error_message: "timeout" }, NOW).status, "ok");
+});
+
+Deno.test("webhookHealth: a big backlog is degraded", () => {
+  assertEquals(webhookHealth({ url: URL_OK, pending_update_count: 120 }, NOW).status, "degraded");
+});
+
+Deno.test("checkWebhook: no token means no check and no fetch", async () => {
+  const never = (() => {
+    throw new Error("must not fetch without a token");
+  }) as unknown as typeof fetch;
+  assertEquals(await checkWebhook(undefined, never), null);
+});
+
+Deno.test("checkWebhook: reads getWebhookInfo and never leaks the token", async () => {
+  const ok = await checkWebhook("SECRET_TOK", fetchOf(json({ ok: true, result: { url: URL_OK, pending_update_count: 0 } })));
+  assertEquals(ok?.status, "ok");
+  const failing = (() => Promise.reject(new Error("failed https://api.telegram.org/botSECRET_TOK/getWebhookInfo"))) as unknown as typeof fetch;
+  const bad = await checkWebhook("SECRET_TOK", failing);
+  assertEquals(bad?.status, "down");
+  assertEquals(bad?.detail.includes("SECRET_TOK"), false);
+});
