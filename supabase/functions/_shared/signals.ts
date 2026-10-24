@@ -1,5 +1,5 @@
 /**
- * Signal upsert shared by signals-ingest (EzyAi) and tv-webhook (TradingView):
+ * Signal upsert for tv-webhook (TradingView) and manual entry:
  * a merge keyed on `external_id` (ported from printezy's pushSignal contract).
  * Absent fields keep their current values, so open / tick / close are the
  * same call and a retry is harmless.
@@ -12,7 +12,7 @@ export type SignalStatus = (typeof STATUSES)[number];
 
 export interface SignalInput {
   external_id: string;
-  source: "ezyai" | "tradingview";
+  source: "tradingview" | "manual";
   symbol?: string;
   direction?: "buy" | "sell";
   entry_low?: number;
@@ -29,7 +29,7 @@ export interface SignalInput {
   current_price?: number;
   result_r?: number;
   result_pips?: number;
-  quality?: string; // EzyAi quality.may_emit: "live" | "demo" | "shadow"
+  quality?: string; // signal quality: "live" | "demo" | "shadow"
   opened_at?: string;
   closed_at?: string;
   raw?: Record<string, unknown>;

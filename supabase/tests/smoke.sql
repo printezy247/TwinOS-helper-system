@@ -42,16 +42,16 @@ delete from public.invite_links where name = 'tt-live-2610';
 delete from public.api_keys where name like 'smoke%';
 
 insert into public.signals (external_id, source, pair, style, mode, direction, entry, stop_loss, tp1, tp2, rr_target, confidence, status, r_multiple, data_source, signal_at) values
-  ('smoke-w1', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'tp2', 2.4, 'live', now() - interval '3 days'),
-  ('smoke-w2', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'tp1', 1.5, 'live', now() - interval '3 days'),
-  ('smoke-w3', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'short', 4060, 4070, 4045, 4030, 1.5, 70, 'tp2', 2.0, 'live', now() - interval '2 days'),
-  ('smoke-w4', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'short', 4060, 4070, 4045, 4030, 1.5, 70, 'expired', 0.4, 'live', now() - interval '2 days'),
-  ('smoke-l1', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'sl', -1, 'live', now() - interval '2 days'),
-  ('smoke-l2', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'sl', -1, 'live', now() - interval '1 day'),
-  ('smoke-b1', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'be', 0.75, 'live', now() - interval '1 day'),
-  ('smoke-b2', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'be', 0, 'live', now() - interval '1 day'),
-  ('smoke-demo', 'ezyai', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'tp2', 2.4, 'demo', now() - interval '1 day'),
-  ('smoke-shadow', 'ezyai', 'XAUUSD', 'scalp', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'shadow', null, 'shadow', now() - interval '1 day');
+  ('smoke-w1', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'tp2', 2.4, 'live', now() - interval '3 days'),
+  ('smoke-w2', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'tp1', 1.5, 'live', now() - interval '3 days'),
+  ('smoke-w3', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'short', 4060, 4070, 4045, 4030, 1.5, 70, 'tp2', 2.0, 'live', now() - interval '2 days'),
+  ('smoke-w4', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'short', 4060, 4070, 4045, 4030, 1.5, 70, 'expired', 0.4, 'live', now() - interval '2 days'),
+  ('smoke-l1', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'sl', -1, 'live', now() - interval '2 days'),
+  ('smoke-l2', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'sl', -1, 'live', now() - interval '1 day'),
+  ('smoke-b1', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'be', 0.75, 'live', now() - interval '1 day'),
+  ('smoke-b2', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'be', 0, 'live', now() - interval '1 day'),
+  ('smoke-demo', 'tradingview', 'XAUUSD', 'intraday', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'tp2', 2.4, 'demo', now() - interval '1 day'),
+  ('smoke-shadow', 'tradingview', 'XAUUSD', 'scalp', 'normal', 'long', 4015, 4006, 4030, 4046, 1.5, 70, 'shadow', null, 'shadow', now() - interval '1 day');
 
 do $$
 declare
@@ -363,14 +363,14 @@ begin
     raise notice 'skip: role authenticated not present (not a Supabase database)';
     return;
   end;
-  perform set_config('request.jwt.claims', '{"twinos_role":"ezyai","role":"authenticated"}', false);
+  perform set_config('request.jwt.claims', '{"twinos_role":"tradingview","role":"authenticated"}', false);
   begin
-    insert into public.content_items (post_type, title) values ('lesson', 'ezyai must not write content');
+    insert into public.content_items (post_type, title) values ('lesson', 'tradingview must not write content');
   exception when insufficient_privilege then
     v_caught := true;
   end;
-  assert v_caught, 'ezyai inserting content_items must be denied by RLS';
-  assert (select count(*) from public.settings) = 0, 'ezyai must not read settings';
+  assert v_caught, 'tradingview inserting content_items must be denied by RLS';
+  assert (select count(*) from public.settings) = 0, 'tradingview must not read settings';
   perform set_config('request.jwt.claims', '{"twinos_role":"abdul","role":"authenticated"}', false);
   assert (select count(*) from public.settings) > 0, 'abdul reads settings';
   v_caught := false;

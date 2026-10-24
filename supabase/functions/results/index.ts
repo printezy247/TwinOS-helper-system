@@ -5,7 +5,7 @@
  *   POST /results/run        { limit? }   → drain queued result_reply jobs (cron)
  *   POST /results/stop-if    {}   → alert for signals past expiry with no result reply
  *
- * Who: abdul, cron, ezyai, jack. Looks up `signal_posts` for the channel
+ * Who: abdul, cron, jack. Looks up `signal_posts` for the channel
  * message id of the signal card, renders template 4 (result_reply) from the
  * board row, and publishes immediately as a reply (approval_rule=auto for
  * board-sourced results: ABDUL may post result replies that come straight

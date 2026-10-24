@@ -9,7 +9,7 @@
  *     Jack sets his own user to `jack` once (docs/SETUP.md, Phase 0). Any other
  *     verified login is `dashboard`.
  *
- *  2. A scoped API key (ABDUL, PC worker, EzyAi) on `X-TwinOS-Key: …`, with the
+ *  2. A scoped API key (ABDUL, PC worker) on `X-TwinOS-Key: …`, with the
  *     project's public anon key on `Authorization: Bearer …`. The platform
  *     gateway only lets JWTs through, so the anon JWT gets the request to this
  *     code and the header says who is calling. Format `twk_<role>_<40 hex>`.
@@ -41,7 +41,7 @@ export interface Caller {
   role: Role;
   /** auth.users id for logins, api_keys.id for keys, "service" for cron. */
   subject: string;
-  /** For action_log.actor: jack | abdul | ops_bot | dashboard | cron | ezyai | pc_worker. */
+  /** For action_log.actor: jack | abdul | ops_bot | dashboard | cron | pc_worker. */
   actor: string;
   keyName?: string;
   /** The key's scopes (Phase 7); null for logins, cron and unscoped keys. */

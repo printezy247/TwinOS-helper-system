@@ -25,7 +25,7 @@ Deno.test("a login JWT alone carries no API key", () => {
 });
 
 Deno.test("the header wins over a twk_ bearer and is trimmed and unquoted", () => {
-  const other = KEY.replace("abdul", "ezyai");
+  const other = KEY.replace("abdul", "viewer");
   assertEquals(apiKeyFrom(req({ authorization: `Bearer ${other}`, "x-twinos-key": ` "${KEY}" ` })), KEY);
 });
 
