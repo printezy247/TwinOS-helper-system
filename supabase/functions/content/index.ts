@@ -329,6 +329,27 @@ serve(async (req) => {
   }
 
   // POST /content/draft
+  // POST /content/validate — Phase 5 compliance co-pilot: the SAME check the
+  // approval gate runs (`check()`), against text that was never saved and
+  // never published. Free (no LLM), so the dashboard can debounce it on every
+  // keystroke. Nothing is written; findings come back for the sidebar.
+  if (method === "POST" && tail[0] === "validate") {
+    requireRole(caller.role, "content.draft");
+    // `body` was already read once at the top of the POST path (line ~136):
+    // re-reading here would consume an empty stream and throw.
+    const variant = {
+      post_type: oneOf(body, "post_type", POST_TYPES, "lesson"),
+      platform: oneOf(body, "platform", PLATFORMS, "telegram"),
+      lang: oneOf(body, "lang", LANGS, "en"),
+      body: typeof body.body === "string" ? body.body : "",
+      allowed_numbers: Array.isArray(body.allowed_numbers)
+        ? body.allowed_numbers.map(Number).filter((n: number) => Number.isFinite(n))
+        : undefined,
+    };
+    const result = check(variant);
+    return json({ ok: result.ok, needs_approval: result.needs_approval, findings: result.findings, claim_flags: result.claim_flags });
+  }
+
   if (tail[0] === "draft") {
     requireRole(caller.role, "content.draft");
     const idem = await idemFrom(req, body, `content.draft:${caller.actor}`);
