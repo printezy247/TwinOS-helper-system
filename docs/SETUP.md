@@ -396,12 +396,14 @@ key from 0.4. Same contract as printezy (`docs/API.md`).
      TWINOS_THREADS_USER_ID=… TWINOS_THREADS_TOKEN=… TWINOS_THREADS_EXPIRES=YYYY-MM-DD
    ```
    Tokens last 60 days. The `*_EXPIRES` dates are what lets `health` warn 7 days before one lapses (a Desk message and a dashboard alert, once a day). A provider with no id and token is simply off: its jobs fail as `permanent: … is not configured`, they never queue silently.
+   **Metrics poller (Phase 8):** `POST functions/v1/metrics/poll/meta` reads the same credentials from the Settings page first — the `meta_ig_token`, `meta_page_token` and `threads_token` rows under *Needs your confirmation* — falling back to these function secrets. A **test** token from the Graph API Explorer is enough to verify the poller end to end; with no value at all that surface is skipped by name in the response, never faked.
 5. Limits to remember: IG 100 posts/24 h, FB Reels 30/24 h, Threads 250/24 h. Comment webhooks need Advanced Access → polled every 15 min instead.
 
 ### 3.2 YouTube API project + audit
 1. https://console.cloud.google.com → New project `twinos` → Enable **YouTube Data API v3** → OAuth consent screen (External, Jack's email as test user) → OAuth client (Desktop).
 2. Run the one-time OAuth flow on the PC (script in Phase 3), store the refresh token as `TWINOS_YT_REFRESH_TOKEN`.
 3. Uploads stay **private** until Google's audit passes: fill the **YouTube API Services – Audit and Quota Extension Form** (free) with the publish-kit description. Until then the YouTube variant is a publish kit.
+4. **Metrics poller (Phase 8)** needs no OAuth: enable the Data API, create an **API key**, and set `yt_api_key` + `yt_channel_id` on the Settings page (or the `TWINOS_YT_API_KEY` / `TWINOS_YT_CHANNEL_ID` secrets). That is a different credential from the refresh token above, which is only for uploads. A free-tier key covers the 4-hourly poll comfortably (≈8 quota units per run).
 
 ### 3.3 TikTok
 Stays manual (decision 8): publish kit to Jack's phone; TikTok Studio schedule up to 10 days ahead.

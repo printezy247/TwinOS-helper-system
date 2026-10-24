@@ -39,6 +39,7 @@ POSTs that create or change something accept `Idempotency-Key: <id>`
 | (partner reads/drafts) | the GET routes above + `POST /content/draft` | partner (scoped key; scopes below) |
 | (MCP tools) | `POST /mcp` | keyed callers; each tool's own action from roles.ts |
 | (key management) | `GET/POST /keys`, `POST /keys/revoke` | **jack only** (`keys.manage`) |
+| (metrics pollers) | `POST /metrics/poll/{meta,youtube}` | cron, jack, abdul (`metrics.poll`) |
 
 The full matrix is `supabase/functions/_shared/roles.ts`.
 
@@ -259,6 +260,42 @@ bounded by the `partner` role on REST (reads + `content.draft`; never approve or
 further by the key's scopes on MCP tools, and any key with `rate_limit_per_min` set gets a per-key
 token bucket that answers `429 { "error": "rate_limited", "retry_after_s": 60 }` when exhausted.
 Live buckets appear under `GET /health/ratelimit` as `key:<name>`.
+
+---
+
+## metrics poll  (Phase 8 — behind credentials)
+
+`POST /metrics/poll/meta` · `POST /metrics/poll/youtube` — cron every 4 h
+(staggered `:10` / `:40`, migration 20261024002000); jack may call either
+on demand to verify a run. Each surface polls one provider and the response
+says exactly what happened:
+
+```json
+{ "ok": true, "provider": "meta",
+  "surfaces": { "instagram": { "ok": true, "rows": 14 },
+                "facebook":  { "ok": true, "rows": 9 },
+                "threads":   { "ok": false, "error": "graph.facebook.com: …" } },
+  "skipped": [], "warnings": ["instagram: 1784…: …"], "inserted": 23 }
+```
+
+Credentials are read from the Settings rows first (`meta_ig_token`,
+`meta_page_token`, `threads_token`, `yt_api_key`, `yt_channel_id`; the `*_user_id`
+and `*_page_id` rows are optional — the poller resolves them from the token's
+`/me`), falling back to the same-named function secrets. A surface with no
+credentials is **skipped and named** in `skipped` — never faked. `ok` is false
+only when a surface was attempted and every attempt failed; `surfaces[].error`
+carries the provider's message, built from host + path so a token or API key
+can never appear in it (a transport failure is reduced to error name only).
+
+Rows land in `post_metrics` with `source: 'api'`, joined to their variant
+through `content_items.published_ref` (publish stores the provider's post id
+there); the YouTube `account:<channel>` row carries `followers_gained` as the
+diff against its own previous capture, so absolute subscriber counts become a
+per-capture delta. Account rollups (`account:*`) keep `variant_id` null. Every
+run with at least one attempted surface beats
+`health_checks.source = 'poller'` (`degraded` when any attempted surface fails)
+and logs `action_log.action = 'metrics.poll'`; a run with
+nothing to poll beats nothing and says so in the response.
 
 ---
 

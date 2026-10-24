@@ -105,7 +105,18 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('platform_signatures', '{"telegram": "", "instagram": "", "facebook": "", "threads": "", "youtube": "", "tiktok": "", "x": ""}', 'Wave 4 item 2: saved per-platform sign-off lines the calendar appends. Empty until Jack writes his.', false),
   ('dashboard_url', 'null', 'Wave 8 §3.2: dashboard URL the bots web_app buttons open as a Mini App (e.g. https://<site>/mini). Set it from the dashboard Settings page once the site is published.', true),
   ('openrouter_api_key', 'null', 'OpenRouter API key for TwinOS AI assistant generation. Set from Settings page or secret.', false),
-  ('openrouter_model', '"openrouter/free"', 'OpenRouter default model for TwinOS AI assistant.', false)
+  ('openrouter_model', '"openrouter/free"', 'OpenRouter default model for TwinOS AI assistant.', false),
+  -- Phase 8 metrics pollers. Migration 20261024002000 holds the same rows for
+  -- environments that skip the seed. Test credentials are fine — a surface
+  -- with no value is skipped and named in the response, never faked.
+  ('meta_ig_user_id', 'null', 'Phase 8 metrics poller: Instagram professional-account user id (digits). Leave null and the poller resolves it from the token''s /me. Test account ok. CONFIRM.', true),
+  ('meta_ig_token', 'null', 'Phase 8 metrics poller: Instagram Graph access token (long-lived). A test token from the Graph API Explorer is fine to start. CONFIRM — expires in 60 days.', true),
+  ('meta_page_id', 'null', 'Phase 8 metrics poller: Facebook Page id. Leave null and the poller resolves it from the Page token''s /me. CONFIRM.', true),
+  ('meta_page_token', 'null', 'Phase 8 metrics poller: Facebook Page access token (long-lived). Test token ok. CONFIRM — expires in 60 days.', true),
+  ('threads_user_id', 'null', 'Phase 8 metrics poller: Threads user id. Leave null and the poller resolves it from the token''s /me. CONFIRM.', true),
+  ('threads_token', 'null', 'Phase 8 metrics poller: Threads access token (long-lived). Test token ok. CONFIRM — expires in 60 days.', true),
+  ('yt_api_key', 'null', 'Phase 8 metrics poller: YouTube Data API v3 key from a Google Cloud project (enable the API, create an API key — no review needed). CONFIRM.', true),
+  ('yt_channel_id', 'null', 'Phase 8 metrics poller: YouTube channel id, starting UC (About → advanced). CONFIRM.', true)
 -- Keep the operator's runtime value (edge_base_url, channel_chat_id, ...):
 -- the seed rows for those are null placeholders, and a re-run must never wipe
 -- what Jack configured. Seed text wins only when nothing was set yet.

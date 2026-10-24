@@ -163,15 +163,19 @@ Phases 4, 5, 6, 7 backend+dashboard as marked below — helper PRs #106/#107 (ob
 
 **Owner**: Codex (per platform)
 
-**Status 24 Oct**: publishing works live for Telegram (full) and the 🟡 platforms (publish only). **Every remaining item below is blocked on provider credentials / API access that only Jack can create** (Meta app + page/token review for insights and webhooks; YouTube API project + OAuth for Analytics/Shorts; X developer app for OAuth 2.0 + Account Activity; TikTok always user-brings-own-app per the Postiz pattern). Nothing here was claimed complete: no metrics poller was enabled without real accounts and private-upload constraints tested. The 🔴 rows are untouched by design — one platform per sprint once credentials exist (Decision 7: YouTube Shorts first).
+**Status 24 Oct**: publishing works live for Telegram (full) and the 🟡 platforms (publish only).
+
+**Metrics pollers wired this round (behind test credentials)**: `POST /metrics/poll/meta` (Instagram + Facebook Page + Threads per-post insights) and `POST /metrics/poll/youtube` (channel + newest-video statistics, Data API v3) write to `post_metrics`, joined to their variant via `content_items.published_ref` (the YouTube `account:` row carries a `followers_gained` diff against its own previous capture). Credentials come from eight new `needs_confirm` Settings rows (`meta_ig_token`, `meta_page_token`, `threads_token`, `yt_api_key`, `yt_channel_id` + the optional id rows; the same-named function secrets are the fallback), cron runs every 4 h staggered through `twinos_cron_call`, and each run beats `health_checks.source='poller'` + logs `action_log.action='metrics.poll'`. A surface with no credential is **skipped and named, never faked**; a failing surface carries the provider's message with tokens stripped (host + path only). A dedicated Deno suite drives real provider payloads through an injectable fetch; a test Graph API Explorer token or a free-tier Data API key is enough for Jack to verify a live run end to end (docs/SETUP.md 3.1/3.2).
+
+**Still blocked on provider credentials / API access that only Jack can create** (Meta app review for DM/Story publishing and webhooks; YouTube OAuth for Shorts upload; X developer app for OAuth 2.0 + Account Activity; TikTok always user-brings-own-app per the Postiz pattern). The 🔴 rows are untouched by design — one platform per sprint once credentials exist (Decision 7: YouTube Shorts first).
 
 | Platform | Status | Work needed |
 |----------|--------|-------------|
 | Telegram | ✅ Full | — |
-| Instagram | 🟡 Publish only | Add insights (reach, engagement), DM webhook, Story publishing |
-| Facebook | 🟡 Publish only | Page insights, Group publishing, Messenger webhook |
-| Threads | 🟡 Publish only | Insights, reply webhook |
-| YouTube | 🟡 Publish only | Shorts upload, Analytics API, Comment webhook |
+| Instagram | 🟡 Publish only | ✅ insights poller (`metrics/poll/meta`, test token ok); DM webhook, Story publishing |
+| Facebook | 🟡 Publish only | ✅ Page insights poller (`metrics/poll/meta`); Group publishing, Messenger webhook |
+| Threads | 🟡 Publish only | ✅ insights poller (`metrics/poll/meta`); reply webhook |
+| YouTube | 🟡 Publish only | ✅ statistics poller (`metrics/poll/youtube`, Data API key — no OAuth); Shorts upload, Comment webhook, Analytics API |
 | TikTok | 🟡 Publish only | **No official API** — use Postiz pattern: user brings own OAuth app; add `tiktok_webhook` for video metrics |
 | X (Twitter) | 🟡 Publish only | OAuth 2.0 + PKCE, Media upload, Analytics, Webhook (Account Activity API) |
 | LinkedIn | 🔴 Not started | UGC API + Organization insights |
