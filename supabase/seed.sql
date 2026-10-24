@@ -14,6 +14,7 @@ select set_config('request.jwt.claims', '{"twinos_role":"system_seed","role":"se
 -- ===========================================================================
 insert into public.settings (key, value, description, needs_confirm) values
   ('timezone', '"Asia/Kuala_Lumpur"', 'All posting times are MYT (UTC+8).', false),
+  ('prompt_version', '"1"', 'Prompt library version /ai/generate pins to; null follows each row''s active flag. Phase 5.', false),
   ('channel_handle', '"t.me/ezymap"', 'Public channel.', false),
   ('channel_chat_id', 'null', 'Telegram chat id of t.me/ezymap (bigint, negative -100...). CONFIRM: fill from the ops bot once it is admin.', true),
   ('desk_group_chat_id', 'null', 'Private EzyMap Desk group (Jack + ops bot). CONFIRM after the group is created (decision 17).', true),

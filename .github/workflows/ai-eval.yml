@@ -1,0 +1,49 @@
+name: ai-eval
+
+# Prompt regression runs (UPGRADE-PHASES Phase 5). Each run makes one
+# OpenRouter call per golden case and spends the repository owner's credits,
+# so it happens only two ways:
+#   - by hand (workflow_dispatch), or
+#   - automatically when the prompt library or the eval code changes AND the
+#     OPENROUTER_API_KEY repository secret exists.
+# Without the key the job says so and succeeds: CI never invents a key and
+# never fails the build over a credential the owner has not supplied.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "supabase/migrations/*_ai_pipeline.sql"
+      - "supabase/functions/_shared/prompts.ts"
+      - "supabase/functions/_shared/eval.ts"
+      - "supabase/functions/ai-eval/**"
+      - ".github/workflows/ai-eval.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    env:
+      HAS_OPENROUTER: ${{ secrets.OPENROUTER_API_KEY != '' }}
+      HAS_DB: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: run golden cases
+        if: env.HAS_OPENROUTER == 'true' && env.HAS_DB == 'true'
+        working-directory: supabase/functions
+        run: deno run -A --config deno.json ai-eval/cli.ts
+
+      - name: notice (skipped)
+        if: env.HAS_OPENROUTER != 'true' || env.HAS_DB != 'true'
+        run: |
+          echo "::notice::ai-eval skipped — set the OPENROUTER_API_KEY, SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY repository secrets to enable prompt regression runs."
