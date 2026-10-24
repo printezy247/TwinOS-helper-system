@@ -78,7 +78,7 @@ Exit: one TikTok reaches seven places with only the TikTok, YouTube and X taps b
 - [x] Per-platform validator (`_shared/platforms.ts`: media needed, video length and size, hashtag count, caption length; conservative limits in one table) and the caption adapter (risk line kept in front of any cut)
 - [ ] Metrics pollers (IG/FB/Threads/YouTube) — Meta token-expiry watch is done (`health` warns 7 days ahead and alerts once a day); the pollers wait for the Meta tokens
 - [x] "All platforms posted" Friday report line (`v_fanout_week` + `fanoutLine`, migration 0021, in the scorecard `hours` field)
-- [ ] Hours cut ≥60% vs baseline — measured by `v_hours_cut` (saved minutes per KL week against the first baseline week) and printed on the Friday scorecard; it needs the baseline week Jack logs from Mon 5 Oct, then a real week of use
+- [ ] Hours cut ≥60% vs baseline — measured by `v_hours_cut` (saved minutes per KL week against the first baseline week) and printed on the Friday scorecard; it needs the baseline week Jack logs from Mon 5 Oct, then a real week of use. **Data state 24 Oct (nothing estimated):** `baseline_hours` is empty, `time_saved` 0 rows, `manual_metrics` 0 rows, so `v_hours_cut` returns nothing and the target cannot be evaluated yet. Machinery is live: `post_snapshots` 95 rows, `v_friday_scoreboard` 13 rows. Jack's first step is the Desk `/hours` command to log the baseline week.
 
 ## Phase 4 — Community + tracking (Nov–Dec)
 Exit: every swap shows joins and 7-day retention.
