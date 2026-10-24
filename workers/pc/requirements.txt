@@ -12,8 +12,8 @@ nvidia-cublas-cu12 ; extra == "studio"
 nvidia-cudnn-cu12 ; extra == "studio"
 
 # studio/scorecard.py — Friday scorecard image renderer (Phase 2, port of ASAP receipt.py)
-Pillow>=10 ; extra == "studio"
+Pillow>=13.0.0 ; extra == "studio"
 
 # Install with:  pip install -r requirements.txt   (stdlib only, no-op)
-#            or:  pip install "faster-whisper>=1.0" "Pillow>=10"   (studio extras)
+#            or:  pip install "faster-whisper>=1.0" "Pillow>=13.0.0"   (studio extras)
 # ffmpeg must be on PATH for clipping (apt install ffmpeg).
