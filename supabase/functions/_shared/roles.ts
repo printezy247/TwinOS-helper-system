@@ -17,7 +17,8 @@ export type Role =
   | "tradingview" // tv-webhook secret
   | "cron" // pg_cron / scheduler invocations (service role + x-twinos-actor: cron)
   | "dashboard" // any other logged-in dashboard user (read-mostly)
-  | "viewer";
+  | "viewer"
+  | "partner"; // partner API key (Phase 7): reads reports, drafts posts — never approve
 
 export type Action =
   | "desk.input"
@@ -44,6 +45,7 @@ export type Action =
   | "reports.read"
   | "webhooks.manage" // register/remove outbound webhook endpoints (Phase 7)
   | "webhooks.dispatch" // run the delivery loop; cron does this every minute
+  | "keys.manage" // mint/revoke API keys from the dashboard (Phase 7): credentials, Jack alone
   | "health.beat"
   | "research.csi"
   | "research.brief"
@@ -64,12 +66,15 @@ const ALL: Role[] = [
   "cron",
   "dashboard",
   "viewer",
+  "partner",
 ];
 
 /** Table from plan §11, one row per endpoint. */
 export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "desk.input": ["ops_bot", "jack"],
-  "content.draft": ["jack", "abdul", "cron", "ops_bot"],
+  // Partner keys draft for review (Phase 7 write:posts): a draft still has to
+  // pass the approval gate, so the worst a leaked partner key does is litter drafts.
+  "content.draft": ["jack", "abdul", "cron", "ops_bot", "partner"],
   "content.request_approval": ["jack", "abdul", "cron", "ops_bot"],
   "content.approve": ["jack"],
   // Jack only, and not because cancel and edit are "just" undo. Both reach a
@@ -103,6 +108,9 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   // same shape as content.approve: the thing being guarded is a credential.
   "webhooks.manage": ["jack"],
   "webhooks.dispatch": ["cron", "jack"],
+  // Minting an API key hands out a credential, so the dashboard's key routes
+  // are Jack alone — the same shape as content.approve and webhooks.manage.
+  "keys.manage": ["jack"],
   // sales_bot is here because the health board watches it and it could never
   // report: there was no such role, so no key could ever carry one. It gets
   // nothing else — least privilege until it has a job to do here.

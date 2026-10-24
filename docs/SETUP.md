@@ -376,6 +376,7 @@ key from 0.4. Same contract as printezy (`docs/API.md`).
 
 ## Phase 2 — ABDUL, batch, Friday (22–31 Oct)
 - Register the MCP server (`apps/mcp/`, other agent) next to `abdul mcp`; ABDUL reads `abdul_key` from the keyring.
+- Phase 7: mint partner API keys from the dashboard (Settings → API keys, Jack only — the plain key is shown once), and register the HTTP MCP server for outside agents: `claude mcp add --transport http twinos https://<project-ref>.supabase.co/functions/v1/mcp --header "Authorization: Bearer twk_partner_…"`.
 - Telechurn: each Friday copy the weekly numbers into `~/EzyMap/telechurn/<monday>.csv` (no export on Jack's plan, decision 16) or into the dashboard form.
 - Vantage portal numbers: Friday form in the dashboard (Analytics → Friday) or tell ABDUL.
 

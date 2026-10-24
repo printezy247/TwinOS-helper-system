@@ -8,7 +8,7 @@ Auth: a login uses `Authorization: Bearer <session JWT>`. A scoped key
 through, and the function decides who is calling from the `X-TwinOS-Key`
 header. Webhooks carry their own secret instead. Every error is
 `{ "error": "<code>", "message": "<human>", ...detail }` with codes
-`unauthorized 401 · forbidden 403 · bad_request 400 · not_found 404 · conflict 409 · not_configured 503 · upstream_failed 503 · internal 500`.
+`unauthorized 401 · forbidden 403 · bad_request 400 · not_found 404 · conflict 409 · rate_limited 429 · not_configured 503 · upstream_failed 503 · internal 500`.
 POSTs that create or change something accept `Idempotency-Key: <id>`
 (or `idempotency_key` in the body): a repeat returns the stored response with
 `"replayed": true`; the same key with a different body is a 409.
@@ -36,6 +36,9 @@ POSTs that create or change something accept `Idempotency-Key: <id>`
 | `POST /research/{brief,article}` | same | jack, abdul, pc_worker |
 | (worker) | `POST /jobs/claim`, `POST /jobs/result` | pc_worker |
 | (beats) | `POST /health` | ezyai, ops_bot, pc_worker, cron, abdul, jack |
+| (partner reads/drafts) | the GET routes above + `POST /content/draft` | partner (scoped key; scopes below) |
+| (MCP tools) | `POST /mcp` | keyed callers; each tool's own action from roles.ts |
+| (key management) | `GET/POST /keys`, `POST /keys/revoke` | **jack only** (`keys.manage`) |
 
 The full matrix is `supabase/functions/_shared/roles.ts`.
 
@@ -197,6 +200,68 @@ Header `X-Telegram-Bot-Api-Secret-Token` = derived secret (see `bots/ops/README.
 
 ---
 
+## mcp  (Phase 7 — the MCP server)
+
+`POST /mcp` with a JSON-RPC 2.0 body → one JSON response (simple HTTP mode, no SSE):
+
+```json
+{ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+  "params": { "name": "get_friday", "arguments": { "week": "2026-10-19" } } }
+```
+Methods: `initialize` → `{ protocolVersion, capabilities, serverInfo }` · `notifications/initialized` → `202` ·
+`tools/list` → the seven tools · `tools/call` → `{ content: [{ type: "text", text }], isError? }` ·
+anything else → JSON-RPC `-32601`; an unknown tool → `-32602`.
+
+**Auth (Decision 5's default): a bearer token, same as the edge functions.**
+`Authorization: Bearer twk_partner_…` is read directly (the function ships `--no-verify-jwt`), and the
+usual anon JWT + `X-TwinOS-Key` pair works too. Register with an agent:
+
+```sh
+claude mcp add --transport http twinos https://<project-ref>.supabase.co/functions/v1/mcp \
+  --header "Authorization: Bearer twk_partner_…"
+```
+
+**Tools (7 — no approve; approval stays Jack's tap):**
+
+| Tool | Arguments | Permission | Key scope |
+|---|---|---|---|
+| `get_health` | — | `reports.read` | `read:health` |
+| `get_friday` | `week?` (ISO Monday) | `reports.read` | `read:health` |
+| `get_calendar` | `week?` (ISO Monday) | `reports.read` | `read:health` |
+| `get_signals` | `status?`, `limit?` (≤100) | `reports.read` | `read:signals` |
+| `search_feed` | `q`, `since?`, `limit?` (≤100) | `research.read` | `read:health` |
+| `draft_post` | `post_type`, `lang?`, `platform?`, `fields?`, `push_to_desk?`, `allowed_numbers?` | `content.draft` | `write:posts` |
+| `fanout_post` | `content_id`, `platforms?` | `content.draft` | `write:posts` |
+
+The caller's role is checked first (`roles.ts`), then the key's own scopes when it carries them — a
+`read:health`-only key cannot draft even though the partner role may. A permission failure is a
+**tool result** with `isError: true` (the agent reads it and adapts); a bad method or tool name is a
+JSON-RPC error. Reads forward the caller's own credential to the route that already serves them, so
+nothing here runs with more privilege than the caller itself holds; a draft is still only a draft —
+posting needs Jack's approval.
+
+## keys  (Phase 7 — dashboard key management, **jack only**)
+
+`GET /keys` → `{ "keys": [ { "id", "name", "role", "key_prefix", "scopes", "rate_limit_per_min",
+"created_at", "last_used_at", "revoked_at", … } ] }` — never the key or its hash.
+
+`POST /keys` `{ "name": "ib-partner-a", "scopes": ["read:health", "read:signals"],
+"rate_limit_per_min": 60 }` → `201 { …, "key": "twk_partner_…", "note": "Store this in the keyring now.
+It is not recoverable." }`. The plain key is revealed **once**. `scopes` is required and must be a
+non-empty subset of `read:health · read:signals · write:posts`; `rate_limit_per_min` defaults to 60
+(1–100000). A duplicate name is a 409.
+
+`POST /keys/revoke` `{ "id": "…" }` → `{ "ok": true, "revoked_at": "…" }` — idempotent; revoking an
+already-revoked key answers `"already": true`, an unknown id is a 404.
+
+Partner keys are ordinary `twk_` keys: same X-TwinOS-Key/bearer authentication as every other key,
+bounded by the `partner` role on REST (reads + `content.draft`; never approve or webhooks), narrowed
+further by the key's scopes on MCP tools, and any key with `rate_limit_per_min` set gets a per-key
+token bucket that answers `429 { "error": "rate_limited", "retry_after_s": 60 }` when exhausted.
+Live buckets appear under `GET /health/ratelimit` as `key:<name>`.
+
+---
+
 ## Schema contract these functions assume
 
 Owned by `supabase/migrations`. Column names the functions touch, kept in step
@@ -208,7 +273,7 @@ read is the one listed here.
 | Table | Columns the functions touch |
 |---|---|
 | `settings` | `key` pk, `value` jsonb |
-| `api_keys` | `id`, `name`, `role`, `key_prefix`, `key_hash` unique, `last_used_at`, `revoked_at`; RPC `mint_api_key(name, role)` returns the plain key once |
+| `api_keys` | `id`, `name`, `role` (incl. `partner`), `key_prefix`, `key_hash` unique, `scopes` text[], `rate_limit_per_min`, `last_used_at`, `revoked_at`; RPC `mint_api_key(name, role)` returns the plain key once |
 | `idempotency_keys` | `scope`, `key` (pk together), `request_hash`, `status`, `response` jsonb, `created_at` |
 | `action_log` | `actor`, `action`, `target_table`, `target_id`, `payload` jsonb, `created_at` |
 | `templates` | `id`, `key` (= post type), `lang`, `body`, `fields` jsonb, `required_lines` text[], `char_limit`, `approval_rule`, `active`, `version` |

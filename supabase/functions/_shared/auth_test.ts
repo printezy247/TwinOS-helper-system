@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert/mod.ts";
-import { apiKeyFrom, bearer, isServiceKey, miniAppSession } from "./auth.ts";
+import { apiKeyFrom, bearer, isServiceKey, miniAppSession, takeKeyToken } from "./auth.ts";
 import { CORS_HEADERS } from "./http.ts";
 
 const KEY = "twk_abdul_" + "0123456789abcdef".repeat(3).slice(0, 40);
@@ -89,4 +89,33 @@ Deno.test("isServiceKey: an anon or expired token never even reaches Supabase Au
     assertEquals(await isServiceKey("not-a-jwt"), false);
     assertEquals(calls.n, 0);
   });
+});
+
+// Phase 7: the per-key token bucket. takeKeyToken is the whole rate limit —
+// callerFromKey only wires a bucket to a key whose rate_limit_per_min is set.
+Deno.test("takeKeyToken: a fresh bucket allows exactly `limit` requests, then refuses", () => {
+  const b = { tokens: 3, at: 1_000, limit: 3 };
+  assertEquals(takeKeyToken(b, 1_000), true);
+  assertEquals(takeKeyToken(b, 1_000), true);
+  assertEquals(takeKeyToken(b, 1_000), true);
+  assertEquals(takeKeyToken(b, 1_000), false);
+  assertEquals(b.tokens, 0);
+});
+
+Deno.test("takeKeyToken: refills by elapsed time, capped at the limit", () => {
+  // 60/min = one token per second.
+  const b = { tokens: 0, at: 0, limit: 60 };
+  assertEquals(takeKeyToken(b, 500), false, "half a second is not a token yet");
+  assertEquals(takeKeyToken(b, 1_500), true, "a full second since the last check");
+  assertEquals(b.tokens > 0 && b.tokens < 1, true, "0.5 carried over, one consumed");
+
+  const capped = { tokens: 10, at: 0, limit: 60 };
+  assertEquals(takeKeyToken(capped, 600_000), true, "ten idle minutes refill everything");
+  assertEquals(capped.tokens, 59, "refill caps at the limit, then one is consumed");
+});
+
+Deno.test("takeKeyToken: a clock that moves backwards never mints tokens", () => {
+  const b = { tokens: 5, at: 10_000, limit: 10 };
+  assertEquals(takeKeyToken(b, 0), true, "negative elapsed clamps to 0; only the consume counts");
+  assertEquals(b.tokens, 4);
 });
