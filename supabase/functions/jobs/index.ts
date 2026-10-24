@@ -20,7 +20,7 @@
 import { serve, json, readJson, routeOf, reqString, bad, notFound, conflict, optString } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
-import { idemFrom, replay, remember } from "_shared/idempotency.ts";
+import { contentIdem, idemFrom, replay, remember } from "_shared/idempotency.ts";
 import { admin, requireSetting, SETTING_KEYS } from "_shared/supabase.ts";
 import {
   aiNumberGuard, check as complianceCheck, PLATFORMS, POST_TYPES, withRewriteGuard,
@@ -271,7 +271,12 @@ serve(async (req) => {
       requireRole(caller.role, "assets.ingest");
       const path = reqString(body, "path", { max: 300 });
       const sha256 = reqString(body, "sha256", { max: 64 });
-      const idem = await idemFrom(req, { path, sha256 }, "assets.ingest");
+      // Content-addressed idempotency: the drop folder's retries re-sign a new
+      // upload path, so the key and hash are the file's sha256, never the path
+      // (idempotency.ts contentIdem). Without this the retry drafted a second
+      // copy of the same asset — caught live in the 24 Oct acceptance run.
+      const idem = contentIdem("assets.ingest", sha256,
+        req.headers.get("idempotency-key") ?? (typeof body.idempotency_key === "string" ? body.idempotency_key : null));
       const hit = await replay(idem);
       if (hit) return hit;
       const row = {
