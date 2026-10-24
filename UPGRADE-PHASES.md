@@ -16,11 +16,16 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 1. ~~Apply realtime migrations to live DB~~ — done 24 Oct (guard fix 20261024000000 also applied; functions redeployed with `scripts/deploy.sh`)
 2. Sign in as Jack in dashboard preview
 3. Test `/mini` from EzyMap Desk in Telegram (screen is built; register it with @BotFather first)
-4. Decide: health stale threshold (6h), inbox badge counts drafts
+4. ~~Decide: health stale threshold (6h), inbox badge counts drafts~~ — deferred by Jack (24 Oct); documented defaults seeded to the DB (Decisions 1–2), changeable in Settings later
+
+**Delivered 24 Oct (Codex, one PR per phase, all CI green, live-verified)**:
+Phases 4, 5, 6, 7 backend+dashboard as marked below — helper PRs #106/#107 (observability), #108 (AI pipeline), #109 (clip pipeline), #110 (webhooks + funnel); mirror PRs #17 (AI UI), #18 (clips decisions), #19 (affiliates). Phases 1–3 were closed earlier the same day. Still open: Phase 7's MCP server + public API keys, every Phase 8 platform item (blocked on provider credentials), Phase 9's four deliberately-skipped rewrites, and the Quick Wins below.
 
 ---
 
 ## Phase 1 — Unblock Realtime & Verify Live (1 day)
+
+**Status: ✅ done 24 Oct** — migrations applied (51/51 tracked), 19 tables in `supabase_realtime`, live INSERT delivery observed, functions deployed; the two preference decisions are deferred with documented defaults.
 
 **Owner**: Jack (with Codex assist)
 
@@ -37,6 +42,8 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 ---
 
 ## Phase 2 — Phase 2 Dashboard Buttons (2–3 days)
+
+**Status: ✅ done** — all batches wired role-gated against their endpoints and verified live (non-Jack roles refused 403/401 via direct API calls; batch repeat, annual-offer pricing, fan-out draft-per-platform, job re-run semantics each exercised).
 
 **Owner**: Codex (PRs on mirror-hub), Jack reviews/merges
 
@@ -56,6 +63,8 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 
 ## Phase 3 — Mirror-Hub Hardening (1 week, parallelizable)
 
+**Status: ✅ done** — strict tsconfig, error boundaries, skeletons, a11y gates (44px targets), realtime reconnection handling, command palette and route code-splitting all landed in the Wave 8 rounds; regression gates live in `src/test/`.
+
 **Owner**: Codex (parallel PRs)
 
 | Area | Work | Tests to add |
@@ -73,6 +82,8 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 
 ## Phase 4 — Backend Observability & Reliability (1 week)
 
+**Status: ✅ done 24 Oct (helper PRs #106 + pg_cron guard fix #107, merged green, live-verified)** — trace-id propagation across functions, structured JSON logs, global request metrics in the DB (per-isolate maps could not be trusted; 15+ requests proved it), deep health probe, three threshold alerts with dedupe + cooldown. Grafana/Jaeger were not provisioned (no service chosen for that); metrics live in Supabase and are served at `/metrics`.
+
 **Owner**: Codex (main repo)
 
 | Work | Why | Verification |
@@ -87,6 +98,8 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 ---
 
 ## Phase 5 — AI Content Pipeline (2 weeks)
+
+**Status: ✅ done 24 Oct (helper #108 + mirror #17, merged green, live-verified)** — versioned prompt library live (`applied: system-default@1` proven on `/ai/generate`), `ai_memory` with 3-memory injection, `ai_eval_runs` + `ai-eval` function + CI workflow that skips with a notice until `OPENROUTER_API_KEY` exists, prompt picker in the AI dialog, live compliance strip in Compose, hook performance on Friday. Decision 3 default kept: `openrouter/free` until Jack upgrades.
 
 **Owner**: Codex (main repo + mirror-hub)
 
@@ -106,6 +119,8 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 
 ## Phase 6 — Video/Clipping Pipeline (2 weeks)
 
+**Status: ✅ server-side done 24 Oct (helper #109 + mirror #18, merged green, live-verified)** — Decision 4 default live: a published map_recap/lesson on the master platform queues ONE `clip_candidates` scan (deduped on content_id), candidates land in `clip_candidates`, and the Clips page now has Jack-only Use/Drop buttons calling the same atomic claim as the Desk tap (viewer/abdul/anon → 403/403/401 proven live). **Jack-side remainder**: install the studio extras on the PC (faster-whisper + CUDA) and run one real recording end-to-end — no GPU work was run here.
+
 **Owner**: Codex (workers/pc + mirror-hub)
 
 **Context**: `workers/pc/studio/clipper.py` is a Phase 5 stub. Trending: `heygen-com/hyperframes` (71k⭐ HTML→video), `remotion-dev/remotion` (66k⭐ React→video).
@@ -122,6 +137,13 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 ---
 
 ## Phase 7 — Community & Growth (2 weeks)
+
+**Status: partially done 24 Oct (helper #110 + mirror #19, merged green, live-verified)**:
+- ✅ **Webhook registry + dispatch** — `webhooks`/`webhook_deliveries` (RLS: Jack only), `webhooks` function with register/list/remove (jack) + dispatch (cron, every minute via `twinos_cron_call`), HMAC-signed POSTs, Decision 6 exactly (4 attempts, retries +1m/+5m/+15m — proven live: a 2xx delivered, an HTTP 404 requeued with the delay armed), `/ping` echo for receiver-side signature verification, emitters on post.published / alert.fired / signal.result / friday.done.
+- ✅ **Referral tracking** — `v_referral_funnel` (joins/leaves from Telegram attribution; clicks/deposits/FTDs/IB/commissions/payouts from `manual_metrics` via the link's campaign; unmeasured = null, never a fake zero).
+- ✅ **Affiliate dashboard** — `/affiliates` route in the Grow group (palette `g b`), read-only over the view.
+- ⬜ **MCP server** — not built this round; Decision 5's default (bearer token, ≤8 tools) is ready when it is picked up.
+- ⬜ **Public API keys** — not built this round; the internal scoped-key system (`twk_…`, `mint-keys.sh`) already exists and is the pattern to extend for partners.
 
 **Owner**: Codex (main repo + mirror-hub)
 
@@ -140,6 +162,8 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 ## Phase 8 — Platform Expansion (ongoing)
 
 **Owner**: Codex (per platform)
+
+**Status 24 Oct**: publishing works live for Telegram (full) and the 🟡 platforms (publish only). **Every remaining item below is blocked on provider credentials / API access that only Jack can create** (Meta app + page/token review for insights and webhooks; YouTube API project + OAuth for Analytics/Shorts; X developer app for OAuth 2.0 + Account Activity; TikTok always user-brings-own-app per the Postiz pattern). Nothing here was claimed complete: no metrics poller was enabled without real accounts and private-upload constraints tested. The 🔴 rows are untouched by design — one platform per sprint once credentials exist (Decision 7: YouTube Shorts first).
 
 | Platform | Status | Work needed |
 |----------|--------|-------------|
@@ -161,6 +185,14 @@ Based on research of 27 trending repos (Oct 2026), deep code review of both repo
 ---
 
 ## Phase 9 — Architecture Modernization (ongoing)
+
+**Status 24 Oct**:
+- **pgvector ✅ verified** — installed and enabled on the live project (`vector` 0.8.2, `pg_extension` row present). Ready when a semantic-search use case is chosen; no embedding workload exists yet, so nothing was built on top of it.
+- The other four initiatives are **deliberately skipped for now**, with reasons:
+  - *Replace pg_cron with Trigger.dev/Inngest* — current pg_cron schedules are guarded, idempotent and already retry via the jobs table; a third-party orchestrator adds an external dependency and a migration risk for no observed failure yet. Revisit when a job actually needs durable multi-step execution.
+  - *Edge Runtime → Deno Deploy / Cloudflare Workers* — Supabase Edge hosts everything with the existing auth/Vault/`twinos_cron_call` wiring; splitting hosting doubles the deploy surface for marginal cold-start gain at this scale.
+  - *PostgREST for read-heavy endpoints* — the dashboard's reads already go through granted views (`security_invoker`) and few, well-shaped edge routes; removing six functions would trade working role-gating for pure table exposure.
+  - *Drizzle ORM* — migrations are SQL-on-purpose (reviewable, CI-tested against real Postgres); the Deno-side queries are parameterised through the typed PostgREST client. ORM buys cross-layer types at the cost of rewriting every migration — revisit if a query layer grows genuinely complex.
 
 | Initiative | Effort | Payoff |
 |------------|--------|--------|
@@ -213,12 +245,12 @@ Phase 9 (ongoing)
 
 ## Decision Log (for Jack)
 
-| # | Decision | Default | Deadline |
-|---|----------|---------|----------|
-| 1 | Health stale threshold | 6 hours | Phase 1 |
-| 2 | Inbox badge counts drafts | Yes | Phase 1 |
-| 3 | OpenRouter model for production | `openrouter/free` → upgrade to `anthropic/claude-3.5-sonnet` when budget allows | Phase 5 |
-| 4 | Clip candidate auto-create trigger | On `map_recap` + `lesson` publish | Phase 6 |
-| 5 | MCP server auth | Bearer token (same as edge functions) | Phase 7 |
-| 6 | Webhook retry policy | 3× exponential backoff (1m, 5m, 15m) | Phase 7 |
-| 7 | Next platform after TikTok | YouTube Shorts (highest ROI for trading content) | Phase 8 |
+| # | Decision | Default | Deadline | Status 24 Oct |
+|---|----------|---------|----------|---------------|
+| 1 | Health stale threshold | 6 hours | Phase 1 | ✅ seeded (`health_stale_threshold_hours=6`); your explicit deferral noted — change it in Settings whenever |
+| 2 | Inbox badge counts drafts | Yes | Phase 1 | ✅ seeded (`inbox_badge_counts_drafts=true`); same deferral note |
+| 3 | OpenRouter model for production | `openrouter/free` → upgrade to `anthropic/claude-3.5-sonnet` when budget allows | Phase 5 | ✅ default live; upgrade is one Settings row when you want it |
+| 4 | Clip candidate auto-create trigger | On `map_recap` + `lesson` publish | Phase 6 | ✅ live (`clip_auto_create=true`), deduped per content |
+| 5 | MCP server auth | Bearer token (same as edge functions) | Phase 7 | ⬜ awaiting the MCP build (deferred this round) |
+| 6 | Webhook retry policy | 3× exponential backoff (1m, 5m, 15m) | Phase 7 | ✅ implemented exactly, proven live (deliver + 404-requeue) |
+| 7 | Next platform after TikTok | YouTube Shorts (highest ROI for trading content) | Phase 8 | ⬜ awaiting YouTube API credentials |
