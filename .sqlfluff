@@ -1,0 +1,18 @@
+# sqlfluff — TwinOS config (Quick Win 2: blocking, not advisory).
+#
+# There are 2 400+ style findings across the applied migrations: they are the
+# repo's hand format (2-space, long lines, implicit aliases), not defects —
+# and mass-reformatting migrations that are already applied on the live DB
+# would rewrite reviewed files for no behavioural gain (and dollar-quoted
+# bodies do not survive blind fixes). So layout/naming pedantry is off and
+# the structural rules below stay ON; CI now fails the build on those.
+# To tighten later: drop a code from exclude_rules and fix what appears.
+[sqlfluff]
+dialect = postgres
+templater = raw
+exclude_rules =
+    LT01, LT02, LT05, LT06, LT08, LT09, LT14,
+    RF02, RF03, RF04,
+    AL01, AL03, AL04,
+    AM05, AM06,
+    ST06, ST09

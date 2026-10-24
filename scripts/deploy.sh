@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # Deploy the Edge Functions to the hosted project and check they answer.
 #
-#   ./scripts/deploy.sh            deploy all eleven functions
-#   ./scripts/deploy.sh --check    only run the checks and probe the live functions
+#   ./scripts/deploy.sh                 checks + deploy the functions + live
+#                                       probe + set the Desk's bot commands
+#   ./scripts/deploy.sh --check         checks + live probe only: touches
+#                                       nothing in the project
+#   ./scripts/deploy.sh --functions-only  checks + deploy functions + probe,
+#                                       skip the Desk bot-command step
+#   ./scripts/deploy.sh --migrations-only  checks + `supabase db push --linked`,
+#                                       then exit — no functions touched
+#   ./scripts/deploy.sh --dry-run       print every mutating command instead
+#                                       of running it (checks and probes are
+#                                       reads and still run)
 #
 # Needs the Supabase CLI logged in (`supabase login`) and linked once
 # (`supabase link --project-ref <ref>`). It finds the CLI even when npm's global
@@ -18,6 +27,31 @@ command -v supabase >/dev/null || die "the Supabase CLI is not installed (npm i 
 REF="$(cat supabase/.temp/project-ref 2>/dev/null || true)"
 [ -n "$REF" ] || die "project not linked. Run: supabase link --project-ref <ref>"
 
+# Flags (documented in the header). --check keeps its historical meaning:
+# run nothing that changes the project.
+MODE="deploy"
+DRY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check)           MODE="check" ;;
+    --functions-only)  MODE="functions" ;;
+    --migrations-only) MODE="migrations" ;;
+    --dry-run)         DRY=1 ;;
+    *) die "unknown flag: $1 (see the header of this script for the supported flags)" ;;
+  esac
+  shift
+done
+
+# Every command that changes something goes through run(): --dry-run prints
+# it instead. Checks and probes are reads; they always run.
+run() {
+  if [ "$DRY" -eq 1 ]; then
+    printf 'would run:'; printf ' %q' "$@"; printf '\n'
+  else
+    "$@"
+  fi
+}
+
 say "checks"
 python3 tests/check_consistency.py | tail -1
 if command -v deno >/dev/null; then
@@ -26,7 +60,7 @@ else
   echo "(deno not installed here; CI runs deno check, lint and test on every push)"
 fi
 
-if [ "${1:-}" != "--check" ]; then
+if [ "$MODE" = "deploy" ] || [ "$MODE" = "functions" ]; then
   # Edge deploys upload the whole function folder, tests included (~20
   # *_test.ts files today). Move them aside for the deploy only; the EXIT
   # trap puts every file back even when a deploy fails. Checks above already
@@ -47,18 +81,26 @@ if [ "${1:-}" != "--check" ]; then
     mv -f "$f" "$TESTCACHE/$(printf '%s' "$f" | tr '/' '__')"
   done < "$TESTLIST"
   say "deploy (11 functions + ai/ai-eval/webhooks; all authenticate inside the handler)"
-  supabase functions deploy content approve publish signals-ingest results health friday jobs links metrics research
+  run supabase functions deploy content approve publish signals-ingest results health friday jobs links metrics research
   # NEW functions default to verify_jwt=true, which makes the platform's
   # gateway reject X-TwinOS-Key/twk_ callers with its own UNAUTHORIZED_* body
   # before our handler runs. Every TwinOS function authenticates itself
   # (scoped keys included), so ai, ai-eval and webhooks belong with
   # --no-verify-jwt — webhooks additionally has the intentionally open
   # /ping echo (it only echoes; the registry routes all authenticate).
-  supabase functions deploy ai ai-eval webhooks --no-verify-jwt
+  run supabase functions deploy ai ai-eval webhooks --no-verify-jwt
   say "deploy (3 routes that carry their own credential)"
-  supabase functions deploy tg-webhook tv-webhook tg-auth --no-verify-jwt
+  run supabase functions deploy tg-webhook tv-webhook tg-auth --no-verify-jwt
   restore_tests
   trap - EXIT
+fi
+
+# --migrations-only: schema push, then stop. The checks above already ran.
+if [ "$MODE" = "migrations" ]; then
+  say "migrations (supabase db push --linked)"
+  run supabase db push --linked
+  say "done (migrations only — no functions touched)"
+  exit 0
 fi
 
 say "live probe"
@@ -93,9 +135,16 @@ else
 fi
 [ "$fail" -eq 0 ] || die "a function did not answer as expected"
 
-say "desk commands"
 # setMyCommands scoped to the Desk chat (plan §17 Wave 1 item 3). Best effort:
 # a miss here never fails the deploy; the bot still answers every command.
+# Skipped by --functions-only (this is not a function) and --dry-run (it
+# changes Telegram state).
+if [ "$MODE" = "functions" ]; then
+  say "desk commands (skipped: --functions-only)"
+elif [ "$DRY" -eq 1 ]; then
+  say "desk commands (skipped: --dry-run)"
+else
+say "desk commands"
 if TOKEN="$(secret-tool lookup service twinos key ops_bot_token 2>/dev/null)" && [ -n "$TOKEN" ]; then
   DESK_ID="$(supabase db query --linked --output-format json "select value::text as v from settings where key='desk_group_chat_id'" 2>/dev/null | sed -n '/^[[{]/,$p' | jq -r '(.rows? // .) | .[0].v // .[0] // empty' 2>/dev/null || true)"
   if [ -n "${DESK_ID:-}" ]; then
@@ -117,6 +166,7 @@ if TOKEN="$(secret-tool lookup service twinos key ops_bot_token 2>/dev/null)" &&
   TOKEN=""
 else
   echo "skip setMyCommands (no ops_bot_token in the keyring yet; docs/SETUP.md 0.5)"
+fi
 fi
 say "done"
 supabase functions list 2>&1 | sed -n "1,14p" || true

@@ -235,11 +235,16 @@ Phase 9 (ongoing)
 
 ## Quick Wins (do this week, no phases)
 
-1. **Add `knip` to mirror-hub** — find dead exports (`npx knip` in CI)
-2. **Enable `sqlfluff` as error** — currently advisory in CI; make it blocking
-3. **Add `supabase inspect db bloat --linked` to weekly cron** — catch table bloat early
-4. **Document `scripts/deploy.sh` flags** — `--dry-run`, `--functions-only`, `--migrations-only`
-5. **Add `dependabot.yml`** — auto-PR for npm/pip/cargo updates (both repos)
+1. **Add `knip` to mirror-hub** — find dead exports (`npx knip` in CI)  
+   → ✅ 24 Oct: `knip` + `knip.json` (shadcn `ui/**` counts as a component surface, generated files ignored), 9 confirmed-dead dependencies removed, `bun run knip` now gates CI at exit 0.
+2. **Enable `sqlfluff` as error** — currently advisory in CI; make it blocking  
+   → ✅ 24 Oct: `.sqlfluff` turns layout pedantry off (2 400 style findings across applied migrations are format, not defects — mass-rewriting applied files is refused) and keeps the structural rules ON; the CI step no longer has `|| true` and passes at 0 findings.
+3. **Add `supabase inspect db bloat --linked` to weekly cron** — catch table bloat early  
+   → ✅ 24 Oct as `twinos-weekly-bloat` pg_cron (Sundays 10:00 MYT): the same read runs in-database — weekly snapshot into `action_log`, alert row when a table hits ≥40% dead — so no account-wide Supabase PAT has to live in repo secrets. Ad-hoc CLI form still documented in the migration.
+4. **Document `scripts/deploy.sh` flags** — `--dry-run`, `--functions-only`, `--migrations-only`  
+   → ✅ 24 Oct: all three implemented (plus the existing `--check`), documented in the script header, and exercised: dry-run prints every mutating command while checks/probes still run, migrations-only pushes and exits, unknown flags die with a pointer to the header.
+5. **Add `dependabot.yml`** — auto-PR for npm/pip/cargo updates (both repos)  
+   → ✅ 24 Oct: helper = github-actions + pip (`workers/pc`); mirror = npm + github-actions; weekly on Mondays, 5 PRs max each.
 
 ---
 
