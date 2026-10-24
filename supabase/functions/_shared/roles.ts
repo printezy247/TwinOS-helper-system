@@ -42,6 +42,8 @@ export type Action =
   | "metrics.manual"
   | "imports.telechurn"
   | "reports.read"
+  | "webhooks.manage" // register/remove outbound webhook endpoints (Phase 7)
+  | "webhooks.dispatch" // run the delivery loop; cron does this every minute
   | "health.beat"
   | "research.csi"
   | "research.brief"
@@ -97,6 +99,10 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "metrics.manual": ["jack", "abdul"],
   "imports.telechurn": ["jack", "pc_worker"],
   "reports.read": ALL,
+  // The registry stores per-endpoint signing secrets, so it is Jack alone —
+  // same shape as content.approve: the thing being guarded is a credential.
+  "webhooks.manage": ["jack"],
+  "webhooks.dispatch": ["cron", "jack"],
   // sales_bot is here because the health board watches it and it could never
   // report: there was no such role, so no key could ever carry one. It gets
   // nothing else — least privilege until it has a job to do here.

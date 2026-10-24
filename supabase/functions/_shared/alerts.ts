@@ -16,6 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSetting, SETTING_KEYS } from "./supabase.ts";
 import { redactSecrets } from "./providers.ts";
 import { type InlineButton, sendMessage } from "./tg.ts";
+import { emitWebhook } from "./webhooks.ts";
 
 export const DESK_ALERT_COOLDOWN_MS = 6 * 3600_000;
 
@@ -74,6 +75,14 @@ export async function deskAlert(opts: {
       message: opts.message,
       payload: { key: opts.key, repeats: 0 },
       dedupe_key: dedupe,
+    });
+    // Phase 7: a NEW open alert is the condition firing, once. Repeats of the
+    // same row below are not new firings and emit nothing.
+    await emitWebhook(opts.db, "alert.fired", {
+      kind: opts.kind,
+      severity: opts.severity,
+      message: opts.message,
+      key: opts.key,
     });
     await notifyDesk(opts);
     return { sent: true, repeats: 0 };
