@@ -988,6 +988,41 @@ begin
     'the hook at 100 views/1h sits under the median and marks no win';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- C3: twinos_slow_route_alerts — a slow route opens exactly ONE alert (not
+-- one per tick) and recovers itself when the rolling average drops back.
+-- Synthetic request_stats rows only; everything is rolled back at the end.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_open bigint;
+begin
+  -- Re-run safe: clear any leftover rows from an earlier attempt.
+  delete from public.request_stats where route like 'smoke/c3/%';
+  delete from public.alerts where dedupe_key like 'thr:slow_route:smoke/c3/%';
+
+  -- 10 requests summing 20000 ms = 2000 ms rolling average, over the
+  -- 1500 ms threshold the migration seeds into settings.
+  insert into public.request_stats (route, cls, count, errors, ms_sum, ms_max, updated_at)
+    values ('smoke/c3/slow', '2xx', 10, 0, 20000, 1900, now());
+
+  perform public.twinos_slow_route_alerts();
+  perform public.twinos_slow_route_alerts(); -- a second tick must not storm
+
+  select count(*) into v_open from public.alerts
+    where dedupe_key = 'thr:slow_route:smoke/c3/slow' and resolved_at is null;
+  assert v_open = 1, format('a slow route must open exactly one alert, found %s', v_open);
+
+  -- Recovery: the same route now averages 100 ms.
+  update public.request_stats set ms_sum = 1000, ms_max = 100
+    where route = 'smoke/c3/slow';
+  perform public.twinos_slow_route_alerts();
+
+  select count(*) into v_open from public.alerts
+    where dedupe_key = 'thr:slow_route:smoke/c3/slow' and resolved_at is null;
+  assert v_open = 0, format('a recovered route must resolve its alert, still open: %s', v_open);
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
 
