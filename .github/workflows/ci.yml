@@ -28,6 +28,8 @@ jobs:
         run: deno test --config deno.json --allow-env _shared/
       - name: coverage (report only — B3 step 1)
         run: deno task coverage
+      - name: coverage gate (B3 step 2 — baseline #131: 87.6/76.7/72.0)
+        run: deno coverage cov | awk -F'|' '/All files/ {gsub(/[ %]/,"",$4); gsub(/[ %]/,"",$5); if ($4+0 < 75 || $5+0 < 70) {print "FAIL: branches " $4 " or lines " $5 " below gate"; exit 1}}'
 
   workers:
     name: python unittest (workers/pc, apps/mcp)
