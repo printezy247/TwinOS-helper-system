@@ -254,3 +254,4 @@ apps/dashboard/dist/
 /.vscode/
 /.zprofile
 /.zshrc
+supabase/functions/cov/

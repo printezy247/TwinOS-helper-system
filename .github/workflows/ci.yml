@@ -26,6 +26,8 @@ jobs:
         run: deno lint --config deno.json
       - name: deno test (pure modules only)
         run: deno test --config deno.json --allow-env _shared/
+      - name: coverage (report only — B3 step 1)
+        run: deno task coverage
 
   workers:
     name: python unittest (workers/pc, apps/mcp)
