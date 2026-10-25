@@ -93,6 +93,9 @@ export const SETTING_TYPES: Record<string, SettingType> = {
   llm_local_url: "text",
   platform_signatures: "text",
   use_polling: "boolean",
+  hook_promote_margin: "number", // E2: required relative lift (0.25 = 25 %)
+  hook_promote_min_posts: "number", // E2: candidate's own posts before it may speak
+  hook_active_id: "id", // E2: the promoted hook; only POST /friday/promote writes it
 };
 
 /**
@@ -158,4 +161,10 @@ export const SETTING_KEYS = {
   threadsToken: "threads_token",
   ytApiKey: "yt_api_key", // YouTube Data API v3 key
   ytChannelId: "yt_channel_id",
+  // E2 hook promotion (proposal only, never automatic): the margin and the
+  // post count live here so Jack can retune without a deploy; the champion
+  // row is written only by POST /friday/promote.
+  hookPromoteMargin: "hook_promote_margin", // required relative lift, e.g. 0.25
+  hookPromoteMinPosts: "hook_promote_min_posts", // candidate's own posts, e.g. 5
+  hookPromoteChampion: "hook_active_id", // the promoted hook id; unset = most-used is incumbent
 } as const;
