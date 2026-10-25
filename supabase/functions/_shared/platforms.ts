@@ -224,3 +224,123 @@ export function fanoutSummary(masterShort: string, results: FanResult[]): string
   }
   return [...lines, ...(kits.length ? ["", ...kits] : [])].join("\n").slice(0, 4096);
 }
+
+/* ---------- Adapter contract (plan v5 §F1) ---------- *
+ * One interface every platform implements: publish, metrics, refreshToken,
+ * revoke, capabilities. The Meta adapters below are the first real
+ * implementations; they wrap the existing meta.ts/socialmetrics.ts functions
+ * unchanged, so today's behaviour is identical — only the shape is new. A
+ * platform we cannot refresh or revoke says so, instead of faking it.
+ */
+import {
+  type MetaConfig, publishFacebookReel, publishInstagram, publishThreads, type Waiting,
+} from "./meta.ts";
+import { pollFacebook, pollInstagram, pollThreads, type PollOutcome } from "./socialmetrics.ts";
+
+export type CapabilityMedia = "photo" | "video" | "text";
+
+export interface Capabilities {
+  /** What this platform can carry alongside the caption. */
+  media: CapabilityMedia[];
+  /** Hard caption limit in characters (the table in compliance.ts, not a guess). */
+  captionLimit: number;
+  /** Supports TwinOS' delayed first comment (telegram only today). */
+  firstComment: boolean;
+}
+
+export interface PublishPost { body: string; photoUrl?: string; videoUrl?: string }
+export interface PublishedRef { id: string }
+
+export interface PlatformAdapter {
+  platform: Platform;
+  capabilities(): Capabilities;
+  publish(post: PublishPost): Promise<PublishedRef>;
+  /** Numbers for the published post; empty until the platform reports it. */
+  metrics(ref: PublishedRef): Promise<Record<string, number>>;
+  /** New token after rotation, or null when this platform never rotates from here. */
+  refreshToken(): Promise<string | null>;
+  /** Always throws for manual-only platforms; never a silent no-op. */
+  revoke(): Promise<void>;
+}
+
+export type AdapterRegistry = Partial<Record<Platform, PlatformAdapter>>;
+
+/**
+ * What each platform can carry, as one correctable table — the policy comment
+ * at the top of this file applies here too. The caption limit is CHAR_LIMITS's
+ * hard value; SPECS stays the validator's richer view (hashtags, media needs).
+ */
+export const CAPABILITIES: Record<Platform, Capabilities> = {
+  telegram: { media: ["text", "photo", "video"], captionLimit: CHAR_LIMITS.telegram.hard, firstComment: true },
+  instagram: { media: ["photo", "video"], captionLimit: CHAR_LIMITS.instagram.hard, firstComment: false },
+  facebook: { media: ["video"], captionLimit: CHAR_LIMITS.facebook.hard, firstComment: false },
+  threads: { media: ["text", "photo", "video"], captionLimit: CHAR_LIMITS.threads.hard, firstComment: false },
+  youtube: { media: ["video"], captionLimit: CHAR_LIMITS.youtube.hard, firstComment: false },
+  tiktok: { media: ["video"], captionLimit: CHAR_LIMITS.tiktok.hard, firstComment: false },
+  x: { media: ["text", "photo", "video"], captionLimit: CHAR_LIMITS.x.hard, firstComment: false },
+};
+
+export function capabilitiesFor(p: Platform): Capabilities {
+  return CAPABILITIES[p];
+}
+
+/**
+ * The single publish path for the runner and the tests alike: pick the
+ * platform's adapter and go through it. The kit message is the exact string
+ * publish/index.ts throws today, so classification does not change.
+ */
+export async function publishThrough(registry: AdapterRegistry, platform: Platform, post: PublishPost): Promise<PublishedRef> {
+  const adapter = registry[platform];
+  if (!adapter) {
+    if (isKitPlatform(platform)) throw new Error(`permanent: ${platform} is a publish kit, not a provider`);
+    throw new Error(`permanent: no adapter for ${platform}`);
+  }
+  return await adapter.publish(post);
+}
+
+function numbersFor(out: PollOutcome, id: string): Record<string, number> {
+  const row = out.rows.find((r) => r.platform_post_id === id);
+  if (!row) return {};
+  const m: Record<string, number> = {};
+  for (const [k, v] of Object.entries(row)) if (typeof v === "number") m[k] = v;
+  return m;
+}
+
+const manualRevoke = (name: string): (() => Promise<void>) =>
+  () => Promise.reject(new Error(`permanent: ${name} tokens are revoked in the platform's own app, never from TwinOS`));
+
+/** Adapters for the platforms with Meta credentials; unconfigured ones stay absent, exactly as today. */
+export function metaAdapters(cfg: MetaConfig, fetchFn: typeof fetch = fetch, w: Waiting = {}): AdapterRegistry {
+  const out: AdapterRegistry = {};
+  const wrap = (
+    platform: "instagram" | "facebook" | "threads",
+    send: (p: PublishPost) => Promise<{ id: string }>,
+    poll: () => Promise<PollOutcome>,
+  ): PlatformAdapter => ({
+    platform,
+    capabilities: () => capabilitiesFor(platform),
+    publish: (p) => send(p),
+    metrics: async (ref) => numbersFor(await poll(), ref.id),
+    // Meta long-lived tokens are re-issued by hand (docs/SETUP.md 3.1); meta.ts
+    // tracks expiry instead. null = "this platform never rotates from here".
+    refreshToken: () => Promise.resolve(null),
+    revoke: manualRevoke(platform),
+  });
+  if (cfg.instagram) {
+    const c = cfg.instagram;
+    out.instagram = wrap("instagram", (p) => publishInstagram(c, { caption: p.body, videoUrl: p.videoUrl, imageUrl: p.photoUrl }, fetchFn, w), () => pollInstagram({ userId: c.id, token: c.token }, fetchFn));
+  }
+  if (cfg.facebook) {
+    const c = cfg.facebook;
+    out.facebook = wrap("facebook", (p) => {
+      // the runner's own guard, kept so the adapter cannot be sent a still image
+      if (!p.videoUrl) throw new Error("permanent: a facebook reel needs a video");
+      return publishFacebookReel(c, { description: p.body, videoUrl: p.videoUrl }, fetchFn);
+    }, () => pollFacebook({ pageId: c.id, token: c.token }, fetchFn));
+  }
+  if (cfg.threads) {
+    const c = cfg.threads;
+    out.threads = wrap("threads", (p) => publishThreads(c, { text: p.body, videoUrl: p.videoUrl, imageUrl: p.photoUrl }, fetchFn, w), () => pollThreads({ userId: c.id, token: c.token }, fetchFn));
+  }
+  return out;
+}

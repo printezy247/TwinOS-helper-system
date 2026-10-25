@@ -158,3 +158,92 @@ Deno.test("isPublishableVariant: originals and the picked angle publish; other a
   assertEquals(isPublishableVariant({ via: "llm_variants", angle: "problem", picked: false, blocked: true }), false);
   assertEquals(isPublishableVariant({ via: "llm_variants", angle: "proof", picked: true }), true);
 });
+
+/* ---------- Adapter contract (plan v5 §F1) ---------- */
+import { capabilitiesFor, metaAdapters, publishThrough, type Capabilities, type PlatformAdapter, type PublishPost } from "./platforms.ts";
+
+/** A fake platform that records every verb call, driving the publish path end to end. */
+class FakePlatform implements PlatformAdapter {
+  platform = "instagram" as const;
+  calls: string[] = [];
+  capabilities(): Capabilities {
+    this.calls.push("capabilities");
+    return { media: ["photo", "video"], captionLimit: 2200, firstComment: false };
+  }
+  publish(post: PublishPost) {
+    this.calls.push(`publish:${post.body}`);
+    return Promise.resolve({ id: "fake-1" });
+  }
+  metrics(ref: { id: string }) {
+    this.calls.push(`metrics:${ref.id}`);
+    return Promise.resolve({ views: 7 });
+  }
+  refreshToken() {
+    this.calls.push("refreshToken");
+    return Promise.resolve("fake-refreshed");
+  }
+  revoke() {
+    this.calls.push("revoke");
+    return Promise.resolve();
+  }
+}
+
+Deno.test("F1: a fake platform drives the publish path through the registry", async () => {
+  const fake = new FakePlatform();
+  const registry = { instagram: fake };
+  const ref = await publishThrough(registry, "instagram", { body: "hello" });
+  assertEquals(ref.id, "fake-1");
+  // after publish the runner can ask the same adapter for the post's numbers
+  const m = await fake.metrics(ref);
+  assertEquals(m.views, 7);
+  const tok = await fake.refreshToken();
+  assertEquals(tok, "fake-refreshed");
+  await fake.revoke();
+  assertEquals(fake.calls, ["publish:hello", "metrics:fake-1", "refreshToken", "revoke"]);
+});
+
+Deno.test("F1: publishThrough has the runner's contract for kits and unknown platforms", async () => {
+  const registry = { instagram: new FakePlatform() };
+  // the exact prefix publish/index.ts classifies as permanent today
+  const e = await publishThrough(registry, "tiktok", { body: "x" }).catch((x: Error) => x);
+  assert(e instanceof Error && e.message.startsWith("permanent:"), `expected permanent:, got ${e}`);
+});
+
+Deno.test("F1: capabilities agree with the policy tables they shadow", () => {
+  const ig = capabilitiesFor("instagram");
+  assertEquals(ig.media, ["photo", "video"]);
+  assertEquals(ig.captionLimit, 2200);
+  assertEquals(capabilitiesFor("facebook").media, ["video"]);
+  assertEquals(capabilitiesFor("threads").captionLimit, 500);
+  assertEquals(capabilitiesFor("telegram").firstComment, true);
+  assertEquals(capabilitiesFor("x").firstComment, false);
+});
+
+Deno.test("F1: the Meta adapters are first implementations of the contract", async () => {
+  const seen: string[] = [];
+  const fakes: Record<string, Response> = {
+    "media_publish": Response.json({ id: "ig-post-9" }),
+    "media": Response.json({ id: "container-1" }),
+  };
+  const fetchFn = ((url: string | URL | Request) => {
+    const u = String(url);
+    seen.push(u.includes("media_publish") ? "publish" : "container");
+    const hit = Object.entries(fakes).find(([k]) => u.includes(k));
+    return Promise.resolve(hit ? hit[1].clone() : Response.json({}));
+  }) as unknown as typeof fetch;
+  const adapters = metaAdapters({
+    instagram: { id: "123", token: "fake-ig-token-not-a-secret" },
+    facebook: null,
+    threads: null,
+  }, fetchFn);
+  const ig: PlatformAdapter = adapters.instagram!; // type-level proof it implements the contract
+  assertEquals(ig.platform, "instagram");
+  assertEquals(ig.capabilities().media.includes("photo"), true);
+  const ref = await ig.publish({ body: "caption", photoUrl: "https://cdn/p.jpg" });
+  assertEquals(ref.id, "ig-post-9");
+  assertEquals(seen, ["container", "publish"]);
+  // Meta long-lived tokens do not rotate from here, and revoke stays manual: honest answers, not fakes.
+  assertEquals(await ig.refreshToken(), null);
+  const e = await ig.revoke().catch((x: Error) => x);
+  assert(e instanceof Error && e.message.startsWith("permanent:"), `expected permanent:, got ${e}`);
+});
