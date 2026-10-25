@@ -234,6 +234,57 @@ serve(async (req) => {
     return json(out);
   }
 
+  // GET /health/ai-usage — week-to-date generation usage (C4), Monday-00:00
+  // UTC anchored. ai_usage rows come from /ai/generate; provider-reported
+  // tokens only. usage_unknown rows are counted but never estimated, and
+  // there is no USD figure until a real price table exists — inventing one
+  // is not honest accounting.
+  if (method === "GET" && tail[0] === "ai-usage") {
+    requireRole(caller.role, "reports.read");
+    const now = new Date();
+    const dow = now.getUTCDay(); // 0 = Sunday
+    const weekStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (dow === 0 ? 6 : dow - 1)),
+    );
+    const { data, error } = await db
+      .from("ai_usage")
+      .select("model, prompt_tokens, completion_tokens, usage_unknown")
+      .gte("ts", weekStart.toISOString())
+      .limit(5000);
+    if (error) throw new HttpError(503, "upstream_failed", error.message);
+    type UsageRow = {
+      model: string | null;
+      prompt_tokens: number | null;
+      completion_tokens: number | null;
+      usage_unknown: boolean;
+    };
+    const rows = (data ?? []) as UsageRow[];
+    const sum = (pick: (r: UsageRow) => number | null) =>
+      rows.reduce((acc, r) => acc + (pick(r) ?? 0), 0);
+    const byModel = new Map<string, { calls: number; prompt_tokens: number; completion_tokens: number }>();
+    for (const r of rows) {
+      const key = r.model ?? "(unknown)";
+      const agg = byModel.get(key) ?? { calls: 0, prompt_tokens: 0, completion_tokens: 0 };
+      agg.calls += 1;
+      agg.prompt_tokens += r.prompt_tokens ?? 0;
+      agg.completion_tokens += r.completion_tokens ?? 0;
+      byModel.set(key, agg);
+    }
+    return json({
+      window: "week_to_date",
+      week_start: weekStart.toISOString(),
+      calls: rows.length,
+      usage_known_calls: rows.filter((r) => !r.usage_unknown).length,
+      usage_unknown_calls: rows.filter((r) => r.usage_unknown).length,
+      prompt_tokens: sum((r) => r.prompt_tokens),
+      completion_tokens: sum((r) => r.completion_tokens),
+      models: [...byModel.entries()]
+        .map(([model, agg]) => ({ model, ...agg }))
+        .sort((a, b) => (b.prompt_tokens + b.completion_tokens) - (a.prompt_tokens + a.completion_tokens)),
+      note: "Tokens are provider-reported; usage_unknown calls are counted, never estimated. No USD figure until a price table exists.",
+    });
+  }
+
   if (method === "GET") {
     requireRole(caller.role, "reports.read");
     const beats = await latestBeats();

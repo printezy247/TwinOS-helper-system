@@ -1,5 +1,9 @@
 import { assertEquals, assertRejects } from "std/assert/mod.ts";
-import { completeOpenRouter, OpenRouterLimits } from "./openrouter.ts";
+import {
+  completeOpenRouter,
+  completeOpenRouterWithUsage,
+  OpenRouterLimits,
+} from "./openrouter.ts";
 import { HttpError } from "./http.ts";
 
 /**
@@ -118,6 +122,63 @@ Deno.test("T2 a 429 is retried exactly once and the second answer is returned", 
     OpenRouterLimits.timeoutMs = savedTimeout;
     restore();
   }
+});
+
+/** The same body plus what OpenRouter charges for it (C4). */
+const bodyUsage = (
+  text: string,
+  usage: { prompt_tokens?: number; completion_tokens?: number } | undefined,
+  model: string | undefined,
+) =>
+  new Response(
+    JSON.stringify({
+      choices: [{ message: { content: text } }],
+      ...(usage ? { usage } : {}),
+      ...(model ? { model } : {}),
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+
+async function withStubbedFetch<T>(
+  responses: Array<Response | "hang">,
+  fn: (calls: { n: number }) => Promise<T>,
+): Promise<T> {
+  const restore = useTestKey();
+  const original = globalThis.fetch;
+  const calls = { n: 0 };
+  globalThis.fetch = scriptedFetch(responses, calls) as typeof fetch;
+  try {
+    return await fn(calls);
+  } finally {
+    globalThis.fetch = original;
+    restore();
+  }
+}
+
+Deno.test("T4 usage in the answer is parsed exactly, never invented", async () => {
+  const result = await withStubbedFetch(
+    [bodyUsage("gold plan", { prompt_tokens: 120, completion_tokens: 48 }, "deepseek/deepseek-v3")],
+    () => completeOpenRouterWithUsage(prompt),
+  );
+  assertEquals(result.content, "gold plan");
+  assertEquals(result.model, "deepseek/deepseek-v3");
+  assertEquals(result.prompt_tokens, 120);
+  assertEquals(result.completion_tokens, 48);
+  assertEquals(result.usage_unknown, false);
+});
+
+Deno.test("T5 a missing usage block yields nulls and usage_unknown, not a guess", async () => {
+  const result = await withStubbedFetch(
+    [bodyUsage("gold plan", undefined, undefined)],
+    () => completeOpenRouterWithUsage(prompt),
+  );
+  assertEquals(result.content, "gold plan");
+  assertEquals(result.prompt_tokens, null);
+  assertEquals(result.completion_tokens, null);
+  assertEquals(result.usage_unknown, true);
+  // model falls back to whatever was requested, it is never left empty
+  assertEquals(typeof result.model, "string");
+  assertEquals(result.model.length > 0, true);
 });
 
 Deno.test("T3 a 400 is not retried: one call and the error surfaces", async () => {
