@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertThrows } from "std/assert/mod.ts";
 import {
-  buildBrief, coreTerms, csiRow, demandScore, parseSuggest, personaTerms, pickIdeas, queryVariants, topicRisk,
+  applyFeedback, buildBrief, rankClusters, coreTerms, csiRow, demandScore, parseSuggest, personaTerms, pickIdeas, queryVariants, topicRisk,
 } from "./research.ts";
 
 Deno.test("parseSuggest: the suggestion list out of Google's autocomplete answer", () => {
@@ -212,4 +212,63 @@ Deno.test("pickIdeas: a currency-pair-shaped symbol must be one Jack trades, and
   assert(ids.includes("xau"), "XAUUSD trades, so XAUUSD stays");
   assert(ids.includes("lesson"), "an education post is not required to name an asset");
   assert(ids.includes("nfp"), "NFP is macro vocabulary, not a symbol");
+});
+
+// ---------------------------------------------------------------------------
+// E1: feedback into scoring (v5 plan §E1). History nudges a topic's score,
+// bounded to ±20 % of the raw score, and can never cross a compliance line.
+// ---------------------------------------------------------------------------
+
+Deno.test("feedbackFactor: two losses demote, a winning hook boosts, capped at ±20 %", () => {
+  assertEquals(applyFeedback([{ id: "a", name: "a", raw: 1, risk: 0 }], { a: { losses: 0, hookWon: false } })[0].adjusted, 1);
+  assertEquals(applyFeedback([{ id: "a", name: "a", raw: 1, risk: 0 }], { a: { losses: 2, hookWon: false } })[0].adjusted, 0.8);
+  assertEquals(applyFeedback([{ id: "a", name: "a", raw: 1, risk: 0 }], { a: { losses: 1, hookWon: false } })[0].adjusted, 1);
+  assertEquals(applyFeedback([{ id: "a", name: "a", raw: 1, risk: 0 }], { a: { losses: 0, hookWon: true } })[0].adjusted, 1.2);
+  // Both signals at once cancel exactly; ten thousand losses still only cost 20 %.
+  assertEquals(applyFeedback([{ id: "a", name: "a", raw: 1, risk: 0 }], { a: { losses: 99, hookWon: true } })[0].adjusted, 1);
+  assertEquals(applyFeedback([{ id: "a", name: "a", raw: 1, risk: 0 }], { a: { losses: 1000, hookWon: false } })[0].adjusted, 0.8);
+});
+
+Deno.test("applyFeedback: two losses bury the leader, a winning hook lifts the chaser, and the order flips", () => {
+  const clusters = [
+    { id: "leader", name: "Gold map recap", raw: 0.9, risk: 0 },
+    { id: "chaser", name: "Broker fee audit", raw: 0.8, risk: 0 },
+  ];
+  const outcomes = {
+    leader: { losses: 2, hookWon: false },
+    chaser: { losses: 0, hookWon: true },
+  };
+  const got = applyFeedback(clusters, outcomes);
+  assertEquals(got.map((c) => c.id), ["chaser", "leader"]);
+  assertEquals(got[0].adjusted, 0.96);
+  assertEquals(got[1].adjusted, 0.72);
+});
+
+Deno.test("applyFeedback: a boost never overtakes a safer topic — compliance ordering holds", () => {
+  const clusters = [
+    { id: "safe", name: "S", raw: 0.1, risk: 0 },
+    { id: "risky", name: "R", raw: 0.5, risk: 0.9 },
+  ];
+  const outcomes = {
+    safe: { losses: 5, hookWon: false },
+    risky: { losses: 0, hookWon: true },
+  };
+  const got = applyFeedback(clusters, outcomes);
+  assertEquals(got.map((c) => c.id), ["safe", "risky"]);
+});
+
+Deno.test("rankClusters: the brief wiring maps raw score to adjusted before ordering", () => {
+  const got = rankClusters(
+    [
+      { id: "a", name: "Leader", raw: 0.9, risk: 0 },
+      { id: "b", name: "Chaser", raw: 0.8, risk: 0 },
+    ],
+    [
+      { cluster_id: "a", losses: 2, hook_won: false },
+      { cluster_id: "b", losses: 0, hook_won: true },
+    ],
+  );
+  assertEquals(got.map((c) => c.name), ["Chaser", "Leader"]);
+  assertEquals(got[0].adjusted, 0.96);
+  assertEquals(got[1].adjusted, 0.72);
 });
