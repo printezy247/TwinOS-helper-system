@@ -940,5 +940,54 @@ begin
   end if;
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- E1: v_topic_feedback — posts made from a cluster feed back into scoring.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_item_win uuid;
+  v_item_lose uuid;
+  v_var_win uuid;
+  v_var_lose uuid;
+  v_hook_win bigint;
+  v_hook_lose bigint;
+begin
+  insert into public.hooks (pair_no, lang, text) values (901, 'en', 'smoke e1 winning hook') returning id into v_hook_win;
+  insert into public.hooks (pair_no, lang, text) values (902, 'en', 'smoke e1 losing hook') returning id into v_hook_lose;
+  insert into public.content_items (post_type, title) values ('lesson', 'smoke e1 win item') returning id into v_item_win;
+  insert into public.content_items (post_type, title) values ('lesson', 'smoke e1 lose item') returning id into v_item_lose;
+  insert into public.content_variants (item_id, hook_id) values (v_item_win, v_hook_win) returning id into v_var_win;
+  insert into public.content_variants (item_id, hook_id) values (v_item_lose, v_hook_lose) returning id into v_var_lose;
+  insert into public.tg_posts (chat_id, message_id, variant_id, posted_at) values
+    (999001, 800001, v_var_win, now() - interval '3 days'),
+    (999001, 800002, v_var_lose, now() - interval '3 days');
+  insert into public.post_snapshots (chat_id, message_id, offset_label, views) values
+    (999001, 800001, '1h', 1000), (999001, 800001, '24h', 100),
+    (999001, 800002, '1h', 100), (999001, 800002, '24h', 5);
+  insert into public.channel_daily (chat_id, day, member_count) values
+    (999001, (now() - interval '3 days')::date, 1000);
+  insert into public.topic_clusters (name, demand_score, icp_fit, compliance_risk, used_in_item_id) values
+    ('smoke e1 winner', 0.9, 1.0, 0.0, v_item_win),
+    ('smoke e1 loser', 0.8, 1.0, 0.0, v_item_lose);
+
+  -- the view lists every cluster, even ones never posted
+  assert (select count(*) from public.v_topic_feedback) = (select count(*) from public.topic_clusters),
+    'v_topic_feedback must carry every cluster row';
+
+  assert (select wins from public.v_topic_feedback where cluster = 'smoke e1 winner') = 1,
+    'a post at 10 % engagement (100 views of 1000 members) must count as a win';
+  assert (select losses from public.v_topic_feedback where cluster = 'smoke e1 winner') = 0,
+    'a win is not also a loss';
+  assert (select hook_won from public.v_topic_feedback where cluster = 'smoke e1 winner') = true,
+    'the hook at 1000 views/1h beats the median and marks the topic won';
+  assert (select losses from public.v_topic_feedback where cluster = 'smoke e1 loser') = 1,
+    'a post at 0.5 % engagement (5 views of 1000 members) must count as a loss';
+  assert (select wins from public.v_topic_feedback where cluster = 'smoke e1 loser') = 0,
+    'a loss is not also a win';
+  assert (select hook_won from public.v_topic_feedback where cluster = 'smoke e1 loser') = false,
+    'the hook at 100 views/1h sits under the median and marks no win';
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
+

@@ -397,3 +397,57 @@ export async function tagFeedItems(
   }
   return tagged;
 }
+
+/**
+ * What the posted record says about one topic (view `v_topic_feedback`).
+ * Two losses demote, a hook that beat the field boosts — nothing else moves.
+ */
+export interface TopicOutcome { losses: number; hookWon: boolean }
+
+/** The most history may change a score, as a fraction of the raw score. */
+export const FEEDBACK_CAP = 0.2;
+
+/**
+ * applyFeedback: the raw total_score nudged by the topic's own history, then
+ * re-ranked. The adjustment is bounded to ±20 % of the raw score so a bad
+ * month cannot bury a topic for good, and the sort puts compliance risk
+ * first — history must never lift a risky topic above a safe one, which is
+ * why the two signals do not just multiply into total_score.
+ */
+export function applyFeedback<T extends { id: string; name: string; raw: number; risk: number }>(
+  clusters: T[],
+  outcomes: Record<string, TopicOutcome>,
+): (T & { adjusted: number })[] {
+  const factor = (id: string): number => {
+    const o = outcomes[id];
+    if (!o) return 1;
+    const demote = o.losses >= 2 ? -FEEDBACK_CAP : 0;
+    const boost = o.hookWon ? FEEDBACK_CAP : 0;
+    // Capped twice over: the sum is clamped, so a topic can only ever move
+    // FEEDBACK_CAP of its raw score in either direction.
+    return 1 + Math.max(-FEEDBACK_CAP, Math.min(FEEDBACK_CAP, demote + boost));
+  };
+  return clusters
+    .map((c) => ({ ...c, adjusted: Math.round(c.raw * factor(c.id) * 1e6) / 1e6 }))
+    .sort((a, b) => a.risk - b.risk || b.adjusted - a.adjusted || a.name.localeCompare(b.name));
+}
+
+/** One `v_topic_feedback` row (or its service-role equivalent) for a cluster. */
+export interface FeedbackRow { cluster_id: string; losses: number | null; hook_won: boolean | null }
+
+/**
+ * rankClusters: the brief wiring in one pure call — raw total_score rows in,
+ * v_topic_feedback outcome rows in, topics out already adjusted and ordered
+ * (safe topics first, then adjusted score). Kept separate from applyFeedback
+ * so research/index.ts stays a fetch-and-render file.
+ */
+export function rankClusters<T extends { id: string; name: string; raw: number; risk: number }>(
+  clusters: T[],
+  feedback: FeedbackRow[],
+): (T & { adjusted: number })[] {
+  const outcomes: Record<string, TopicOutcome> = {};
+  for (const f of feedback) {
+    outcomes[f.cluster_id] = { losses: Number(f.losses ?? 0), hookWon: f.hook_won === true };
+  }
+  return applyFeedback(clusters, outcomes);
+}

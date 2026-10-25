@@ -29,7 +29,7 @@ import { getChatMemberCount, sendMessage } from "_shared/tg.ts";
 import { cycleWeek, nextMonday } from "_shared/batch.ts";
 import { similarity } from "_shared/moderation.ts";
 import { articleBrief } from "_shared/articles.ts";
-import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, personaTerms, pickIdeas, queryVariants, tagFeedItems, topicRisk } from "_shared/research.ts";
+import { buildBrief, coreTerms, csiRow, demandScore, parseSuggest, personaTerms, pickIdeas, queryVariants, rankClusters, tagFeedItems, topicRisk } from "_shared/research.ts";
 import { nextHook } from "_shared/hooks.ts";
 import { parseFeed, parseJsonFeed } from "_shared/feed.ts";
 import { tmeHandle } from "_shared/tme.ts";
@@ -387,8 +387,14 @@ serve(async (req) => {
     const cycle = cycleWeek(week);
     const { data: slots } = await db.from("calendar_slots").select("dow, pillar, topic")
       .eq("kind", "tiktok_28day").eq("week_no", cycle).eq("active", true);
-    const { data: clusters } = await db.from("topic_clusters").select("id, name, pillar, icp, total_score, status")
+    const { data: clusters } = await db.from("topic_clusters").select("id, name, pillar, icp, total_score, compliance_risk, status")
       .in("status", ["new", "proposed"]).order("total_score", { ascending: false }).limit(80);
+    // E1 (v5 plan): this week's history for those clusters. The view lists
+    // every cluster, so a topic never posted is simply a row of zeroes.
+    const clusterIds = (clusters ?? []).map((c) => c.id as string);
+    const { data: feedback } = clusterIds.length
+      ? await db.from("v_topic_feedback").select("cluster_id, losses, hook_won").in("cluster_id", clusterIds)
+      : { data: [] };
     const { data: personas } = await db.from("personas").select("id, key");
     // Grounded (Wave 3 item 7): one hook-bank line per pillar, rotated LRU.
     const pillars = [...new Set((slots ?? []).map((s) => s.pillar as string | null))];
@@ -400,8 +406,14 @@ serve(async (req) => {
     const brief = buildBrief({
       week, cycleWeek: cycle,
       slots: (slots ?? []).map((s) => ({ dow: Number(s.dow), pillar: s.pillar as string | null, topic: s.topic as string | null })),
-      clusters: (clusters ?? []).map((c) => ({
-        name: c.name as string, pillar: c.pillar as string | null, score: Number(c.total_score ?? 0),
+      clusters: rankClusters(
+        (clusters ?? []).map((c) => ({
+          id: c.id as string, pillar: c.pillar as string | null, icp: c.icp as number | null,
+          name: c.name as string, raw: Number(c.total_score ?? 0), risk: Number(c.compliance_risk ?? 0),
+        })),
+        (feedback ?? []) as { cluster_id: string; losses: number | null; hook_won: boolean | null }[],
+      ).map((c) => ({
+        name: c.name, pillar: c.pillar, score: c.adjusted,
         persona: (personas ?? []).find((p) => p.id === c.icp)?.key as string | null ?? null,
       })),
       hooks,
