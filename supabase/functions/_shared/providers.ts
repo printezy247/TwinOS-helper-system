@@ -30,7 +30,12 @@ async function readBody(res: Response): Promise<{ ok?: boolean; description?: st
 export function redactSecrets(text: string): string {
   return text
     .replace(/bot\d+:[\w-]+/g, "bot<redacted>")
-    .replace(/(access_token=)[^&\s)]+/gi, "$1<redacted>");
+    // Anything shaped like a signed token, whichever gateway echoed it back
+    // (Supabase JWTs, OIDC id_tokens, an SDK printing its Authorization value).
+    .replace(/\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/g, "<redacted-jwt>")
+    // The credential half of a query string or header pair: keep the name,
+    // drop the value, so the line still says which credential was involved.
+    .replace(/([?&](?:token|api_?key|secret|access_token)=)[^&\s"']+/gi, "$1<redacted>");
 }
 
 const errText = (err: unknown) => redactSecrets(String(err instanceof Error ? err.message : err)).slice(0, 160);

@@ -17,6 +17,7 @@
  */
 import { admin } from "./supabase.ts";
 import { sanitizeError } from "./http.ts";
+import { redactSecrets } from "./providers.ts";
 
 export interface LogEntry {
   actor: string;
@@ -27,14 +28,38 @@ export interface LogEntry {
 
 const SECRET_KEYS = /token|secret|password|authorization|api_key|apikey|key_hash/i;
 
+/**
+ * Two rules, applied at every depth:
+ *   1. a key that names a credential keeps its name and loses its value;
+ *   2. any string goes through `redactSecrets()`, so a token that leaked into
+ *      a message, an error or a URL is caught even when its key says nothing.
+ *
+ * Depth matters: a payload of `{ provider: { access_token: … } }` used to pass
+ * through untouched because only the top level was inspected.
+ */
+function redactValue(value: unknown): unknown {
+  if (typeof value === "string") return redactSecrets(value);
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, inner] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = SECRET_KEYS.test(k) ? "[redacted]" : redactValue(inner);
+    }
+    return out;
+  }
+  return value;
+}
+
 /** Strip anything that looks like a secret before it reaches the log. */
 export function redact(payload: Record<string, unknown> | undefined): Record<string, unknown> {
   if (!payload) return {};
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(payload)) {
     if (SECRET_KEYS.test(k)) out[k] = "[redacted]";
-    else if (typeof v === "string" && v.length > 2000) out[k] = v.slice(0, 2000) + "…";
-    else out[k] = v;
+    // A long body is truncated first, then redacted, so a token past the cut
+    // never survives and a token before it does not.
+    else if (typeof v === "string" && v.length > 2000) out[k] = redactSecrets(v.slice(0, 2000)) + "…";
+    else out[k] = redactValue(v);
   }
   return out;
 }
