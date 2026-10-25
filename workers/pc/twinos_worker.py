@@ -54,7 +54,7 @@ VIDEO_EXT = {".mp4", ".mov", ".webm"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 # Live recordings are often OBS .mkv; they live in LIVES_DIR, not the drop folder, so VIDEO_EXT stays as it is.
 LIVE_EXT = VIDEO_EXT | {".mkv", ".flv", ".ts"}
-KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "clip_candidates", "research_batch", "rewrite", "scorecard_image", "llm_variants", "voiceover"]
+KINDS = ["drop_folder_watch", "telechurn_import", "backup", "clip", "clip_candidates", "research_batch", "rewrite", "scorecard_image", "llm_variants", "voiceover", "hyperframes_render"]
 LLM_ANGLES = 3
 
 
@@ -574,6 +574,16 @@ def job_voiceover(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def job_hyperframes_render(api: Api, payload: dict[str, Any]) -> dict[str, Any]:
+    """E3 HyperFrames: hook cover + word captions + risk line, 1080x1920.
+
+    Needs ffmpeg + Node 22 on the PC; missing tools fail the job with a
+    clear message, never a silent skip (studio/hyperframes.py, stdlib-only).
+    """
+    from studio import hyperframes  # noqa: WPS433 (lazy like moments)
+    return hyperframes.render_job(payload)
+
+
 HANDLERS: dict[str, Callable[[Api, dict[str, Any]], dict[str, Any]]] = {
     "drop_folder_watch": job_drop_folder_watch,
     "telechurn_import": job_telechurn_import,
@@ -585,6 +595,7 @@ HANDLERS: dict[str, Callable[[Api, dict[str, Any]], dict[str, Any]]] = {
     "scorecard_image": job_scorecard_image,
     "llm_variants": job_llm_variants,
     "voiceover": job_voiceover,
+    "hyperframes_render": job_hyperframes_render,
 }
 
 
