@@ -93,6 +93,14 @@ jobs:
           set -euo pipefail
           psql "$DATABASE_URL" -At -f tests/schema_dump.sql > "$RUNNER_TEMP/schema.json"
           python3 tests/check_schema_usage.py "$RUNNER_TEMP/schema.json"
+      # An unindexed FK turns a cascade delete and every child-side join into a
+      # sequential scan. Twenty shipped that way because nothing looked; this
+      # looks on every push, so the next one cannot.
+      - name: every foreign key has a leading index
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -At -f tests/fk_dump.sql > "$RUNNER_TEMP/fks.json"
+          python3 tests/check_fk_indexes.py "$RUNNER_TEMP/fks.json"
       # The seed's post skeletons, the locked brand lines, the renderer and the
       # compliance engine must agree: every template has to render into a post
       # with no blocking finding, in English and Malay.
