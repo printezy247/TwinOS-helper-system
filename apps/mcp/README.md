@@ -67,6 +67,10 @@ verbs for Phase 2: `../abdul/PATCH-NOTES.md`.
 | `twinos_brief` | Latest Monday research brief | `GET /rest/v1/briefs` |
 | `twinos_inbox` | Open unified-inbox items with suggested replies | `GET /rest/v1/inbox_items` |
 | `twinos_analytics` | One analytics view (`v_results_board`, `v_funnel`, `v_stop_if`, `v_content_log`...) | `GET /rest/v1/<view>` |
+| `twinos_webhooks` | Webhook registry, the last 50 deliveries, or the signature echo test. The registry is Jack-only on the server; ABDUL getting 403 is the right answer | `GET /functions/v1/webhooks` · `GET /functions/v1/webhooks/deliveries` · `POST /functions/v1/webhooks/ping` |
+| `twinos_ai_eval` | Status of the last 50 golden-case eval runs: pass/fail, prompt, model, error. Read-only — running an eval spends credits and stays Jack's call | `GET /functions/v1/ai-eval` |
+| `twinos_keys` | Partner API keys: list (prefixes and last use), create (the value comes back exactly once), revoke (idempotent). Jack-only on the server. No rotate: mint a new one and revoke the old | `GET /functions/v1/keys` · `POST /functions/v1/keys` · `POST /functions/v1/keys/revoke` |
+| `twinos_metrics` | Route counts, errors and latency in Prometheus text; `route` keeps only the lines naming it | `GET /functions/v1/health/metrics` |
 
 The function name is the directory under `supabase/functions/`; the route is the
 path inside it. `docs/API.md` has the full request/response for each. Routes

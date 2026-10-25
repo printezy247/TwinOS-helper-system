@@ -96,9 +96,10 @@ class TestToolList(Base):
         for n in ("twinos_draft", "twinos_batch", "twinos_request_approval", "twinos_schedule", "twinos_result_reply", "twinos_link",
                   "twinos_manual_metrics", "twinos_friday", "twinos_health", "twinos_csi_log", "twinos_clip", "twinos_brief",
                   "twinos_inbox", "twinos_analytics", "twinos_research", "twinos_feeds",
-                  "twinos_search", "twinos_ideas", "twinos_channels", "twinos_polls"):
+                  "twinos_search", "twinos_ideas", "twinos_channels", "twinos_polls",
+                  "twinos_webhooks", "twinos_ai_eval", "twinos_keys", "twinos_metrics"):
             self.assertIn(n, names)
-        self.assertEqual(len(names), 20)
+        self.assertEqual(len(names), 24)
         for n in names:
             self.assertFalse(n == "twinos_approve" or (("approv" in n) and n != "twinos_request_approval"), n)
         for t in tm.mcp_tools():
@@ -124,12 +125,109 @@ class TestToolList(Base):
         msgs = [json.loads(l) for l in out.getvalue().strip().split("\n")]
         self.assertEqual([m["id"] for m in msgs], [1, 2, 3, 4, 5, 6])
         self.assertEqual(msgs[0]["result"]["serverInfo"]["name"], "twinos")
-        self.assertEqual(len(msgs[1]["result"]["tools"]), 20)
+        self.assertEqual(len(msgs[1]["result"]["tools"]), 24)
         self.assertEqual(msgs[2]["result"]["content"][0]["text"], "Nothing broken. Carry on.")
         self.assertTrue(msgs[3]["result"].get("isError"))
         self.assertIn("Jack", msgs[3]["result"]["content"][0]["text"])
         self.assertEqual(msgs[4]["error"]["code"], -32601)
         self.assertEqual(msgs[5]["result"], {})
+
+
+class TestPhaseGVers(Base):
+    """G1: webhooks, ai-eval status, partner keys and metrics get their verbs.
+
+    The server owns the roles: webhooks.manage and keys.manage are Jack alone,
+    so with ABDUL's key these calls answer 403. The bridge's job is the shape;
+    the 403 is the correct, honest answer, and no verb here may reach /approve.
+    """
+
+    def test_webhooks_lists_the_registry(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/webhooks"] = {"webhooks": [{"id": "w1", "name": "desk"}]}
+        res = tm.tool_call("twinos_webhooks", {})
+        self.assertEqual(res["webhooks"][0]["id"], "w1")
+        self.assertEqual(self.last()["method"], "GET")
+        self.assertEqual(self.last()["path"], "/functions/v1/webhooks")
+
+    def test_webhooks_deliveries_path(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/webhooks/deliveries"] = {"deliveries": []}
+        tm.tool_call("twinos_webhooks", {"what": "deliveries"})
+        self.assertEqual(self.last()["path"], "/functions/v1/webhooks/deliveries")
+
+    def test_webhooks_ping_is_the_signature_echo_test(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/webhooks/ping"] = {"ok": True, "signature": None, "body_sha256": "0" * 64}
+        res = tm.tool_call("twinos_webhooks", {"what": "ping"})
+        self.assertTrue(res["ok"])
+        self.assertEqual(self.last()["method"], "POST")
+
+    def test_webhooks_refuses_an_unknown_what_before_any_call(self):
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_webhooks", {"what": "dispatch"})
+        self.assertEqual(len(self.reqs), 0)
+
+    def test_ai_eval_status_is_a_get(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/ai-eval"] = {"runs": [{"case_name": "hook", "passed": True}]}
+        res = tm.tool_call("twinos_ai_eval", {})
+        self.assertTrue(res["runs"][0]["passed"])
+        self.assertEqual(self.last()["method"], "GET")
+        self.assertEqual(self.last()["path"], "/functions/v1/ai-eval")
+
+    def test_keys_list_is_a_get(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/keys"] = {"keys": [{"id": "k1", "key_prefix": "ab12"}]}
+        res = tm.tool_call("twinos_keys", {})
+        self.assertEqual(res["keys"][0]["key_prefix"], "ab12")
+        self.assertEqual(self.last()["method"], "GET")
+
+    def test_keys_create_sends_only_fields_the_route_reads(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/keys"] = {"id": "k2", "key": "twk_partner_once"}
+        tm.tool_call("twinos_keys", {"action": "create", "name": "ib-partner-a",
+                                     "scopes": ["read:health"], "rate": 60})
+        r = self.last()
+        self.assertEqual(r["method"], "POST")
+        self.assertEqual(r["path"], "/functions/v1/keys")
+        self.assertEqual(set(r["body"]), {"name", "scopes", "rate_limit_per_min"})
+        self.assertEqual(r["body"]["rate_limit_per_min"], 60)
+
+    def test_keys_create_needs_a_name(self):
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_keys", {"action": "create"})
+        self.assertEqual(len(self.reqs), 0)
+
+    def test_keys_revoke_sends_the_id_the_route_reads(self):
+        tm.tool_call("twinos_keys", {"action": "revoke", "id": "k1"})
+        r = self.last()
+        self.assertEqual(r["path"], "/functions/v1/keys/revoke")
+        self.assertEqual(r["body"], {"id": "k1"})
+
+    def test_keys_revoke_needs_an_id(self):
+        with self.assertRaises(ValueError):
+            tm.tool_call("twinos_keys", {"action": "revoke"})
+        self.assertEqual(len(self.reqs), 0)
+
+    def test_keys_has_no_rotate_because_the_server_has_no_rotate_route(self):
+        for bad in ("rotate", "delete"):
+            with self.assertRaises(ValueError):
+                tm.tool_call("twinos_keys", {"action": bad})
+        self.assertEqual(len(self.reqs), 0)
+
+    def test_metrics_gets_health_metrics(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/health/metrics"] = {"text": "twinos_http_ms_count 12"}
+        res = tm.tool_call("twinos_metrics", {})
+        self.assertEqual(self.last()["method"], "GET")
+        self.assertEqual(self.last()["path"], "/functions/v1/health/metrics")
+        self.assertIn("twinos_http", str(res))
+
+    def test_metrics_route_filter_keeps_only_matching_lines(self):
+        FakeTwinOS.state["bodies"]["/functions/v1/health/metrics"] = {
+            "text": '# comment\na_total{route="content"} 1\nb_total{route="jobs"} 2'}
+        res = tm.tool_call("twinos_metrics", {"route": "jobs"})
+        self.assertIn("jobs", res["text"])
+        self.assertNotIn("content", res["text"])
+
+    def test_g1_verbs_never_resolve_to_an_approve_route(self):
+        for n in ("twinos_webhooks", "twinos_ai_eval", "twinos_keys", "twinos_metrics"):
+            self.assertNotIn("approve", tm.ENDPOINTS[n][1].lower())
+            self.assertFalse(tm.FORBIDDEN_TOOL.search(n), n)
+            self.assertFalse(tm.FORBIDDEN_PATH.search("/functions/v1/" + tm.ENDPOINTS[n][1]), n)
 
 
 class TestRequestShapes(Base):
