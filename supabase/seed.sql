@@ -104,6 +104,12 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('use_polling', 'false', 'Phase 1 step 4: long-polling fallback when webhooks are unavailable. Development only; off in production.', false),
   ('platform_signatures', '{"telegram": "", "instagram": "", "facebook": "", "threads": "", "youtube": "", "tiktok": "", "x": ""}', 'Wave 4 item 2: saved per-platform sign-off lines the calendar appends. Empty until Jack writes his.', false),
   ('dashboard_url', 'null', 'Wave 8 §3.2: dashboard URL the bots web_app buttons open as a Mini App (e.g. https://<site>/mini). Set it from the dashboard Settings page once the site is published.', true),
+  -- A5 retention windows. Migration 20261025000600 holds the same rows for
+  -- environments that skip the seed. 0 means keep forever.
+  ('action_log_days', '90', 'A5 retention: days of action_log to keep. 0 keeps everything. Pruned weekly by twinos_prune().', false),
+  ('health_checks_days', '30', 'A5 retention: days of health_checks beats to keep. 0 keeps everything.', false),
+  ('alerts_resolved_days', '90', 'A5 retention: days to keep an acknowledged alert. Open alerts are never pruned. 0 keeps everything.', false),
+  ('request_stats_days', '30', 'A5 retention: drop a request_stats row once its route has been silent this many days. 0 keeps everything.', false),
   ('openrouter_api_key', 'null', 'OpenRouter API key for TwinOS AI assistant generation. Set from Settings page or secret.', false),
   ('openrouter_model', '"openrouter/free"', 'OpenRouter default model for TwinOS AI assistant.', false),
   -- Phase 8 metrics pollers. Migration 20261024002000 holds the same rows for

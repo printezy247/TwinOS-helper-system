@@ -864,5 +864,81 @@ do $$
     raise notice 'ok: the token move is dry-run by default';
   end $$;
 
+-- ---------------------------------------------------------------------------
+-- 30. Retention keeps the ceiling and honours 0 = keep forever (20261025000600)
+-- ---------------------------------------------------------------------------
+do $$
+  declare
+    v_second bigint;
+  begin
+    insert into public.action_log (actor, action, target_table, created_at) values
+      ('cron', 'test.retention.old', 'settings', now() - interval '200 days'),
+      ('cron', 'test.retention.new', 'settings', now());
+    insert into public.health_checks (component, status, beat_at) values
+      ('retention_old', 'ok', now() - interval '100 days'),
+      ('retention_new', 'ok', now());
+    insert into public.alerts (kind, severity, message, acknowledged_at, created_at) values
+      ('health', 'info', 'retention: old resolved', now() - interval '200 days', now() - interval '200 days'),
+      ('health', 'info', 'retention: old open', null, now() - interval '200 days'),
+      ('health', 'info', 'retention: new resolved', now(), now());
+    insert into public.request_stats (route, cls, count, updated_at) values
+      ('/retention-old', '2xx', 1, now() - interval '60 days'),
+      ('/retention-new', '2xx', 1, now());
+
+    perform public.twinos_prune();
+
+    assert not exists (select 1 from public.action_log where action = 'test.retention.old'),
+      'a 200-day-old action_log row must be pruned';
+    assert exists (select 1 from public.action_log where action = 'test.retention.new'),
+      'a current action_log row must survive';
+    assert not exists (select 1 from public.health_checks where component = 'retention_old'),
+      'a 100-day-old beat must be pruned';
+    assert exists (select 1 from public.health_checks where component = 'retention_new'),
+      'a current beat must survive';
+    assert not exists (select 1 from public.alerts where message = 'retention: old resolved'),
+      'an old acknowledged alert must be pruned';
+    assert exists (select 1 from public.alerts where message = 'retention: old open'),
+      'an open alert is never pruned, however old';
+    assert exists (select 1 from public.alerts where message = 'retention: new resolved'),
+      'a fresh acknowledged alert must survive';
+    assert not exists (select 1 from public.request_stats where route = '/retention-old'),
+      'a route silent for 60 days must be dropped';
+    assert exists (select 1 from public.request_stats where route = '/retention-new'),
+      'an active route keeps its counters';
+
+    -- Idempotent: the second run of the same week deletes nothing.
+    select coalesce(sum(deleted), 0) into v_second from public.twinos_prune();
+    assert v_second = 0, 'a second prune with the same windows must delete nothing, got ' || v_second;
+
+    -- A window of 0 means keep forever, and is honoured.
+    update public.settings set value = '0'::jsonb where key = 'action_log_days';
+    insert into public.action_log (actor, action, target_table, created_at)
+    values ('cron', 'test.retention.forever', 'settings', now() - interval '4000 days');
+    perform public.twinos_prune();
+    assert exists (select 1 from public.action_log where action = 'test.retention.forever'),
+      'a window of 0 must keep every row, however old';
+    update public.settings set value = '90'::jsonb where key = 'action_log_days';
+
+    raise notice 'ok: retention prunes past its windows, keeps 0 as forever, and is idempotent';
+  end $$;
+
+-- Only the service role may run it: a dashboard user who could would be able
+-- to delete the audit trail over the REST RPC.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    assert has_function_privilege('service_role', 'public.twinos_prune()', 'EXECUTE'),
+      'the scheduler runs as service_role';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    assert not has_function_privilege('anon', 'public.twinos_prune()', 'EXECUTE'),
+      'anon must not be able to prune';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    assert not has_function_privilege('authenticated', 'public.twinos_prune()', 'EXECUTE'),
+      'a signed-in dashboard user must not be able to prune';
+  end if;
+end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;
