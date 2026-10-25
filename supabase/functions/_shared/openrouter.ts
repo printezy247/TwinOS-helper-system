@@ -45,7 +45,29 @@ export interface OpenRouterOptions {
   max_tokens?: number;
 }
 
+/** What one generation cost (C4): the model that actually ran and the
+ * tokens the provider reported. Nulls are never filled in by guessing —
+ * `usage_unknown` says so explicitly. */
+export interface OpenRouterUsage {
+  content: string;
+  model: string;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  usage_unknown: boolean;
+}
+
+/** The only shape that counts as a known number: a finite one. */
+function tokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 export async function completeOpenRouter(opts: OpenRouterOptions): Promise<string> {
+  return (await completeOpenRouterWithUsage(opts)).content;
+}
+
+export async function completeOpenRouterWithUsage(
+  opts: OpenRouterOptions,
+): Promise<OpenRouterUsage> {
   // A3: Vault first, the legacy settings row second, the function secret last.
   const apiKey =
     (await secretOrSetting(PLATFORM_SECRETS.openrouter).catch(() => null)) ||
@@ -107,8 +129,21 @@ export async function completeOpenRouter(opts: OpenRouterOptions): Promise<strin
 
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
+    model?: string;
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
   };
-  return data.choices?.[0]?.message?.content?.trim() ?? "";
+  const content = data.choices?.[0]?.message?.content?.trim() ?? "";
+  const promptTokens = tokenCount(data.usage?.prompt_tokens);
+  const completionTokens = tokenCount(data.usage?.completion_tokens);
+  return {
+    content,
+    // The provider reports what actually ran; fall back to what we asked for.
+    model: data.model?.trim() || model,
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    // Unknown is a fact about the response, not a zero to be summed later.
+    usage_unknown: promptTokens === null && completionTokens === null,
+  };
 }
 
 /** Pre-built prompts for TwinOS workflows */

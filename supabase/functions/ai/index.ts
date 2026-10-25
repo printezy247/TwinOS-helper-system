@@ -22,7 +22,7 @@ import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { setting, SETTING_KEYS, admin } from "_shared/supabase.ts";
 import { PLATFORM_SECRETS, secretOrSetting } from "_shared/secrets.ts";
-import { completeOpenRouter, buildAiPrompt } from "_shared/openrouter.ts";
+import { buildAiPrompt, completeOpenRouterWithUsage } from "_shared/openrouter.ts";
 import { activePrompt, loadMemories, memoryBlock, promptCatalog } from "_shared/prompts.ts";
 
 serve(async (req) => {
@@ -96,17 +96,37 @@ serve(async (req) => {
       messages[0] = sys;
     }
 
-    const text = await completeOpenRouter({
+    const result = await completeOpenRouterWithUsage({
       messages,
       model: typeof body.model === "string" ? body.model : undefined,
       temperature: typeof body.temperature === "number" ? body.temperature : undefined,
       max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : undefined,
     });
 
+    // C4: one row per generation, recorded after the answer is known. It
+    // never blocks the response — if the insert fails the draft still ships,
+    // and the error is visible in the function log. usage_unknown rows carry
+    // null tokens; nothing here estimates a number that was not returned.
+    admin().from("ai_usage").insert({
+      mode,
+      model: result.model,
+      prompt_tokens: result.prompt_tokens,
+      completion_tokens: result.completion_tokens,
+      usage_unknown: result.usage_unknown,
+    }).then(({ error }) => {
+      if (error) console.error(`ai_usage insert failed: ${error.message}`);
+    });
+
     return json({
       ok: true,
       mode,
-      text,
+      text: result.content,
+      model: result.model,
+      usage: {
+        prompt_tokens: result.prompt_tokens,
+        completion_tokens: result.completion_tokens,
+        usage_unknown: result.usage_unknown,
+      },
       applied: {
         prompt: prompt ? `${prompt.name}@${prompt.version}` : null,
         memories: memories.length,
