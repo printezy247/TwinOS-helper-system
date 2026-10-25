@@ -1,5 +1,36 @@
 import { HttpError } from "./http.ts";
 import { setting, SETTING_KEYS } from "./supabase.ts";
+import { jitteredBackoff } from "./backoff.ts";
+
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+/**
+ * The three numbers a hung provider turns on, in one place so a test can move
+ * them without a second code path. Production never changes them.
+ *
+ *   timeoutMs    a request that has not answered by now is dead (§A1)
+ *   maxRetries   one retry, only for 429/5xx. A 400 can never be fixed by
+ *                asking again, and every retry costs a token spend
+ *   retryDelayMs the publisher's existing full-jitter policy, reused — not a
+ *                second retry loop with its own idea of how long to wait
+ */
+export const OpenRouterLimits = {
+  timeoutMs: 20_000,
+  maxRetries: 1,
+  retryDelayMs: (attempt: number) => jitteredBackoff(attempt),
+};
+
+/** A timeout or abort is a 504 naming the wall clock, never a bare DOMException. */
+function timeoutError(err: unknown, ms: number): HttpError | null {
+  const name = (err as { name?: string } | null)?.name;
+  if (name !== "TimeoutError" && name !== "AbortError") return null;
+  return new HttpError(504, "upstream_timeout", `OpenRouter did not answer within ${ms} ms`);
+}
+
+/** 429 and 5xx can clear on their own; everything else is the caller's answer. */
+function retryable(status: number): boolean {
+  return status === 429 || status >= 500;
+}
 
 export interface OpenRouterMessage {
   role: "system" | "user" | "assistant";
@@ -31,25 +62,46 @@ export async function completeOpenRouter(opts: OpenRouterOptions): Promise<strin
     (await setting(SETTING_KEYS.openrouterModel).catch(() => null)) || "openrouter/free";
   const model = opts.model || defaultModel;
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://twin-approval-hub.lovable.app",
-      "X-Title": "TwinOS",
-    },
-    body: JSON.stringify({
-      model,
-      messages: opts.messages,
-      temperature: opts.temperature ?? 0.7,
-      max_tokens: opts.max_tokens ?? 1200,
-    }),
-  });
+  const timeoutMs = OpenRouterLimits.timeoutMs;
+  const send = () =>
+    fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://twin-approval-hub.lovable.app",
+        "X-Title": "TwinOS",
+      },
+      body: JSON.stringify({
+        model,
+        messages: opts.messages,
+        temperature: opts.temperature ?? 0.7,
+        max_tokens: opts.max_tokens ?? 1200,
+      }),
+      // Without this a provider that accepts the socket and never answers
+      // holds the edge function until the platform's own limit kills it, and
+      // the caller sees a generic timeout with no idea which side stalled.
+      signal: AbortSignal.timeout(timeoutMs),
+    });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new HttpError(res.status, "openrouter_failed", `OpenRouter API error: ${errText}`);
+  let res: Response;
+  for (let attempt = 0;; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, OpenRouterLimits.retryDelayMs(attempt)));
+    }
+    try {
+      res = await send();
+    } catch (err) {
+      const timeout = timeoutError(err, timeoutMs);
+      if (timeout) throw timeout;
+      throw err;
+    }
+    if (res.ok) break;
+    // Drain the refusal before deciding, so a retried connection is free.
+    const errText = await res.text().catch(() => "");
+    if (!retryable(res.status) || attempt >= OpenRouterLimits.maxRetries) {
+      throw new HttpError(res.status, "openrouter_failed", `OpenRouter API error: ${errText}`);
+    }
   }
 
   const data = (await res.json()) as {
