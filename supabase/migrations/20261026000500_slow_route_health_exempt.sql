@@ -1,4 +1,4 @@
--- 20261026000400_slow_route_health_exempt.sql — the health deep probe is
+-- 20261026000500_slow_route_health_exempt.sql — the health deep probe is
 -- slow on purpose, so the slow-route alert (C3) must ignore it.
 --
 -- Why: POST /health/check is the cron deep probe: it awaits live provider
