@@ -51,7 +51,8 @@ export type Action =
   | "research.run"
   | "jobs.claim"
   | "jobs.result"
-  | "jobs.enqueue";
+  | "jobs.enqueue"
+  | "hook.promote"; // E2: swap the promoted (incumbent) hook; Jack approves, never automatic
 
 const ALL: Role[] = [
   "jack",
@@ -122,6 +123,9 @@ export const PERMISSIONS: Record<Action, readonly Role[]> = {
   "jobs.claim": ["pc_worker"],
   "jobs.result": ["pc_worker"],
   "jobs.enqueue": ["jack", "abdul", "cron"],
+  // E2: the wrong hook costs reach, so promotion is a proposal Jack approves —
+  // same single-person shape as content.approve.
+  "hook.promote": ["jack"],
 };
 
 export function can(role: Role, action: Action): boolean {

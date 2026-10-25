@@ -122,7 +122,13 @@ insert into public.settings (key, value, description, needs_confirm) values
   ('threads_user_id', 'null', 'Phase 8 metrics poller: Threads user id. Leave null and the poller resolves it from the token''s /me. CONFIRM.', true),
   ('threads_token', 'null', 'Phase 8 metrics poller: Threads access token (long-lived). Test token ok. CONFIRM — expires in 60 days.', true),
   ('yt_api_key', 'null', 'Phase 8 metrics poller: YouTube Data API v3 key from a Google Cloud project (enable the API, create an API key — no review needed). CONFIRM.', true),
-  ('yt_channel_id', 'null', 'Phase 8 metrics poller: YouTube channel id, starting UC (About → advanced). CONFIRM.', true)
+  ('yt_channel_id', 'null', 'Phase 8 metrics poller: YouTube channel id, starting UC (About → advanced). CONFIRM.', true),
+  -- E2 hook promotion: margin and post count tune the Friday suggestion; the
+  -- champion row is written only by POST /friday/promote (jack), never auto.
+  -- Migration 20261026000400 holds the same rows for environments that skip the seed.
+  ('hook_promote_margin', '0.25', 'E2: relative lift in average 1 h views a hook must beat the incumbent by before Friday may suggest promoting it (0.25 = 25 %).', false),
+  ('hook_promote_min_posts', '5', 'E2: how many of the candidate hook''s own posts are required before a suggestion appears on Friday.', false),
+  ('hook_active_id', 'null', 'E2: the hook Jack promoted (only POST /friday/promote writes it). While null, the most-used hook is the incumbent.', false)
 -- Keep the operator's runtime value (edge_base_url, channel_chat_id, ...):
 -- the seed rows for those are null placeholders, and a re-run must never wipe
 -- what Jack configured. Seed text wins only when nothing was set yet.

@@ -8,6 +8,8 @@
  *   POST /friday/manual            { week_start, source: vantage|tiktok|telechurn, metrics: {…} }
  *                                   (jack, abdul) → manual_metrics upsert
  *   POST /friday/post              {}  → drafts the scorecard post (template 7) to the Desk group
+ *   POST /friday/promote           { hook_id }  (jack only) → E2: swap the promoted hook when it
+ *                                   still beats the incumbent on fresh data; never automatic.
  *   GET  /friday/export?view=content_log → the content log as a CSV file. CSV and not
  *                                   the Sheets API: no Google credentials, and importing it
  *                                   is one menu click in Sheets.
@@ -15,7 +17,7 @@
  * The scorecard IMAGE (plan §9.D.28) is rendered by the PC worker (Pillow),
  * queued here as a `scorecard_image` job once the numbers are complete.
  */
-import { CORS_HEADERS, serve, json, readJson, routeOf, reqString, oneOf, bad } from "_shared/http.ts";
+import { CORS_HEADERS, serve, json, readJson, routeOf, reqString, oneOf, optNumber, bad } from "_shared/http.ts";
 import { toCsv } from "_shared/csv.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
@@ -23,10 +25,12 @@ import { admin, setting, requireSetting, SETTING_KEYS } from "_shared/supabase.t
 import { createDraft, pushToDesk } from "_shared/content.ts";
 import { logAction, logTimeSaved } from "_shared/log.ts";
 import { emitWebhook } from "_shared/webhooks.ts";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { fanoutLine, hoursCutLine } from "_shared/hours.ts";
 import { campaignRows } from "_shared/campaign.ts";
 import { dayAndWeekStart } from "_shared/today.ts";
 import { sendMessage } from "_shared/tg.ts";
+import { promoteSuggestion, type HookStat, type PromotionConfig, type PromotionSuggestion } from "_shared/promotion.ts";
 
 const MANUAL_SOURCES = ["vantage", "tiktok", "telechurn"] as const;
 type ManualSource = (typeof MANUAL_SOURCES)[number];
@@ -51,6 +55,51 @@ async function missingInputs(week: string): Promise<ManualSource[]> {
   const { data } = await admin().from("manual_metrics").select("source").eq("week_start", week);
   const have = new Set((data ?? []).map((r) => r.source));
   return MANUAL_SOURCES.filter((s) => !have.has(s));
+}
+
+/** A setting read as a number, or NaN when absent/blank — NaN always falls back. */
+const settingNum = (raw: string | null): number => (raw === null || raw.trim() === "" ? NaN : Number(raw));
+
+/**
+ * E2 knobs (margin, min posts) live in `settings` so Jack can retune without
+ * a deploy. Anything unreadable falls back to the plan defaults (25 % over 5
+ * posts) — a broken value never silently loosens the gate.
+ */
+async function promotionConfig(): Promise<PromotionConfig> {
+  const margin = settingNum(await setting(SETTING_KEYS.hookPromoteMargin));
+  const minPosts = settingNum(await setting(SETTING_KEYS.hookPromoteMinPosts));
+  return {
+    margin: Number.isFinite(margin) && margin >= 0 ? margin : 0.25,
+    min_posts: Number.isInteger(minPosts) && minPosts >= 1 ? minPosts : 5,
+  };
+}
+
+/** v_hook_performance rows, normalised for the pure decision in _shared/promotion.ts. */
+async function hookStats(db: SupabaseClient): Promise<HookStat[]> {
+  const { data } = await db.from("v_hook_performance")
+    .select("hook_id, hook, lang, uses, avg_views_1h");
+  return (data ?? []).map((r) => ({
+    hook_id: Number(r.hook_id),
+    hook: String(r.hook ?? ""),
+    lang: String(r.lang ?? ""),
+    uses: Number(r.uses ?? 0),
+    avg_views_1h: r.avg_views_1h === null || r.avg_views_1h === undefined ? null : Number(r.avg_views_1h),
+  }));
+}
+
+/**
+ * E2: the one promote suggestion Friday shows, from live hook performance.
+ * Incumbent = the promoted hook when Jack has picked one (`hook_active_id`),
+ * else the most-used hook. Suggestion only — nothing here ever acts;
+ * POST /friday/promote is the single way the champion changes, Jack-gated.
+ */
+async function hookPromotion(db: SupabaseClient): Promise<PromotionSuggestion | null> {
+  const [stats, config] = await Promise.all([hookStats(db), promotionConfig()]);
+  if (!stats.length) return null;
+  const champ = settingNum(await setting(SETTING_KEYS.hookPromoteChampion));
+  const incumbent = stats.find((s) => s.hook_id === champ)
+    ?? [...stats].sort((a, b) => b.uses - a.uses || a.hook_id - b.hook_id)[0];
+  return promoteSuggestion(incumbent, stats, config);
 }
 
 serve(async (req) => {
@@ -81,7 +130,13 @@ serve(async (req) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw bad("week must be YYYY-MM-DD (a Monday)");
     const { data, error } = await db.from("v_friday_scoreboard").select("*").eq("week_start", week).maybeSingle();
     if (error) throw bad(`v_friday_scoreboard: ${error.message}`);
-    return json({ week_start: week, scoreboard: data ?? null, missing_inputs: await missingInputs(week) });
+    return json({
+      week_start: week,
+      scoreboard: data ?? null,
+      missing_inputs: await missingInputs(week),
+      // E2: null unless a hook beats the incumbent — then exactly one suggestion.
+      hook_promotion: await hookPromotion(db),
+    });
   }
   if (method !== "POST") throw bad("method not allowed");
   const body = await readJson(req, true);
@@ -142,6 +197,29 @@ serve(async (req) => {
     if (error) throw bad(`manual_metrics: ${error.message}`);
     await logAction({ actor: caller.actor, action: "metrics.campaign", target: `${rows[0].week_start}/${rows[0].campaign}`, payload: { metrics: rows.map((r) => r.metric) } });
     return json({ ok: true, week_start: rows[0].week_start, campaign: rows[0].campaign, metrics: rows.length });
+  }
+
+  // POST /friday/promote { hook_id } — E2: Jack approves the Friday suggestion.
+  // The decision is re-checked on fresh data, so a stale suggestion or a typed-in
+  // hook id cannot promote anything the numbers no longer support.
+  if (tail[0] === "promote") {
+    requireRole(caller.role, "hook.promote");
+    const hookId = optNumber(body, "hook_id");
+    if (hookId === null || !Number.isInteger(hookId) || hookId < 1) throw bad("hook_id must be a positive integer");
+    const suggestion = await hookPromotion(db);
+    if (!suggestion || suggestion.candidate.hook_id !== hookId) {
+      throw bad("that hook is not the current promotion suggestion (refresh Friday)");
+    }
+    const { error } = await db.from("settings")
+      .upsert({ key: SETTING_KEYS.hookPromoteChampion, value: hookId, updated_by: caller.actor }, { onConflict: "key" });
+    if (error) throw bad(`settings: ${error.message}`);
+    await logAction({
+      actor: caller.actor,
+      action: "hook.promote",
+      target: String(hookId),
+      payload: { incumbent_id: suggestion.incumbent.hook_id, lift_pct: suggestion.lift_pct, config: suggestion.config },
+    });
+    return json({ ok: true, hook_id: hookId, incumbent_id: suggestion.incumbent.hook_id });
   }
 
   if (tail[0] === "post") {

@@ -28,6 +28,12 @@ jobs:
         run: deno test --config deno.json --allow-env _shared/
       - name: coverage (report only — B3 step 1)
         run: deno task coverage
+      - name: coverage gate (B3 step 2 — baseline #131: 87.6/76.7/72.0)
+        # deno colors the table, so strip ANSI first or awk reads escape bytes
+        # as digits. Columns: | File | Branch % | Function % | Line % | ->
+        # $2=File $3=Branch $4=Function $5=Line. Gate lines($5) and branches($3).
+        run: >-
+          deno coverage cov | sed 's/\x1b\[[0-9;]*m//g' | awk -F'|' '/All files/ {gsub(/[ %]/,"",$3); gsub(/[ %]/,"",$5); if ($5+0 < 70 || $3+0 < 70) {print "FAIL: lines " $5 " or branches " $3 " below gate"; exit 1}}'
 
   workers:
     name: python unittest (workers/pc, apps/mcp)
