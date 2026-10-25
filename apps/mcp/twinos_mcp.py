@@ -111,6 +111,11 @@ ENDPOINTS = {
     "twinos_ideas":            ("fn", "research/ideas"),
     "twinos_channels":         ("fn", "research/channels"),
     "twinos_polls":            ("rest", "poll_results"),
+    # phase G1: the observability and credential verbs (docs/API.md §keys, §webhooks)
+    "twinos_webhooks":         ("fn", "webhooks"),
+    "twinos_ai_eval":          ("fn", "ai-eval"),               # GET = status; POST runs an eval and that stays Jack's call
+    "twinos_keys":             ("fn", "keys"),
+    "twinos_metrics":          ("fn", "health"),                # GET /health/metrics; the route is built per call
 }
 # Views ANALYTICS_VIEWS may read, with the ones that are not views marked, so a
 # bad name is refused locally instead of becoming a confusing PostgREST error.
@@ -192,6 +197,22 @@ TOOLS = [
     ("twinos_analytics", "Read one analytics view: " + ", ".join(ANALYTICS_VIEWS) + ". 'filter' is a PostgREST query string "
                          "(e.g. 'week=eq.2026-10-05'), 'limit' caps rows.",
      {"view": "string", "filter": "string", "limit": "integer"}, ["view"]),
+    ("twinos_webhooks", "Outbound webhooks. what = webhooks (the registry: name, url, events, last delivery — the signing secret is "
+                        "never listed) | deliveries (the last 50 attempts with status and error) | ping (a signature echo: proves the "
+                        "dispatcher's headers reach a URL). The registry needs webhooks.manage, which is Jack alone on the server; a 403 "
+                        "with ABDUL's key is the correct answer, not a bug.",
+     {"what": "string"}, []),
+    ("twinos_ai_eval", "Status of the AI prompt evals: the last 50 golden-case runs with pass/fail, prompt, model and the error line "
+                       "of a failure. Read-only on purpose: running an eval spends credits and stays Jack's call.",
+     {}, []),
+    ("twinos_keys", "Partner API keys (the credentials a partner calls the read APIs with; no key can approve content). action = "
+                    "list (prefixes, scopes, last use) | create (name, optional scopes + rate; the key value comes back exactly once) | "
+                    "revoke (id; safe to repeat). Creating and revoking need keys.manage, which is Jack alone. There is no rotate: "
+                    "mint a new key and revoke the old one.",
+     {"action": "string", "name": "string", "scopes": "array", "rate": "integer", "id": "string"}, []),
+    ("twinos_metrics", "What the routes cost: request counts, errors and latency from the metrics endpoint, in Prometheus text. "
+                       "'route' keeps only the lines naming it (e.g. route=content), so a model reads the few rows it needs.",
+     {"route": "string"}, []),
 ]
 TOOL_NAMES = [t[0] for t in TOOLS]
 
@@ -560,6 +581,49 @@ def tool_call(name, a, idem=None):
         if view not in ANALYTICS_VIEWS:
             raise ValueError("view must be one of: " + ", ".join(ANALYTICS_VIEWS))
         return _rows(rest(view, str(a.get("filter") or ""), a.get("limit") or 50))
+    if name == "twinos_webhooks":
+        what = str(a.get("what") or "webhooks").strip().lower()
+        if what not in ("webhooks", "deliveries", "ping"):
+            raise ValueError("what must be webhooks (the registry), deliveries (the last attempts) or ping (the signature echo)")
+        if what == "ping":
+            # The echo answers before authentication by design, and it echoes the body we
+            # send, so an empty JSON body is all a connectivity test needs.
+            return fn("%s/ping" % target, {}, idem)
+        return request("GET", "/functions/v1/" + target + ("/deliveries" if what == "deliveries" else ""))
+    if name == "twinos_ai_eval":
+        # Status only. A POST to this path runs the eval, which spends credits —
+        # content.approve is the only role that may, so this tool never POSTs.
+        return request("GET", "/functions/v1/" + target)
+    if name == "twinos_keys":
+        action = str(a.get("action") or "list").strip().lower()
+        if action == "list":
+            return request("GET", "/functions/v1/" + target)
+        if action == "create":
+            if not str(a.get("name") or "").strip():
+                raise ValueError("create needs the key's name, e.g. ib-partner-a")
+            mint: dict = {"name": str(a["name"]).strip()}
+            if a.get("scopes") not in (None, "", [], {}):
+                mint["scopes"] = a["scopes"]
+            if a.get("rate") is not None:
+                mint["rate_limit_per_min"] = int(a["rate"])
+            return fn(target, mint, idem)
+        if action == "revoke":
+            if not str(a.get("id") or "").strip():
+                raise ValueError("revoke needs the key's id (list first)")
+            return fn("%s/revoke" % target, {"id": str(a["id"]).strip()}, idem)
+        raise ValueError("action must be list, create or revoke — there is no rotate: mint a new key and revoke the old one")
+    if name == "twinos_metrics":
+        res = request("GET", "/functions/v1/" + target + "/metrics")
+        if isinstance(res, str):
+            res = {"text": res[:4000]}
+        text = res.get("text") if isinstance(res, dict) else None
+        route = str(a.get("route") or "").strip()
+        if text is not None and route:
+            if any(route in ln for ln in text.splitlines()):
+                res = {"text": "\n".join(ln for ln in text.splitlines() if route in ln or ln.startswith("#"))}
+            else:
+                res = {"text": "no metrics line mentions %s" % route}
+        return res
     raise ValueError("unknown tool " + name)
 
 
