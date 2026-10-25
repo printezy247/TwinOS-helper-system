@@ -27,6 +27,7 @@ import { currentTrace } from "_shared/trace.ts";
 import { log } from "_shared/logger.ts";
 import { registerGauge, renderProm } from "_shared/metrics.ts";
 import { limiterSnapshot } from "_shared/backoff.ts";
+import { type HealthGetPayload, type HealthStatsPayload, type RequestStatRow, queueWatch, summarizeRoutes } from "_shared/health_contract.ts";
 
 /* Phase 4 gauges: read live at scrape time (global by construction), unlike
    the isolate-local request counters metrics.ts accumulates. */
@@ -212,6 +213,27 @@ serve(async (req) => {
     });
   }
 
+  // GET /health/stats — the Health page's request table and queue watch (C1, C2).
+  // request_stats is (route, class) aggregates kept for 24 h: averages and the
+  // worst sample, never invented percentiles. Queue backlog flags with the same
+  // threshold fanout's stuck-queue watch uses, so one number means one thing.
+  if (method === "GET" && tail[0] === "stats") {
+    requireRole(caller.role, "reports.read");
+    const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+    const [{ data: statsRows, error: statsErr }, { count: queued }, { data: oldest }] = await Promise.all([
+      db.from("request_stats").select("route, cls, count, errors, ms_sum, ms_max").gte("updated_at", since),
+      db.from("jobs").select("id", { count: "exact", head: true }).eq("status", "queued"),
+      db.from("jobs").select("created_at").eq("status", "queued").order("created_at", { ascending: true }).limit(1).maybeSingle(),
+    ]);
+    if (statsErr) throw new HttpError(503, "upstream_failed", statsErr.message);
+    const out: HealthStatsPayload = {
+      window: "24h",
+      routes: summarizeRoutes((statsRows ?? []) as RequestStatRow[]),
+      queue: queueWatch({ queued: queued ?? 0, oldest_queued_at: (oldest?.created_at as string | null) ?? null, now: Date.now() }),
+    };
+    return json(out);
+  }
+
   if (method === "GET") {
     requireRole(caller.role, "reports.read");
     const beats = await latestBeats();
@@ -226,7 +248,18 @@ serve(async (req) => {
     const summary = broken.length || (alerts ?? []).length || tokens.length || provDown.length
       ? `${broken.length ? "stale: " + broken.join(", ") : "beats ok"}; ${(alerts ?? []).length} open alert(s)${tokens.length ? "; " + tokens.map((t) => t.message).join("; ") : ""}${provDown.length ? "; provider down: " + provDown.join(", ") : ""}`
       : "all good";
-    return json({ ok: broken.length === 0 && provDown.length === 0 && !tokens.some((t) => t.severity === "high"), summary, beats, tokens, integrations, providers, open_alerts: alerts ?? [], failed_jobs: failedCount ?? null });
+    // Typed through the contract (B4): a renamed key fails `deno check`.
+    const out: HealthGetPayload = {
+      ok: broken.length === 0 && provDown.length === 0 && !tokens.some((t) => t.severity === "high"),
+      summary,
+      beats,
+      tokens,
+      integrations,
+      providers,
+      open_alerts: alerts ?? [],
+      failed_jobs: failedCount ?? null,
+    };
+    return json(out);
   }
 
   if (method !== "POST") throw bad("method not allowed");
