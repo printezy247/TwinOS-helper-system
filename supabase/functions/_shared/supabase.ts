@@ -15,6 +15,14 @@ import { settingBool, settingId, settingNumber, settingText } from "./settings.t
 
 let cached: SupabaseClient | null = null;
 
+/**
+ * Test seam: drop the cached client so a test that points the env at a stub
+ * does not leave the rest of the run talking to it.
+ */
+export function __resetAdminClient(): void {
+  cached = null;
+}
+
 export function admin(): SupabaseClient {
   if (cached) return cached;
   const url = Deno.env.get("SUPABASE_URL");

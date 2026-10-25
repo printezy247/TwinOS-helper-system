@@ -811,5 +811,58 @@ begin
   raise notice 'ok: template variants are Jack-writes, everyone-reads';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- 29. Platform tokens can come from Vault, and only the service role reads one (20261025000400)
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  assert to_regprocedure('public.get_secret(text)') is not null,
+    'get_secret must exist after the migration';
+  -- An unknown name is null, never an exception: a fresh project has no
+  -- Vault secret yet and must read as "not configured", not as a 500.
+  assert public.get_secret('twinos_no_such_secret') is null,
+    'an unknown secret name reads as null';
+  assert public.get_secret('  ') is null, 'a blank name reads as null';
+
+  -- The grant is the part that matters: a dashboard user who could execute
+  -- get_secret could read every platform token over the REST RPC.
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    assert has_function_privilege('service_role', 'public.get_secret(text)', 'EXECUTE'),
+      'the edge functions run as service_role';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    assert not has_function_privilege('anon', 'public.get_secret(text)', 'EXECUTE'),
+      'anon must not be able to read a secret';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    assert not has_function_privilege('authenticated', 'public.get_secret(text)', 'EXECUTE'),
+      'a signed-in dashboard user must not be able to read a secret';
+  end if;
+
+  raise notice 'ok: get_secret is service-role only';
+end $$;
+
+-- The move is dry-run by default and reports every credential either way, so
+-- `select * from twinos_move_tokens_to_vault();` is always safe to type.
+do $$
+  declare
+    v_rows int;
+    v_applied int;
+  begin
+    select count(*) into v_rows from public.twinos_move_tokens_to_vault(true);
+    assert v_rows = 5, 'the mover must report all five credentials, got ' || v_rows;
+
+    select count(*) into v_applied from public.twinos_move_tokens_to_vault(true)
+     where outcome like 'moved%';
+    assert v_applied = 0, 'the default is a dry run and must move nothing';
+
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+      assert not has_function_privilege('anon', 'public.twinos_move_tokens_to_vault(boolean)', 'EXECUTE'),
+        'only the service role may move a token';
+    end if;
+
+    raise notice 'ok: the token move is dry-run by default';
+  end $$;
+
 select 'smoke tests passed; rolling back' as result;
 rollback;

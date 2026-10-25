@@ -1,5 +1,6 @@
 import { HttpError } from "./http.ts";
 import { setting, SETTING_KEYS } from "./supabase.ts";
+import { PLATFORM_SECRETS, secretOrSetting } from "./secrets.ts";
 import { jitteredBackoff } from "./backoff.ts";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -45,9 +46,9 @@ export interface OpenRouterOptions {
 }
 
 export async function completeOpenRouter(opts: OpenRouterOptions): Promise<string> {
+  // A3: Vault first, the legacy settings row second, the function secret last.
   const apiKey =
-    (await setting(SETTING_KEYS.openrouterApiKey).catch(() => null)) ||
-    Deno.env.get("TWINOS_OPENROUTER_API_KEY") ||
+    (await secretOrSetting(PLATFORM_SECRETS.openrouter).catch(() => null)) ||
     Deno.env.get("OPENROUTER_API_KEY");
 
   if (!apiKey) {
