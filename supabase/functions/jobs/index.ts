@@ -36,7 +36,7 @@ import * as tg from "_shared/tg.ts";
 export const JOB_KINDS = [
   "drop_folder_watch", "telechurn_import", "backup", "clip", "research_batch",
   "rewrite", "result_reply", "scorecard_image", "llm_variants", "clip_candidates",
-  "fanout_platform", "voiceover",
+  "fanout_platform", "voiceover", "hyperframes_render",
 ] as const;
 const ASSETS_BUCKET = "assets";
 const STALE_CLAIM_MIN = 30;
