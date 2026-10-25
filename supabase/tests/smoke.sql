@@ -1021,6 +1021,32 @@ begin
   select count(*) into v_open from public.alerts
     where dedupe_key = 'thr:slow_route:smoke/c3/slow' and resolved_at is null;
   assert v_open = 0, format('a recovered route must resolve its alert, still open: %s', v_open);
+
+  -- C3 exemption: POST /health/check is slow BY DESIGN (cron deep probe
+  -- spending live provider calls). It must never open a slow-route alert,
+  -- and an alert raised before the exemption must resolve itself.
+  delete from public.request_stats where route = 'POST /health/check';
+  delete from public.alerts where dedupe_key = 'thr:slow_route:POST /health/check';
+
+  -- 10 requests at 6000 ms average — far over the 1500 ms threshold.
+  insert into public.request_stats (route, cls, count, errors, ms_sum, ms_max, updated_at)
+    values ('POST /health/check', '2xx', 10, 0, 60000, 9000, now());
+
+  perform public.twinos_slow_route_alerts();
+
+  select count(*) into v_open from public.alerts
+    where dedupe_key = 'thr:slow_route:POST /health/check';
+  assert v_open = 0, format('the health deep probe must never open a slow-route alert, found %s', v_open);
+
+  -- Pre-existing alert from before the exemption: next tick resolves it.
+  insert into public.alerts (kind, severity, message, payload, dedupe_key)
+    values ('threshold', 'medium', 'stale pre-exemption alert', '{}'::jsonb,
+            'thr:slow_route:POST /health/check');
+  perform public.twinos_slow_route_alerts();
+
+  select count(*) into v_open from public.alerts
+    where dedupe_key = 'thr:slow_route:POST /health/check' and resolved_at is null;
+  assert v_open = 0, format('a pre-exemption health probe alert must self-resolve, still open: %s', v_open);
 end $$;
 
 select 'smoke tests passed; rolling back' as result;
