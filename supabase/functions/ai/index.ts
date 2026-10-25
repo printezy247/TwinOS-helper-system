@@ -21,6 +21,7 @@ import { serve, json, readJson, routeOf, bad, HttpError } from "_shared/http.ts"
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { setting, SETTING_KEYS, admin } from "_shared/supabase.ts";
+import { PLATFORM_SECRETS, secretOrSetting } from "_shared/secrets.ts";
 import { completeOpenRouter, buildAiPrompt } from "_shared/openrouter.ts";
 import { activePrompt, loadMemories, memoryBlock, promptCatalog } from "_shared/prompts.ts";
 
@@ -31,8 +32,7 @@ serve(async (req) => {
   // GET /ai/status
   if (method === "GET" && (tail.length === 0 || tail[0] === "status")) {
     const apiKey =
-      (await setting(SETTING_KEYS.openrouterApiKey).catch(() => null)) ||
-      Deno.env.get("TWINOS_OPENROUTER_API_KEY") ||
+      (await secretOrSetting(PLATFORM_SECRETS.openrouter).catch(() => null)) ||
       Deno.env.get("OPENROUTER_API_KEY");
     const model =
       (await setting(SETTING_KEYS.openrouterModel).catch(() => null)) || "openrouter/free";

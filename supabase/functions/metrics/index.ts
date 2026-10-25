@@ -17,6 +17,7 @@ import { bad, json, readJson, routeOf, serve } from "_shared/http.ts";
 import { authenticate } from "_shared/auth.ts";
 import { require as requireRole } from "_shared/roles.ts";
 import { admin, requireSetting, setting, SETTING_KEYS } from "_shared/supabase.ts";
+import { PLATFORM_SECRETS, secretOrSetting } from "_shared/secrets.ts";
 import { logAction } from "_shared/log.ts";
 import * as tg from "_shared/tg.ts";
 import { benchmarkStats, parsePage, snapshotsDue, tmeHandle, type TmePage } from "_shared/tme.ts";
@@ -260,9 +261,10 @@ serve(async (req) => {
     const jobs: Surface[] = [];
 
     if (provider === "meta") {
-      const igToken = await setting(SETTING_KEYS.metaIgToken, "TWINOS_META_IG_TOKEN");
-      const pageToken = await setting(SETTING_KEYS.metaPageToken, "TWINOS_META_PAGE_TOKEN");
-      const threadsToken = await setting(SETTING_KEYS.threadsToken, "TWINOS_THREADS_TOKEN");
+      // A3: each token reads Vault first, then the legacy settings row.
+      const igToken = await secretOrSetting(PLATFORM_SECRETS.metaIg);
+      const pageToken = await secretOrSetting(PLATFORM_SECRETS.metaPage);
+      const threadsToken = await secretOrSetting(PLATFORM_SECRETS.threads);
       const igUserId = await setting(SETTING_KEYS.metaIgUserId, "TWINOS_META_IG_USER_ID");
       const pageId = await setting(SETTING_KEYS.metaPageId, "TWINOS_META_PAGE_ID");
       const threadsUserId = await setting(SETTING_KEYS.threadsUserId, "TWINOS_THREADS_USER_ID");
@@ -282,7 +284,7 @@ serve(async (req) => {
         });
       } else skipped.push("threads — threads_token is not set");
     } else {
-      const apiKey = await setting(SETTING_KEYS.ytApiKey, "TWINOS_YT_API_KEY");
+      const apiKey = await secretOrSetting(PLATFORM_SECRETS.youtube);
       const channelId = await setting(SETTING_KEYS.ytChannelId, "TWINOS_YT_CHANNEL_ID");
       if (apiKey && channelId) {
         jobs.push({ platform: "youtube", run: () => pollYouTube({ apiKey, channelId }) });
