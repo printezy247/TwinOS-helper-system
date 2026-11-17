@@ -242,6 +242,7 @@ deno.lock
 # Lovable / node
 node_modules/
 apps/dashboard/dist/
+graphify-out/
 
 # Personal home-directory settings that sit in this folder; never project files
 /.bash_profile
