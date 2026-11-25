@@ -179,7 +179,7 @@ export function routeOf(req: Request, fnName: string): { method: string; tail: s
 
 /** Standard wrapper: CORS preflight, error funnel, no stack traces to the client. */
 export function serve(handler: (req: Request) => Promise<Response>): void {
-  Deno.serve(async (req) => {
+  const wrapped = async (req: Request): Promise<Response> => {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
     // Phase 4 observability: one trace id per request (adopted from
     // x-twinos-trace), one structured log line, one metrics observation —
@@ -206,5 +206,14 @@ export function serve(handler: (req: Request) => Promise<Response>): void {
       out.headers.set("x-twinos-trace", trace);
     } catch { /* immutable headers (e.g. prebuilt bodies) — logging still carries the id */ }
     return out;
-  });
+  };
+
+  // Railway runs all functions in one process behind the router, which owns
+  // the HTTP listener. Register the same wrapped handler there instead of
+  // starting a second server on the same port.
+  if (Deno.env.get("TWINOS_NO_SERVE") === "1") {
+    (globalThis as unknown as { __twinosHandler?: typeof wrapped }).__twinosHandler = wrapped;
+    return;
+  }
+  Deno.serve(wrapped);
 }
